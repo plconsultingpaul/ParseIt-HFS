@@ -22,10 +22,9 @@ export function useAuth() {
             .from('users')
             .select('id, username, is_admin, is_active, permissions')
             .eq('id', user.id)
-            .eq('is_active', true)
-            .single();
+            .eq('is_active', true);
 
-          if (error || !data) {
+          if (error || !data || data.length === 0) {
             // User not found or inactive, clear localStorage
             localStorage.removeItem('parseit_user');
             setAuthState({
@@ -35,11 +34,11 @@ export function useAuth() {
           } else {
             // User exists and is active, update with latest data from database
             const validatedUser: User = {
-              id: data.id,
-              username: data.username,
-              isAdmin: data.is_admin,
-              isActive: data.is_active,
-              permissions: data.permissions ? JSON.parse(data.permissions) : getDefaultPermissions(data.is_admin)
+              id: data[0].id,
+              username: data[0].username,
+              isAdmin: data[0].is_admin,
+              isActive: data[0].is_active,
+              permissions: data[0].permissions ? JSON.parse(data[0].permissions) : getDefaultPermissions(data[0].is_admin)
             };
 
             setAuthState({
