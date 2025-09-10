@@ -426,7 +426,6 @@ export default function ExtractionTypesSettings({
               <button
                 onClick={() => handleDeleteClick(selectedTypeIndex)}
                 className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors duration-200"
-                title="Delete this extraction type"
               >
                 <Trash2 className="h-4 w-4" />
               </button>
