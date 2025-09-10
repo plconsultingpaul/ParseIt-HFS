@@ -285,7 +285,9 @@ serve(async (req: Request) => {
                   currentStepIndex = nextStepIndex
                   continue
                 }
-              }
+              console.log('Extraction log ID for failure update:', extractionLogId)
+              
+              const failureUpdateResponse = await fetch(`${supabaseUrl}/rest/v1/extraction_logs?id=eq.${extractionLogId}`, {
             } else {
               if (step.next_step_on_failure_id) {
                 const nextStepIndex = steps.findIndex(s => s.id === step.next_step_on_failure_id)
@@ -297,6 +299,16 @@ serve(async (req: Request) => {
               } else {
                 console.error('Conditional check failed and no failure step defined')
                 throw new Error(`Conditional check failed: ${conditionResult.message}`)
+              }
+              
+              console.log('Failure update response status:', failureUpdateResponse.status)
+              console.log('Failure update response ok:', failureUpdateResponse.ok)
+              
+              if (!failureUpdateResponse.ok) {
+                const failureErrorText = await failureUpdateResponse.text()
+                console.error('Failed to update extraction log with failure status:', failureErrorText)
+              } else {
+                console.log('Successfully updated extraction log to failed status')
               }
             }
             break
@@ -379,8 +391,10 @@ serve(async (req: Request) => {
 
         // Update extraction log status
         console.log('Updating extraction log with failure status...')
+        console.log('Extraction log ID for step failure update:', extractionLogId)
+        
         try {
-          await fetch(`${supabaseUrl}/rest/v1/extraction_logs?id=eq.${extractionLogId}`, {
+          const stepFailureUpdateResponse = await fetch(`${supabaseUrl}/rest/v1/extraction_logs?id=eq.${extractionLogId}`, {
             method: 'PATCH',
             headers: {
               'Authorization': `Bearer ${supabaseServiceKey}`,
@@ -392,8 +406,19 @@ serve(async (req: Request) => {
               updated_at: new Date().toISOString()
             })
           })
+          
+          console.log('Step failure update response status:', stepFailureUpdateResponse.status)
+          console.log('Step failure update response ok:', stepFailureUpdateResponse.ok)
+          
+          if (!stepFailureUpdateResponse.ok) {
+            const stepFailureErrorText = await stepFailureUpdateResponse.text()
+            console.error('Failed to update extraction log after step failure:', stepFailureErrorText)
+          } else {
+            console.log('Successfully updated extraction log to failed status after step failure')
+          }
         } catch (updateError) {
           console.error('Failed to update extraction log with error:', updateError)
+          console.error('Step failure update error details:', updateError instanceof Error ? updateError.message : updateError)
         }
 
         throw stepError
@@ -404,8 +429,12 @@ serve(async (req: Request) => {
     
     // Update extraction log status
     console.log('Updating extraction log with success status...')
+    console.log('Extraction log ID for success update:', extractionLogId)
+    console.log('Supabase URL:', supabaseUrl)
+    console.log('Service key available:', !!supabaseServiceKey)
+    
     try {
-      await fetch(`${supabaseUrl}/rest/v1/extraction_logs?id=eq.${extractionLogId}`, {
+      const updateResponse = await fetch(`${supabaseUrl}/rest/v1/extraction_logs?id=eq.${extractionLogId}`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${supabaseServiceKey}`,
@@ -417,8 +446,33 @@ serve(async (req: Request) => {
           updated_at: new Date().toISOString()
         })
       })
+      
+      console.log('Extraction log update response status:', updateResponse.status)
+      console.log('Extraction log update response ok:', updateResponse.ok)
+      
+      if (!updateResponse.ok) {
+        const errorText = await updateResponse.text()
+        console.error('Failed to update extraction log to success:', errorText)
+        console.error('Update request details:', {
+          url: `${supabaseUrl}/rest/v1/extraction_logs?id=eq.${extractionLogId}`,
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+            'Content-Type': 'application/json',
+            'apikey': supabaseServiceKey
+          },
+          body: JSON.stringify({
+            extraction_status: 'success',
+            updated_at: new Date().toISOString()
+          })
+        })
+        throw new Error(`Failed to update extraction log: ${errorText}`)
+      } else {
+        console.log('Successfully updated extraction log to success status')
+      }
     } catch (updateError) {
       console.error('Failed to update extraction log with success:', updateError)
+      console.error('Update error details:', updateError instanceof Error ? updateError.message : updateError)
     }
 
     console.log('Workflow execution completed successfully')
@@ -696,6 +750,7 @@ async function executeDataTransform(step: WorkflowStep, data: any): Promise<any>
             setValueByPath(data, transformation.jsonPath, formattedPhone)
           } else {
             setValueByPath(data, transformation.jsonPath, null)
+            console.error('Failure update error details:', updateError instanceof Error ? updateError.message : updateError)
           }
         }
         break
