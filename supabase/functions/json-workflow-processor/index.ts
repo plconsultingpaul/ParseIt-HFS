@@ -623,14 +623,19 @@ function replacePlaceholdersInObject(obj: any, data: any): any {
 
 async function executeConditionalCheck(step: WorkflowStep, data: any): Promise<{ success: boolean; message: string }> {
   const config = step.config_json
-  
+
+  if (!config || !config.jsonPath) {
+    throw new Error('Conditional check step configuration is incomplete: missing config_json or jsonPath');
+  }
+
+  const conditionType = config.conditionType || 'equals'; // Provide a default if missing
   if (!config.jsonPath) {
     throw new Error('Conditional check step missing JSON path configuration')
   }
 
   const value = getValueByPath(data, config.jsonPath)
   
-  switch (config.conditionType) {
+  switch (conditionType) {
     case 'is_null':
       return { success: value === null || value === undefined || value === '', message: `Value is ${value === null || value === undefined || value === '' ? 'null/empty' : 'not null/empty'}` }
     case 'is_not_null':
@@ -647,7 +652,7 @@ async function executeConditionalCheck(step: WorkflowStep, data: any): Promise<{
       const less = Number(value) < Number(config.expectedValue)
       return { success: less, message: `Value ${value} is ${less ? 'less than' : 'not less than'} ${config.expectedValue}` }
     default:
-      throw new Error(`Unknown condition type: ${config.conditionType}`)
+      throw new Error(`Invalid or unsupported condition type: ${conditionType}`)
   }
 }
 
