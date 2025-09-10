@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Send, Loader2 } from 'lucide-react';
 import PageProcessorCard from './PageProcessorCard';
-import type { ExtractionType, SftpConfig, SettingsConfig, ApiConfig, User, PageProcessingState, ApiError } from '../../types';
+import type { ExtractionType, SftpConfig, SettingsConfig, ApiConfig, User, PageProcessingState, ApiError, WorkflowExecutionLog } from '../../types';
 import { extractDataFromPDF } from '../../lib/gemini';
 import { uploadToSftp } from '../../lib/sftp';
+import { executeWorkflow } from '../../lib/workflow';
 import { sendToApi } from '../../lib/apiClient';
 
 interface MultiPageProcessorProps {
@@ -14,6 +15,7 @@ interface MultiPageProcessorProps {
   settingsConfig: SettingsConfig;
   apiConfig: ApiConfig;
   user: User | null;
+  workflowSteps: any[];
 }
 
 export default function MultiPageProcessor({
@@ -23,7 +25,8 @@ export default function MultiPageProcessor({
   sftpConfig,
   settingsConfig,
   apiConfig,
-  user
+  user,
+  workflowSteps
 }: MultiPageProcessorProps) {
   const [isExtractingAll, setIsExtractingAll] = useState(false);
   const [currentProcessingPage, setCurrentProcessingPage] = useState<number | null>(null);
@@ -51,6 +54,49 @@ export default function MultiPageProcessor({
         index === pageIndex ? { ...state, ...updates } : state
       )
     );
+  };
+
+  const fetchWorkflowExecutionLog = async (logId: string): Promise<WorkflowExecutionLog | null> => {
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      
+      const response = await fetch(`${supabaseUrl}/rest/v1/workflow_execution_logs?id=eq.${logId}`, {
+        headers: {
+          'Authorization': `Bearer ${supabaseAnonKey}`,
+          'Content-Type': 'application/json',
+          'apikey': supabaseAnonKey
+        }
+      });
+      
+      if (!response.ok) {
+        console.error('Failed to fetch workflow execution log:', response.status);
+        return null;
+      }
+      
+      const data = await response.json();
+      if (data && data.length > 0) {
+        const log = data[0];
+        return {
+          id: log.id,
+          extractionLogId: log.extraction_log_id,
+          workflowId: log.workflow_id,
+          status: log.status,
+          currentStepId: log.current_step_id,
+          currentStepName: log.current_step_name,
+          errorMessage: log.error_message,
+          contextData: log.context_data,
+          startedAt: log.started_at,
+          updatedAt: log.updated_at,
+          completedAt: log.completed_at
+        };
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Error fetching workflow execution log:', error);
+      return null;
+    }
   };
 
   const processPageAction = async (pageIndex: number, actionType: 'preview' | 'process') => {
@@ -88,8 +134,61 @@ export default function MultiPageProcessor({
       });
 
       // If this is a process action, continue with API/SFTP operations
-      if (actionType === 'process') {
-        if (isJsonType) {
+      if (actionType === 'process') { 
+        if (currentExtractionType.workflowId) {
+          // If a workflow is assigned, execute the workflow instead of direct API call
+          try {
+            // Convert PDF page to base64 for workflow
+            const pdfBase64 = await fileToBase64(pageFile);
+
+            const workflowResult = await executeWorkflow({
+              extractedData,
+              workflowId: currentExtractionType.workflowId,
+              userId: user?.id,
+              extractionTypeId: currentExtractionType.id,
+              pdfFilename: pageFile.name,
+              pdfPages: 1,
+              pdfBase64: pdfBase64,
+              originalPdfFilename: pageFile.name
+            });
+            
+            // Store the workflow execution log ID for status tracking
+            updatePageState(pageIndex, {
+              workflowExecutionLogId: workflowResult.workflowExecutionLogId
+            });
+            
+            // Fetch the complete workflow execution log
+            const workflowLog = await fetchWorkflowExecutionLog(workflowResult.workflowExecutionLogId);
+            
+            updatePageState(pageIndex, {
+              apiResponse: workflowResult.lastApiResponse ? JSON.stringify(workflowResult.lastApiResponse, null, 2) : JSON.stringify(workflowResult.finalData, null, 2),
+              apiError: null,
+              success: true,
+              isProcessing: false,
+              workflowExecutionLog: workflowLog
+            });
+          } catch (workflowError) {
+            console.error('Workflow execution failed:', workflowError);
+            const errorMessage = workflowError instanceof Error ? workflowError.message : 'Unknown workflow error';
+            console.error('Detailed workflow error:', errorMessage);
+            
+            // Check if the error contains a workflow execution log ID
+            let workflowLog = null;
+            if ((workflowError as any).workflowExecutionLogId) {
+              try {
+                workflowLog = await fetchWorkflowExecutionLog((workflowError as any).workflowExecutionLogId);
+              } catch (fetchError) {
+                console.error('Failed to fetch workflow execution log on error:', fetchError);
+              }
+            }
+            
+            updatePageState(pageIndex, {
+              extractionError: `Workflow execution failed: ${errorMessage}`,
+              isProcessing: false,
+              workflowExecutionLog: workflowLog
+            });
+          }
+        } else if (isJsonType) {
           // For JSON types, get ParseIt ID and send to API
           let parseitId: number | undefined;
           try {
@@ -131,6 +230,23 @@ export default function MultiPageProcessor({
               apiResponse: JSON.stringify(apiResponseData, null, 2),
               apiError: null
             });
+            
+            // Extract filename part from API response for SFTP upload
+            let customFilenamePart: string | undefined;
+            try {
+              // Try to extract billNumber from API response
+              if (apiResponseData && typeof apiResponseData === 'object') {
+                if (apiResponseData.billNumber) {
+                  customFilenamePart = apiResponseData.billNumber;
+                } else if (apiResponseData.orders && Array.isArray(apiResponseData.orders) && apiResponseData.orders.length > 0 && apiResponseData.orders[0].billNumber) {
+                  customFilenamePart = apiResponseData.orders[0].billNumber;
+                } else if (apiResponseData.data && apiResponseData.data.billNumber) {
+                  customFilenamePart = apiResponseData.data.billNumber;
+                }
+              }
+            } catch (error) {
+              console.warn('Could not extract filename from API response:', error);
+            }
             
             // Log successful API call
             try {
@@ -216,53 +332,54 @@ export default function MultiPageProcessor({
               xmlContent: extractedData,
               pdfFile: pageFile,
               baseFilename: currentExtractionType.filename || 'document',
-              parseitIdMapping: currentExtractionType.parseitIdMapping,
-              useExistingParseitId: parseitId,
-              userId: user?.id,
-              extractionTypeId: currentExtractionType.id
+              parseitId,
+              customFilenamePart
             });
           } catch (sftpError) {
-            console.warn('PDF upload to SFTP failed for JSON type:', sftpError);
-            // Don't throw error here - API call was successful, SFTP is secondary
+            console.warn('SFTP upload failed for JSON type:', sftpError);
+            const errorMessage = sftpError instanceof Error ? sftpError.message : 'Unknown SFTP error';
+            updatePageState(pageIndex, {
+              extractionError: `Failed to upload to SFTP: ${errorMessage}`,
+              isProcessing: false
+            });
           }
         } else {
-          // Upload XML files to SFTP
-          await uploadToSftp({
-            sftpConfig,
-            xmlContent: extractedData,
-            pdfFile: pageFile,
-            baseFilename: currentExtractionType.filename || 'document',
-            parseitIdMapping: currentExtractionType.parseitIdMapping,
-            userId: user?.id,
-            extractionTypeId: currentExtractionType.id,
-            formatType: currentExtractionType.formatType
-          });
+          // For non-JSON types, handle SFTP upload
+          try {
+            await uploadToSftp({
+              sftpConfig,
+              xmlContent: extractedData,
+              pdfFile: pageFile,
+              baseFilename: currentExtractionType.filename || 'document'
+            });
+            
+            updatePageState(pageIndex, {
+              success: true,
+              isProcessing: false
+            });
+          } catch (sftpError) {
+            const errorMessage = sftpError instanceof Error ? sftpError.message : 'Unknown SFTP error';
+            updatePageState(pageIndex, {
+              extractionError: `Failed to upload to SFTP: ${errorMessage}`,
+              isProcessing: false
+            });
+          }
         }
         
         updatePageState(pageIndex, {
           success: true,
           isProcessing: false
         });
-      }
-    } catch (error) {
-      if (actionType === 'process' && !isJsonType) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      } else {
         updatePageState(pageIndex, {
-          extractionError: `Failed to upload to SFTP: ${errorMessage}`,
-          isProcessing: false
-        });
-      } else if (actionType === 'preview') {
-        const errorMessage = error instanceof Error ? error.message : 'Failed to extract data';
-        updatePageState(pageIndex, {
-          extractionError: errorMessage,
           isExtracting: false
         });
-      } else {
-        // For JSON processing errors, the error handling is done above in the API section
-        updatePageState(pageIndex, {
-          isProcessing: false
-        });
       }
+    } catch (error) {
+      // For JSON processing errors, the error handling is done above in the API section
+      updatePageState(pageIndex, {
+        isProcessing: false
+      });
       console.error(`Error ${actionType}ing page ${pageIndex + 1}:`, error);
     }
   };
@@ -289,15 +406,32 @@ export default function MultiPageProcessor({
         // Process each page
         await processPageAction(pageIndex, 'process');
         
-        // Small delay between pages to prevent overwhelming the API
         if (pageIndex < pdfPages.length - 1) {
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
+    } catch (workflowError) {
+      console.error('Workflow execution failed:', workflowError);
+      const errorMessage = workflowError instanceof Error ? workflowError.message : 'Unknown workflow error';
+      console.error('Detailed workflow error:', errorMessage);
     } finally {
       setIsExtractingAll(false);
       setCurrentProcessingPage(null);
     }
+  };
+
+  const fileToBase64 = async (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        // Remove the data URL prefix to get just the base64 data
+        const base64 = result.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
   };
 
   if (pdfPages.length === 0) {
@@ -347,6 +481,8 @@ export default function MultiPageProcessor({
             }}
             isExtractingAll={isExtractingAll}
             isJsonType={isJsonType}
+            workflowSteps={workflowSteps}
+            currentExtractionType={currentExtractionType}
             onPreview={handlePreviewPage}
             onProcess={handleProcessPage}
           />

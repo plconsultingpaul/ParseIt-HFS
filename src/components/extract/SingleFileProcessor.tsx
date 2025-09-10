@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { FileText, Send, Download, X, Loader2, Copy } from 'lucide-react';
-import type { ExtractionType, SftpConfig, SettingsConfig, ApiConfig, User, ApiError } from '../../types';
+import type { ExtractionType, SftpConfig, SettingsConfig, ApiConfig, User, ApiError, WorkflowStep, WorkflowExecutionLog } from '../../types';
 import { extractDataFromPDF } from '../../lib/gemini';
 import { uploadToSftp } from '../../lib/sftp';
+import { executeWorkflow } from '../../lib/workflow';
 import { sendToApi } from '../../lib/apiClient';
 
 interface SingleFileProcessorProps {
@@ -13,6 +14,7 @@ interface SingleFileProcessorProps {
   settingsConfig: SettingsConfig;
   apiConfig: ApiConfig;
   user: User | null;
+  workflowSteps: WorkflowStep[];
 }
 
 export default function SingleFileProcessor({
@@ -22,7 +24,8 @@ export default function SingleFileProcessor({
   sftpConfig,
   settingsConfig,
   apiConfig,
-  user
+  user,
+  workflowSteps
 }: SingleFileProcessorProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [extractedData, setExtractedData] = useState('');
@@ -32,6 +35,8 @@ export default function SingleFileProcessor({
   const [apiResponse, setApiResponse] = useState('');
   const [apiResponseError, setApiResponseError] = useState<ApiError | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [workflowExecutionLogId, setWorkflowExecutionLogId] = useState<string>('');
+  const [workflowExecutionLog, setWorkflowExecutionLog] = useState<WorkflowExecutionLog | null>(null);
 
   const isJsonType = currentExtractionType?.formatType === 'JSON';
   const previewButtonText = isJsonType ? 'Preview JSON' : 'Preview XML';
@@ -93,6 +98,66 @@ export default function SingleFileProcessor({
         setExtractedData(dataToSend);
       }
       
+      if (currentExtractionType.workflowId) {
+        // If a workflow is assigned, execute the workflow instead of direct API call
+        try {
+          console.log('Starting workflow execution for single file');
+          console.log('Workflow ID:', currentExtractionType.workflowId);
+          console.log('User ID:', user?.id);
+          console.log('Extraction Type ID:', currentExtractionType.id);
+          console.log('Extracted data length:', dataToSend.length);
+
+          // Convert PDF to base64 for workflow
+          const pdfBase64 = await fileToBase64(uploadedFile);
+
+          const workflowResult = await executeWorkflow({
+            extractedData: dataToSend,
+            workflowId: currentExtractionType.workflowId,
+            userId: user?.id,
+            extractionTypeId: currentExtractionType.id,
+            pdfFilename: uploadedFile.name,
+            pdfPages: 1,
+            pdfBase64: pdfBase64,
+            originalPdfFilename: uploadedFile.name
+          });
+          
+          console.log('Workflow execution completed successfully:', workflowResult);
+          
+          // Store the workflow execution log ID for status tracking
+          setWorkflowExecutionLogId(workflowResult.workflowExecutionLogId);
+          
+          // Fetch the complete workflow execution log
+          const workflowLog = await fetchWorkflowExecutionLog(workflowResult.workflowExecutionLogId);
+          setWorkflowExecutionLog(workflowLog);
+          
+          setApiResponse(workflowResult.lastApiResponse ? JSON.stringify(workflowResult.lastApiResponse, null, 2) : JSON.stringify(workflowResult.finalData, null, 2));
+          setApiResponseError(null);
+          setSendSuccess(true);
+        } catch (workflowError) {
+          console.error('Workflow execution failed:', workflowError);
+          const errorMessage = workflowError instanceof Error ? workflowError.message : 'Unknown workflow error';
+          console.error('Detailed workflow error:', errorMessage);
+          
+          // Check if the error contains a workflow execution log ID
+          if ((workflowError as any).workflowExecutionLogId) {
+            try {
+              const workflowLog = await fetchWorkflowExecutionLog((workflowError as any).workflowExecutionLogId);
+              setWorkflowExecutionLog(workflowLog);
+            } catch (fetchError) {
+              console.error('Failed to fetch workflow execution log on error:', fetchError);
+            }
+          }
+          
+          setExtractionError(`Workflow execution failed: ${errorMessage}`);
+          setApiResponseError({
+            statusCode: 500,
+            statusText: 'Workflow Error',
+            details: errorMessage
+          });
+        }
+        return; // Exit after workflow execution
+      }
+
       if (isJsonType) {
         // For JSON types, get ParseIt ID and inject it before sending to API
         let parseitId: number | undefined;
@@ -131,6 +196,23 @@ export default function SingleFileProcessor({
           
           setApiResponse(JSON.stringify(apiResponseData, null, 2));
           setApiResponseError(null);
+          
+          // Extract filename part from API response for SFTP upload
+          let customFilenamePart: string | undefined;
+          try {
+            // Try to extract billNumber from API response
+            if (apiResponseData && typeof apiResponseData === 'object') {
+              if (apiResponseData.billNumber) {
+                customFilenamePart = apiResponseData.billNumber;
+              } else if (apiResponseData.orders && Array.isArray(apiResponseData.orders) && apiResponseData.orders.length > 0 && apiResponseData.orders[0].billNumber) {
+                customFilenamePart = apiResponseData.orders[0].billNumber;
+              } else if (apiResponseData.data && apiResponseData.data.billNumber) {
+                customFilenamePart = apiResponseData.data.billNumber;
+              }
+            }
+          } catch (error) {
+            console.warn('Could not extract filename from API response:', error);
+          }
           
           // Log successful API call
           try {
@@ -199,7 +281,8 @@ export default function SingleFileProcessor({
             parseitIdMapping: currentExtractionType.parseitIdMapping,
             useExistingParseitId: parseitId,
             userId: user?.id,
-            extractionTypeId: currentExtractionType.id
+            extractionTypeId: currentExtractionType.id,
+            customFilenamePart
           });
         } catch (sftpError) {
           console.warn('PDF upload to SFTP failed for JSON type:', sftpError);
@@ -287,55 +370,115 @@ export default function SingleFileProcessor({
     setExtractedData('');
     setExtractionError('');
     setCopySuccess(false);
+    setWorkflowExecutionLogId('');
+    setWorkflowExecutionLog(null);
+  };
+
+  const fetchWorkflowExecutionLog = async (logId: string): Promise<WorkflowExecutionLog | null> => {
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      
+      const response = await fetch(`${supabaseUrl}/rest/v1/workflow_execution_logs?id=eq.${logId}`, {
+        headers: {
+          'Authorization': `Bearer ${supabaseAnonKey}`,
+          'Content-Type': 'application/json',
+          'apikey': supabaseAnonKey
+        }
+      });
+      
+      if (!response.ok) {
+        console.error('Failed to fetch workflow execution log:', response.status);
+        return null;
+      }
+      
+      const data = await response.json();
+      if (data && data.length > 0) {
+        const log = data[0];
+        return {
+          id: log.id,
+          extractionLogId: log.extraction_log_id,
+          workflowId: log.workflow_id,
+          status: log.status,
+          currentStepId: log.current_step_id,
+          currentStepName: log.current_step_name,
+          errorMessage: log.error_message,
+          contextData: log.context_data,
+          startedAt: log.started_at,
+          updatedAt: log.updated_at,
+          completedAt: log.completed_at
+        };
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Error fetching workflow execution log:', error);
+      return null;
+    }
+  };
+
+  const fileToBase64 = async (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        // Remove the data URL prefix to get just the base64 data
+        const base64 = result.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // Get workflow steps for the current extraction type
+  const currentWorkflowSteps = workflowSteps
+    .filter(step => step.workflowId === currentExtractionType.workflowId)
+    .sort((a, b) => a.stepOrder - b.stepOrder);
+
+  const getStepStatus = (step: WorkflowStep): 'pending' | 'running' | 'completed' | 'failed' => {
+    if (!workflowExecutionLog) return 'pending';
+    
+    if (workflowExecutionLog.status === 'completed') {
+      return 'completed';
+    }
+    
+    if (workflowExecutionLog.status === 'failed') {
+      if (step.id === workflowExecutionLog.currentStepId) {
+        return 'failed';
+      }
+      // Steps before the failed step are completed
+      const currentStepOrder = workflowSteps.find(s => s.id === workflowExecutionLog.currentStepId)?.stepOrder || 0;
+      return step.stepOrder < currentStepOrder ? 'completed' : 'pending';
+    }
+    
+    if (workflowExecutionLog.status === 'running') {
+      if (step.id === workflowExecutionLog.currentStepId) {
+        return 'running';
+      }
+      const currentStepOrder = workflowSteps.find(s => s.id === workflowExecutionLog.currentStepId)?.stepOrder || 0;
+      return step.stepOrder < currentStepOrder ? 'completed' : 'pending';
+    }
+    
+    return 'pending';
+  };
+
+  const getStepStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return 'bg-green-500 text-white';
+      case 'running':
+        return 'bg-blue-500 text-white animate-pulse';
+      case 'failed':
+        return 'bg-red-500 text-white';
+      default:
+        return 'bg-gray-300 text-gray-600';
+    }
   };
 
   return (
     <div className="space-y-6">
-      {/* Multi-page processing section */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-3">
-          <label className="block text-sm font-semibold text-gray-700">
-            PDF Pages ({pdfPages.length} page{pdfPages.length !== 1 ? 's' : ''})
-          </label>
-          <button
-            onClick={handleExtractAll}
-            disabled={!currentExtractionType || isExtractingAll}
-            className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white font-semibold rounded-lg transition-all duration-200 flex items-center space-x-2 disabled:cursor-not-allowed"
-          >
-            {isExtractingAll ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>
-                  Processing Page {currentProcessingPage !== null ? currentProcessingPage + 1 : '...'} of {pdfPages.length}
-                </span>
-              </>
-            ) : (
-              <>
-                <Send className="h-4 w-4" />
-                <span>Extract All</span>
-              </>
-            )}
-          </button>
-        </div>
-        <div className="space-y-4">
-          {pdfPages.map((pageFile, pageIndex) => (
-            <PageProcessorCard
-              key={pageIndex}
-              pageFile={pageFile}
-              pageIndex={pageIndex}
-              currentExtractionType={currentExtractionType}
-              additionalInstructions={additionalInstructions}
-              sftpConfig={sftpConfig}
-              settingsConfig={settingsConfig}
-              apiConfig={apiConfig}
-              user={user}
-              isExtractingAll={isExtractingAll}
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* Single file action buttons (shown when no pages are split) */}
+      {/* Single file action buttons */}
       <div className="flex flex-wrap gap-4">
         <button
           onClick={handlePreviewData}
@@ -486,75 +629,88 @@ export default function SingleFileProcessor({
         </div>
       )}
 
-      {/* Data Preview Section */}
-      {(extractedData || extractionError) && (
+      {/* Workflow Steps Display for Single File */}
+      {currentExtractionType.workflowId && currentWorkflowSteps.length > 0 && (
+        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl border border-purple-100 overflow-hidden">
+          <div className="p-6 border-b border-gray-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">Workflow Progress</h3>
+                <p className="text-gray-600 mt-1">
+                  {currentWorkflowSteps.length} step{currentWorkflowSteps.length !== 1 ? 's' : ''} in workflow
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Workflow Steps */}
+          <div className="p-6">
+            <div className="space-y-4">
+              {currentWorkflowSteps.map((step, index) => {
+                const status = getStepStatus(step);
+                return (
+                  <div key={step.id} className="flex items-center space-x-4">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${getStepStatusColor(status)}`}>
+                      {index + 1}
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-gray-900">{step.name}</h4>
+                      <p className="text-sm text-gray-600">{step.description}</p>
+                    </div>
+                    <div className="text-sm font-medium capitalize text-gray-600">
+                      {status}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Extracted Data Display */}
+      {extractedData && (
         <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl border border-purple-100 overflow-hidden">
           <div className="p-6 border-b border-gray-200">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-xl font-bold text-gray-900">Extracted {dataLabel} Data</h3>
                 <p className="text-gray-600 mt-1">
-                  {extractionError ? 'Extraction failed' : 'Generated from your PDF document'}
+                  {extractedData.length.toLocaleString()} characters extracted
                 </p>
               </div>
-              <div className="flex items-center space-x-2">
-                {extractedData && (
-                  <>
-                    <button
-                      onClick={handleCopyToClipboard}
-                      className={`px-4 py-2 font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2 ${
-                        copySuccess 
-                          ? 'bg-green-600 text-white' 
-                          : 'bg-blue-600 hover:bg-blue-700 text-white'
-                      }`}
-                    >
-                      <Copy className="h-4 w-4" />
-                      <span>{copySuccess ? 'Copied!' : 'Copy to Clipboard'}</span>
-                    </button>
-                    <button
-                      onClick={handleDownloadData}
-                      className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
-                    >
-                      <Download className="h-4 w-4" />
-                      <span>Download {dataLabel}</span>
-                    </button>
-                  </>
-                )}
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={handleCopyToClipboard}
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors duration-200 flex items-center space-x-2"
+                >
+                  <Copy className="h-4 w-4" />
+                  <span>{copySuccess ? 'Copied!' : 'Copy'}</span>
+                </button>
+                <button
+                  onClick={handleDownloadData}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors duration-200 flex items-center space-x-2"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Download</span>
+                </button>
                 <button
                   onClick={clearExtractedData}
-                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors duration-200"
+                  className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg transition-colors duration-200 flex items-center space-x-2"
                 >
                   <X className="h-4 w-4" />
+                  <span>Clear</span>
                 </button>
               </div>
             </div>
           </div>
           
           <div className="p-6">
-            {extractionError ? (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                <div className="flex items-center space-x-2 mb-2">
-                  <div className="w-4 h-4 bg-red-500 rounded-full"></div>
-                  <span className="font-semibold text-red-800">Extraction Error</span>
-                </div>
-                <p className="text-red-700 text-sm">{extractionError}</p>
-                {extractionError.includes('503') && extractionError.toLowerCase().includes('overloaded') ? (
-                  <p className="text-red-600 text-xs mt-2">
-                    The AI service is temporarily overloaded. Please wait a moment and try again.
-                  </p>
-                ) : (
-                  <p className="text-red-600 text-xs mt-2">
-                    Please check your PDF file and try again. Make sure you have configured your Gemini API key.
-                  </p>
-                )}
-              </div>
-            ) : (
-              <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
-                <pre className="text-sm text-gray-800 whitespace-pre-wrap font-mono leading-relaxed">
-                  {extractedData}
-                </pre>
-              </div>
-            )}
+            <div className="bg-gray-50 rounded-xl p-4 max-h-96 overflow-y-auto">
+              <pre className="text-sm text-gray-800 whitespace-pre-wrap font-mono">
+                {extractedData}
+              </pre>
+            </div>
           </div>
         </div>
       )}
