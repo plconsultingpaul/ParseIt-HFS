@@ -628,7 +628,9 @@ async function executeConditionalCheck(step: WorkflowStep, data: any): Promise<{
     throw new Error('Conditional check step configuration is incomplete: missing config_json or jsonPath');
   }
 
-  const conditionType = config.conditionType || 'equals'; // Provide a default if missing
+  // Provide a default conditionType if missing or undefined
+  const conditionType = config.conditionType || 'equals';
+  
   if (!config.jsonPath) {
     throw new Error('Conditional check step missing JSON path configuration')
   }
@@ -652,7 +654,8 @@ async function executeConditionalCheck(step: WorkflowStep, data: any): Promise<{
       const less = Number(value) < Number(config.expectedValue)
       return { success: less, message: `Value ${value} is ${less ? 'less than' : 'not less than'} ${config.expectedValue}` }
     default:
-      throw new Error(`Invalid or unsupported condition type: ${conditionType}`)
+      console.warn(`Unknown condition type "${conditionType}", defaulting to 'equals'`)
+      return { success: value === config.expectedValue, message: `Value ${value} ${value === config.expectedValue ? 'equals' : 'does not equal'} ${config.expectedValue} (defaulted to equals check)` }
   }
 }
 
