@@ -458,7 +458,6 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                     <option value="conditional_check">Conditional Check</option>
                     <option value="data_transform">Data Transform</option>
                     <option value="sftp_upload">SFTP Upload</option>
-                    <option value="sftp_upload">SFTP Upload</option>
                   </select>
                 </div>
                 {localStep.stepType === 'api_call' ? (
