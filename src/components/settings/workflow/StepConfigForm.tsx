@@ -463,8 +463,22 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                   <select
                     value={localStep.stepType}
                     onChange={(e) => {
-                      updateStep('stepType', e.target.value);
-                      updateConfig({}); // Reset config when type changes
+                     const newStepType = e.target.value;
+                     updateStep('stepType', newStepType);
+                     
+                     // Initialize config with appropriate defaults for each step type
+                     let defaultConfig = {};
+                     if (newStepType === 'conditional_check') {
+                       defaultConfig = { conditionType: 'equals' };
+                     } else if (newStepType === 'api_call') {
+                       defaultConfig = { method: 'POST' };
+                     } else if (newStepType === 'data_transform') {
+                       defaultConfig = { transformations: [] };
+                     } else if (newStepType === 'sftp_upload') {
+                       defaultConfig = { useApiResponseForFilename: false };
+                     }
+                     
+                     updateConfig(defaultConfig);
                     }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                   >
