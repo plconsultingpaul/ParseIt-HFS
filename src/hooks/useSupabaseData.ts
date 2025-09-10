@@ -1288,8 +1288,7 @@ export function useSupabaseData() {
     updateWorkflows,
     updateWorkflowSteps,
     getWorkflowExecutionLog,
-    logExtraction,
-    refreshData: loadData,
+    logExtraction
     refreshPollingLogs,
     refreshProcessedEmails,
   } = useSupabaseData();
