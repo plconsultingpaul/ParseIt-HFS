@@ -285,10 +285,11 @@ serve(async (req: Request) => {
                   currentStepIndex = nextStepIndex
                   continue
                 }
+              }
               console.log('Extraction log ID for failure update:', extractionLogId)
               
               const failureUpdateResponse = await fetch(`${supabaseUrl}/rest/v1/extraction_logs?id=eq.${extractionLogId}`, {
-            } else {
+                          } else {
               if (step.next_step_on_failure_id) {
                 const nextStepIndex = steps.findIndex(s => s.id === step.next_step_on_failure_id)
                 if (nextStepIndex !== -1) {
@@ -310,6 +311,8 @@ serve(async (req: Request) => {
               } else {
                 console.log('Successfully updated extraction log to failed status')
               }
+            }
+              )
             }
             break
           case 'data_transform':
