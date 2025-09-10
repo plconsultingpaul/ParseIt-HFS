@@ -730,7 +730,7 @@ async function executeDataTransform(step: WorkflowStep, data: any): Promise<any>
           if (formattedPhone !== null) {
             setValueByPath(data, transformation.jsonPath, formattedPhone)
           } else {
-            setValueByPath(data, transformation.jsonPath, null)
+            setValueByPath(data, transformation.jsonPath, "")
             console.error('Failure update error details:', updateError instanceof Error ? updateError.message : updateError)
           }
         }
@@ -756,8 +756,8 @@ function formatPhoneNumber(phone: string): string | null {
     return `${tenDigits.slice(0, 3)}-${tenDigits.slice(3, 6)}-${tenDigits.slice(6)}`
   }
   
-  // Return null for invalid phone numbers to prevent API validation errors
-  return null
+  // Return empty string for invalid phone numbers to prevent API validation errors
+  return ""
 }
 
 async function executeSftpUpload(step: WorkflowStep, extractedData: any, lastApiResponse: any, pdfBase64: string, originalPdfFilename: string, supabaseUrl: string, supabaseServiceKey: string): Promise<void> {
