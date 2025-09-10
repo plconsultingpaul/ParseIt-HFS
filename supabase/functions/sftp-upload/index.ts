@@ -28,6 +28,7 @@ interface UploadRequest {
   userId?: string
   extractionTypeId?: string
   formatType?: string
+  customFilenamePart?: string
 }
 
 serve(async (req: Request) => {
@@ -39,7 +40,7 @@ serve(async (req: Request) => {
   }
 
   try {
-    const { sftpConfig, xmlContent, pdfBase64, baseFilename, originalFilename, parseitIdMapping, useExistingParseitId, userId, extractionTypeId, formatType }: UploadRequest = await req.json()
+    const { sftpConfig, xmlContent, pdfBase64, baseFilename, originalFilename, parseitIdMapping, useExistingParseitId, userId, extractionTypeId, formatType, customFilenamePart }: UploadRequest = await req.json()
 
     console.log('SFTP Upload Request received:')
     console.log('- useExistingParseitId:', useExistingParseitId)
@@ -47,6 +48,7 @@ serve(async (req: Request) => {
     console.log('- userId:', userId)
     console.log('- extractionTypeId:', extractionTypeId)
     console.log('- originalFilename:', originalFilename)
+    console.log('- customFilenamePart:', customFilenamePart)
 
     // Validate required fields
     if (!sftpConfig.host || !sftpConfig.username || !xmlContent || !pdfBase64 || !baseFilename) {
@@ -173,18 +175,23 @@ serve(async (req: Request) => {
           }
         }
         
-        const finalFilename = `${baseFilename}_${parseitId}`
-
-        // Create a new PDF document with just this page
-        const singlePagePdf = await PDFDocument.create()
-        const [copiedPage] = await singlePagePdf.copyPages(pdfDoc, [pageIndex])
-        singlePagePdf.addPage(copiedPage)
+        // Use custom filename part if provided, otherwise fall back to baseFilename
+        // Create the filename prefix: baseFilename + customFilenamePart (if available)
+        let finalFilenamePrefix: string
+        if (customFilenamePart) {
+          // Combine base filename (e.g., "BL_") with custom part (e.g., "12345") = "BL_12345"
+          finalFilenamePrefix = `${baseFilename}${customFilenamePart}`
+        } else {
+          // If no custom filename part, use base filename and remove trailing underscore if present
+          finalFilenamePrefix = baseFilename.endsWith('_') ? baseFilename.slice(0, -1) : baseFilename
+        }
         
-        // Convert single page PDF to buffer
-        const singlePagePdfBytes = await singlePagePdf.save()
-        const singlePageBuffer = Buffer.from(singlePagePdfBytes)
-
-        // Upload data file (XML or JSON based on content)
+        console.log(`Page ${pageIndex + 1} filename construction:`)
+        console.log('- baseFilename:', baseFilename)
+        console.log('- customFilenamePart:', customFilenamePart)
+        console.log('- finalFilenamePrefix:', finalFilenamePrefix)
+        
+        // Create final filenames: finalFilenamePrefix_pageNumber.extension
         let dataFilename: string
         let dataContent: string
         let dataPath: string
@@ -201,7 +208,7 @@ serve(async (req: Request) => {
             }
             
             dataContent = JSON.stringify(jsonObject, null, 2)
-            dataFilename = `${finalFilename}.json`
+            dataFilename = `${finalFilenamePrefix}_${pageIndex + 1}.json`
             dataPath = `${sftpConfig.jsonPath}/${dataFilename}`
           } catch (error) {
             throw new Error(`Failed to process JSON content: ${error.message}`)
@@ -214,21 +221,31 @@ serve(async (req: Request) => {
           // Direct string replacement for ParseIt ID placeholder
           dataContent = dataContent.replace(/{{PARSEIT_ID_PLACEHOLDER}}/g, parseitId.toString())
           
-          dataFilename = `${finalFilename}.xml`
+          dataFilename = `${finalFilenamePrefix}_${pageIndex + 1}.xml`
           dataPath = `${sftpConfig.xmlPath}/${dataFilename}`
         }
         
         await sftp.put(Buffer.from(dataContent, 'utf8'), dataPath)
 
         // Upload single page PDF file
-        const pdfFilename = `${finalFilename}.pdf`
+        const pdfFilename = `${finalFilenamePrefix}_${pageIndex + 1}.pdf`
         const pdfPath = `${sftpConfig.pdfPath}/${pdfFilename}`
+
+        // Create a new PDF document with just this page
+        const singlePagePdf = await PDFDocument.create()
+        const [copiedPage] = await singlePagePdf.copyPages(pdfDoc, [pageIndex])
+        singlePagePdf.addPage(copiedPage)
+        
+        // Convert single page PDF to buffer
+        const singlePagePdfBytes = await singlePagePdf.save()
+        const singlePageBuffer = Buffer.from(singlePagePdfBytes)
+
         await sftp.put(singlePageBuffer, pdfPath)
 
         uploadResults.push({
           page: pageIndex + 1,
           parseitId: parseitId,
-          filename: finalFilename,
+          filename: finalFilenamePrefix,
           files: {
             data: dataPath,
             pdf: pdfPath
