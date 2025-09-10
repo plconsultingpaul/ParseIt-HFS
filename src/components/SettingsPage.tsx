@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { FileText, Server, Key, Mail, Filter, Database, Settings as SettingsIcon, Users } from 'lucide-react';
-import type { ExtractionType, SftpConfig, SettingsConfig, ApiConfig, EmailMonitoringConfig, EmailProcessingRule, ProcessedEmail, ExtractionLog, User } from '../types';
+import { FileText, Server, Key, Mail, Filter, Database, Settings as SettingsIcon, Users, GitBranch, Clock } from 'lucide-react';
+import type { ExtractionType, SftpConfig, SettingsConfig, ApiConfig, EmailMonitoringConfig, EmailProcessingRule, ProcessedEmail, ExtractionLog, User, SecuritySettings } from '../types';
 
 // Import the new settings components
 import ExtractionTypesSettings from './settings/ExtractionTypesSettings';
@@ -11,6 +11,10 @@ import EmailRulesSettings from './settings/EmailRulesSettings';
 import ProcessedEmailsSettings from './settings/ProcessedEmailsSettings';
 import UserManagementSettings from './settings/UserManagementSettings';
 import ExtractionLogsSettings from './settings/ExtractionLogsSettings';
+import WorkflowSettings from './settings/WorkflowSettings';
+import SecuritySettings from './settings/SecuritySettings';
+import EmailPollingLogsSettings from './settings/EmailPollingLogsSettings';
+import WorkflowExecutionLogsSettings from './settings/WorkflowExecutionLogsSettings';
 
 interface SettingsPageProps {
   extractionTypes: ExtractionType[];
@@ -23,6 +27,10 @@ interface SettingsPageProps {
   extractionLogs: ExtractionLog[];
   users: User[];
   currentUser: User;
+  emailPollingLogs: any[];
+  workflowExecutionLogs: any[];
+  workflows: any[];
+  workflowSteps: any[];
   getAllUsers: () => Promise<User[]>;
   createUser: (username: string, password: string, isAdmin: boolean) => Promise<{ success: boolean; message: string }>;
   updateUser: (userId: string, updates: { isAdmin?: boolean; isActive?: boolean }) => Promise<{ success: boolean; message: string }>;
@@ -35,9 +43,14 @@ interface SettingsPageProps {
   onUpdateEmailRules: (rules: EmailProcessingRule[]) => Promise<void>;
   onRefreshLogs: () => Promise<void>;
   onRefreshLogsWithFilters: (filters: any) => Promise<any>;
+  onRefreshPollingLogs: () => Promise<any>;
+  onRefreshWorkflowLogs: () => Promise<any>;
+  onRefreshProcessedEmails: () => Promise<any>;
+  workflows: any[];
+  workflowSteps: any[];
 }
 
-type SettingsTab = 'extraction' | 'sftp' | 'api' | 'email' | 'rules' | 'processed' | 'logs' | 'users';
+type SettingsTab = 'extraction' | 'sftp' | 'api' | 'email' | 'rules' | 'processed' | 'logs' | 'polling' | 'users' | 'workflows' | 'workflow-logs';
 
 export default function SettingsPage({
   extractionTypes,
@@ -50,6 +63,10 @@ export default function SettingsPage({
   extractionLogs,
   users,
   currentUser,
+  emailPollingLogs,
+  workflowExecutionLogs,
+  workflows,
+  workflowSteps,
   getAllUsers,
   createUser,
   updateUser,
@@ -61,7 +78,10 @@ export default function SettingsPage({
   onUpdateEmailConfig,
   onUpdateEmailRules,
   onRefreshLogs,
-  onRefreshLogsWithFilters
+  onRefreshLogsWithFilters,
+  onRefreshPollingLogs,
+  onRefreshWorkflowLogs,
+  onRefreshProcessedEmails,
 }: SettingsPageProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>('extraction');
 
@@ -74,17 +94,20 @@ export default function SettingsPage({
   };
 
   const tabs = [
-    ...(currentUser.permissions.extractionTypes ? [{ id: 'extraction' as SettingsTab, label: 'Extraction Types', icon: FileText }] : []),
-    ...(currentUser.permissions.sftp ? [{ id: 'sftp' as SettingsTab, label: 'SFTP', icon: Server }] : []),
-    ...(currentUser.permissions.api ? [{ id: 'api' as SettingsTab, label: 'API', icon: Key }] : []),
-    ...(currentUser.permissions.emailMonitoring ? [{ id: 'email' as SettingsTab, label: 'Email Monitoring', icon: Mail }] : []),
-    ...(currentUser.permissions.emailRules ? [{ id: 'rules' as SettingsTab, label: 'Email Rules', icon: Filter }] : []),
-    ...(currentUser.permissions.processedEmails ? [{ id: 'processed' as SettingsTab, label: 'Processed Emails', icon: Database }] : []),
-    ...(currentUser.permissions.extractionLogs ? [{ id: 'logs' as SettingsTab, label: 'Extraction Logs', icon: FileText }] : []),
-    ...(currentUser.permissions.userManagement ? [{ id: 'users' as SettingsTab, label: 'Users', icon: Users }] : [])
+    ...(currentUser.permissions.extractionTypes ? [{ id: 'extraction' as SettingsTab, label: 'Extraction Types', icon: FileText, description: 'Manage PDF extraction templates' }] : []),
+    ...(currentUser.permissions.sftp ? [{ id: 'sftp' as SettingsTab, label: 'SFTP Settings', icon: Server, description: 'Configure file upload server' }] : []),
+    ...(currentUser.permissions.api ? [{ id: 'api' as SettingsTab, label: 'API Settings', icon: Key, description: 'Configure API endpoints and keys' }] : []),
+    ...(currentUser.permissions.emailMonitoring ? [{ id: 'email' as SettingsTab, label: 'Email Monitoring', icon: Mail, description: 'Configure email automation' }] : []),
+    ...(currentUser.permissions.emailRules ? [{ id: 'rules' as SettingsTab, label: 'Email Rules', icon: Filter, description: 'Manage email processing rules' }] : []),
+    ...(currentUser.permissions.processedEmails ? [{ id: 'processed' as SettingsTab, label: 'Processed Emails', icon: Database, description: 'View processed email history' }] : []),
+    ...(currentUser.permissions.extractionLogs ? [{ id: 'logs' as SettingsTab, label: 'Extraction Logs', icon: FileText, description: 'View extraction activity logs' }] : []),
+    ...(currentUser.permissions.emailMonitoring ? [{ id: 'polling' as SettingsTab, label: 'Polling Logs', icon: Clock, description: 'View email polling activity' }] : []),
+    ...(currentUser.permissions.userManagement ? [{ id: 'users' as SettingsTab, label: 'User Management', icon: Users, description: 'Manage users and permissions' }] : []),
+    ...(currentUser.permissions.workflowManagement ? [{ id: 'workflows' as SettingsTab, label: 'Workflows', icon: GitBranch, description: 'Create multi-step processes' }] : []),
+    ...(currentUser.permissions.workflowManagement ? [{ id: 'workflow-logs' as SettingsTab, label: 'Workflow Logs', icon: GitBranch, description: 'View workflow execution logs' }] : [])
   ];
 
-  const renderTabContent = () => {
+  const renderTabContent = (workflows: any[], workflowSteps: any[]) => {
     switch (activeTab) {
       case 'extraction':
         return currentUser.permissions.extractionTypes ? (
@@ -126,6 +149,7 @@ export default function SettingsPage({
         return currentUser.permissions.processedEmails ? (
           <ProcessedEmailsSettings
             processedEmails={processedEmails}
+            onRefresh={onRefreshProcessedEmails}
           />
         ) : <PermissionDenied />;
       case 'logs':
@@ -138,6 +162,13 @@ export default function SettingsPage({
             onRefreshWithFilters={onRefreshLogsWithFilters}
           />
         ) : <PermissionDenied />;
+      case 'polling':
+        return currentUser.permissions.emailMonitoring ? (
+          <EmailPollingLogsSettings
+            emailPollingLogs={emailPollingLogs}
+            onRefreshPollingLogs={onRefreshPollingLogs}
+          />
+        ) : <PermissionDenied />;
       case 'users':
         return currentUser.permissions.userManagement ? (
           <UserManagementSettings
@@ -147,47 +178,118 @@ export default function SettingsPage({
             updateUser={updateUser}
             deleteUser={deleteUser}
           />
-        ) : null;
+        ) : <PermissionDenied />;
+      case 'workflows':
+        return currentUser.permissions.workflowManagement ? (
+          <WorkflowSettings 
+            apiConfig={apiConfig} 
+            workflows={workflows}
+            workflowSteps={workflowSteps}
+          />
+        ) : <PermissionDenied />;
+      case 'workflow-logs':
+        return currentUser.permissions.workflowManagement ? (
+          <WorkflowExecutionLogsSettings
+            workflowExecutionLogs={workflowExecutionLogs}
+            workflows={workflows}
+            workflowSteps={workflowSteps}
+            onRefreshWorkflowLogs={onRefreshWorkflowLogs}
+          />
+        ) : <PermissionDenied />;
       default:
         return null;
     }
   };
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div>
-        <h2 className="text-3xl font-bold text-gray-900 mb-2">Settings</h2>
-        <p className="text-gray-600">Configure your ParseIt application settings</p>
-      </div>
+    <div className="flex h-[calc(100vh-80px)] bg-white/90 backdrop-blur-sm rounded-xl shadow-xl border border-purple-100 overflow-hidden max-w-none">
+      {/* Sidebar Navigation */}
+      <div className="w-72 bg-gray-50 border-r border-gray-200 flex flex-col flex-shrink-0">
+        {/* Sidebar Header */}
+        <div className="p-4 border-b border-gray-200 bg-gradient-to-r from-purple-600 to-indigo-600">
+          <h2 className="text-lg font-bold text-white mb-1">Settings</h2>
+          <p className="text-purple-100 text-xs">Configure ParseIt</p>
+        </div>
 
-      {/* Tabs */}
-      <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl border border-purple-100 overflow-hidden">
-        <div className="border-b border-gray-200">
-          <nav className="flex space-x-8 px-6" aria-label="Tabs">
+        {/* Navigation Menu */}
+        <nav className="flex-1 overflow-y-auto p-2">
+          <div className="space-y-1">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               return (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors duration-200 flex items-center space-x-2 ${
+                  className={`w-full text-left p-3 rounded-lg transition-all duration-200 group ${
                     activeTab === tab.id
-                      ? 'border-purple-500 text-purple-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      ? 'bg-purple-100 text-purple-700 shadow-sm border-l-3 border-purple-500'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
                   }`}
                 >
-                  <Icon className="h-4 w-4" />
-                  <span>{tab.label}</span>
+                  <div className="flex items-center space-x-2">
+                    <div className={`p-1.5 rounded-md transition-colors duration-200 ${
+                      activeTab === tab.id
+                        ? 'bg-purple-200'
+                        : 'bg-gray-200 group-hover:bg-gray-300'
+                    }`}>
+                      <Icon className={`h-4 w-4 ${
+                        activeTab === tab.id ? 'text-purple-600' : 'text-gray-500'
+                      }`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className={`font-medium text-sm ${
+                        activeTab === tab.id ? 'text-purple-900' : 'text-gray-900'
+                      }`}>
+                        {tab.label}
+                      </div>
+                      <div className={`text-xs ${
+                        activeTab === tab.id ? 'text-purple-600' : 'text-gray-500'
+                      }`}>
+                        {tab.description}
+                      </div>
+                    </div>
+                  </div>
                 </button>
               );
             })}
-          </nav>
+          </div>
+        </nav>
+
+        {/* Sidebar Footer */}
+        <div className="p-3 border-t border-gray-200 bg-gray-100">
+          <div className="text-xs text-gray-500 text-center">
+            {tabs.length} setting{tabs.length !== 1 ? 's' : ''} available
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Content Header */}
+        <div className="p-4 border-b border-gray-200 bg-white">
+          <div className="flex items-center space-x-3">
+            {(() => {
+              const currentTab = tabs.find(tab => tab.id === activeTab);
+              if (!currentTab) return null;
+              const Icon = currentTab.icon;
+              return (
+                <>
+                  <div className="bg-purple-100 p-2 rounded-md">
+                    <Icon className="h-5 w-5 text-purple-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900">{currentTab.label}</h3>
+                    <p className="text-gray-600 mt-1">{currentTab.description}</p>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
         </div>
 
-        {/* Tab Content */}
-        <div className="p-8">
-          {renderTabContent()}
+        {/* Content Body */}
+        <div className="flex-1 overflow-y-auto p-4">
+          {renderTabContent(workflows, workflowSteps)}
         </div>
       </div>
     </div>

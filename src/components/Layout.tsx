@@ -1,6 +1,7 @@
 import React from 'react';
-import { Settings, FileText, Lock, Mail, LogOut, User } from 'lucide-react';
+import { Settings, FileText, Lock, Mail, LogOut, User, HelpCircle } from 'lucide-react';
 import type { User as UserType } from '../types';
+import HelpModal from './HelpModal';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -11,6 +12,8 @@ interface LayoutProps {
 }
 
 export default function Layout({ children, currentPage, onNavigate, user, onLogout }: LayoutProps) {
+  const [showHelpModal, setShowHelpModal] = React.useState(false);
+
   const handleSettingsClick = () => {
     const hasAnyPermission = Object.values(user.permissions).some(permission => permission === true);
     
@@ -23,6 +26,9 @@ export default function Layout({ children, currentPage, onNavigate, user, onLogo
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-indigo-50">
+      {/* Help Modal */}
+      <HelpModal isOpen={showHelpModal} onClose={() => setShowHelpModal(false)} />
+
       {/* Header */}
       <header className="bg-white/80 backdrop-blur-sm border-b border-purple-100 sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-6 py-4">
@@ -80,6 +86,14 @@ export default function Layout({ children, currentPage, onNavigate, user, onLogo
               )}
               
               <button
+                onClick={() => setShowHelpModal(true)}
+                className="p-2 rounded-lg text-gray-600 hover:text-purple-600 hover:bg-purple-50 transition-all duration-200"
+                title="Help"
+              >
+                <HelpCircle className="h-5 w-5" />
+              </button>
+              
+              <button
                 onClick={onLogout}
                 className="p-2 rounded-lg text-gray-600 hover:text-red-600 hover:bg-red-50 transition-all duration-200"
                 title="Logout"
@@ -92,7 +106,7 @@ export default function Layout({ children, currentPage, onNavigate, user, onLogo
       </header>
 
       {/* Main Content */}
-      <main className="max-w-6xl mx-auto px-6 py-8">
+      <main className="max-w-[95vw] mx-auto px-6 py-6">
         {children}
       </main>
     </div>
