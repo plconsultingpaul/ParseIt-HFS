@@ -1323,7 +1323,7 @@ export function useSupabaseData() {
     updateEmailRules,
     updateWorkflows,
     logExtraction,
-    deleteExtractionType
+    deleteExtractionType,
     getWorkflowExecutionLog,
     logExtraction,
     updateSecuritySettings,

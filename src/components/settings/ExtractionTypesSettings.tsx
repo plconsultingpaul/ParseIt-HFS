@@ -26,10 +26,6 @@ export default function ExtractionTypesSettings({
   const [typeToDelete, setTypeToDelete] = useState<{ index: number; name: string } | null>(null);
   const [newTypeName, setNewTypeName] = useState('');
   const [nameError, setNameError] = useState('');
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [typeToDelete, setTypeToDelete] = useState<{ index: number; name: string; id: string } | null>(null);
-
-  const handleAddTypeClick = () => {
     setShowAddModal(true);
     setNewTypeName('');
     setNameError('');
