@@ -1279,6 +1279,7 @@ export function useSupabaseData() {
     workflowExecutionLogs,
     loading,
     updateExtractionTypes,
+    deleteExtractionType,
     updateSftpConfig,
     updateSettingsConfig,
     updateApiConfig,

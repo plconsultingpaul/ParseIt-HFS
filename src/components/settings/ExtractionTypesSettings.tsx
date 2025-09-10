@@ -103,6 +103,17 @@ export default function ExtractionTypesSettings({
     }
   };
 
+  const handleDeleteFromDatabase = async (extractionTypeId: string, index: number) => {
+    try {
+      await onDeleteExtractionType(extractionTypeId);
+      // Remove from local state after successful database deletion
+      removeExtractionType(index);
+    } catch (error) {
+      console.error('Failed to delete extraction type from database:', error);
+      alert('Failed to delete extraction type from database. Please try again.');
+    }
+  };
+
   const cancelDelete = () => {
     setShowDeleteModal(false);
     setTypeToDelete(null);

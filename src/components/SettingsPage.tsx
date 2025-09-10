@@ -114,6 +114,7 @@ export default function SettingsPage({
           <ExtractionTypesSettings
             extractionTypes={extractionTypes}
             onUpdateExtractionTypes={onUpdateExtractionTypes}
+            onDeleteExtractionType={onDeleteExtractionType}
           />
         ) : <PermissionDenied />;
       case 'sftp':

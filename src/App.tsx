@@ -179,6 +179,7 @@ export default function App() {
           updateUser={updateUser}
           deleteUser={deleteUser}
           onUpdateExtractionTypes={handleUpdateExtractionTypes}
+          onDeleteExtractionType={handleDeleteExtractionType}
           onUpdateSftpConfig={handleUpdateSftpConfig}
           onUpdateSettingsConfig={handleUpdateSettingsConfig}
           onUpdateApiConfig={handleUpdateApiConfig}
