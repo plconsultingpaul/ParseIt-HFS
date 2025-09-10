@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Save, FileText, Code, Database, Map } from 'lucide-react';
+import { Plus, Trash2, Save, FileText, Code, Database, Map, Brain } from 'lucide-react';
 import type { ExtractionType, FieldMapping } from '../../types';
+import { useSupabaseData } from '../../hooks/useSupabaseData';
 import MappingPage from '../MappingPage';
 
 interface ExtractionTypesSettingsProps {
@@ -12,6 +13,7 @@ export default function ExtractionTypesSettings({
   extractionTypes, 
   onUpdateExtractionTypes 
 }: ExtractionTypesSettingsProps) {
+  const { workflows } = useSupabaseData();
   const [localExtractionTypes, setLocalExtractionTypes] = useState<ExtractionType[]>(extractionTypes);
   const [selectedTypeIndex, setSelectedTypeIndex] = useState<number>(0);
   const [isSaving, setIsSaving] = useState(false);
@@ -156,7 +158,7 @@ export default function ExtractionTypesSettings({
             // Add all fields (both nested and root-level)
             fieldMappings.push({
               fieldName: fieldName,
-              type: 'mapped',
+              type: 'ai',
               value: '',
               dataType
             });
@@ -413,6 +415,30 @@ export default function ExtractionTypesSettings({
               )}
             </div>
 
+            {/* Workflow Assignment */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Assigned Workflow (Optional)
+              </label>
+              <select
+                value={selectedType.workflowId || ''}
+                onChange={(e) => updateExtractionType(selectedTypeIndex, 'workflowId', e.target.value || undefined)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              >
+                <option value="">No workflow assigned</option>
+                {workflows
+                  .filter(w => w.isActive)
+                  .map((workflow) => (
+                    <option key={workflow.id} value={workflow.id}>
+                      {workflow.name}
+                    </option>
+                  ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                When a workflow is assigned, it will be executed after data extraction for additional processing steps.
+              </p>
+            </div>
+
             {(selectedType.formatType === 'JSON' || selectedType.formatType === 'XML') && (
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -501,6 +527,25 @@ export default function ExtractionTypesSettings({
               />
             </div>
 
+            {/* Auto-Detection Instructions */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                <div className="flex items-center space-x-2">
+                  <Brain className="h-4 w-4 text-purple-600" />
+                  <span>Auto-Detection Instructions</span>
+                </div>
+              </label>
+              <textarea
+                value={selectedType.autoDetectInstructions || ''}
+                onChange={(e) => updateExtractionType(selectedTypeIndex, 'autoDetectInstructions', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-vertical"
+                rows={3}
+                placeholder="Describe the characteristics that identify this document type (e.g., 'Invoice documents with company letterhead, contains invoice number, billing address, line items with quantities and prices')"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                These instructions help the AI identify when to use this extraction type. Be specific about document layout, key fields, headers, or unique characteristics.
+              </p>
+            </div>
             {selectedType.formatType === 'JSON' && (
               <div>
                 <div className="flex items-center justify-between mb-3">

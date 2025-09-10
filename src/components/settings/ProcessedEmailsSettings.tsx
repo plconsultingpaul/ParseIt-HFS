@@ -1,12 +1,28 @@
 import React from 'react';
-import { Mail, CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-react';
+import { Mail, CheckCircle, XCircle, Clock, AlertCircle, RefreshCw } from 'lucide-react';
 import type { ProcessedEmail } from '../../types';
 
 interface ProcessedEmailsSettingsProps {
   processedEmails: ProcessedEmail[];
+  onRefresh?: () => Promise<void>;
 }
 
-export default function ProcessedEmailsSettings({ processedEmails }: ProcessedEmailsSettingsProps) {
+export default function ProcessedEmailsSettings({ processedEmails, onRefresh }: ProcessedEmailsSettingsProps) {
+  const [isRefreshing, setIsRefreshing] = React.useState(false);
+
+  const handleRefresh = async () => {
+    if (!onRefresh) return;
+    
+    setIsRefreshing(true);
+    try {
+      await onRefresh();
+    } catch (error) {
+      console.error('Failed to refresh processed emails:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'completed':
@@ -35,9 +51,19 @@ export default function ProcessedEmailsSettings({ processedEmails }: ProcessedEm
 
   return (
     <div className="space-y-6">
-      <div>
-        <h3 className="text-xl font-bold text-gray-900">Processed Emails</h3>
-        <p className="text-gray-600 mt-1">View recently processed emails and their status</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-xl font-bold text-gray-900">Processed Emails</h3>
+          <p className="text-gray-600 mt-1">View recently processed emails and their status</p>
+        </div>
+        <button
+          onClick={handleRefresh}
+          disabled={isRefreshing}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
+        >
+          <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+          <span>{isRefreshing ? 'Refreshing...' : 'Refresh Emails'}</span>
+        </button>
       </div>
 
       {processedEmails.length === 0 ? (

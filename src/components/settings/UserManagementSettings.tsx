@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Save, Users, Shield, User as UserIcon, Eye, EyeOff, Settings, FileText, Server, Key, Mail, Filter, Database } from 'lucide-react';
+import { Plus, Trash2, Save, Users, Shield, User as UserIcon, Eye, EyeOff, Settings, FileText, Server, Key, Mail, Filter, Database, GitBranch, Brain } from 'lucide-react';
 import type { User } from '../../types';
 
 interface UserManagementSettingsProps {
@@ -35,6 +35,9 @@ export default function UserManagementSettings({
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showUploadModeModal, setShowUploadModeModal] = useState(false);
+  const [userForUploadMode, setUserForUploadMode] = useState<User | null>(null);
+  const [isUpdatingUploadMode, setIsUpdatingUploadMode] = useState(false);
 
   const permissionOptions = [
     { key: 'extractionTypes', label: 'Extraction Types', icon: FileText, description: 'Manage PDF extraction templates and configurations' },
@@ -44,7 +47,8 @@ export default function UserManagementSettings({
     { key: 'emailRules', label: 'Email Rules', icon: Filter, description: 'Manage email processing rules' },
     { key: 'processedEmails', label: 'Processed Emails', icon: Database, description: 'View processed email history' },
     { key: 'extractionLogs', label: 'Extraction Logs', icon: FileText, description: 'View PDF extraction activity logs' },
-    { key: 'userManagement', label: 'User Management', icon: Users, description: 'Manage users and permissions' }
+    { key: 'userManagement', label: 'User Management', icon: Users, description: 'Manage users and permissions' },
+    { key: 'workflowManagement', label: 'Workflow Management', icon: GitBranch, description: 'Create and manage multi-step extraction workflows' }
   ];
 
   useEffect(() => {
@@ -232,6 +236,40 @@ export default function UserManagementSettings({
     }
   };
 
+  const handleManageUploadMode = (user: User) => {
+    setUserForUploadMode(user);
+    setShowUploadModeModal(true);
+  };
+
+  const handleUpdateUploadMode = async (uploadMode: 'manual' | 'auto') => {
+    if (!userForUploadMode) return;
+
+    setIsUpdatingUploadMode(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const result = await updateUser(userForUploadMode.id, { 
+        preferredUploadMode: uploadMode 
+      });
+      
+      if (result.success) {
+        setSuccess(`Upload mode updated to ${uploadMode === 'manual' ? 'Manual Selection' : 'AI Auto-Detect'}`);
+        setShowUploadModeModal(false);
+        setUserForUploadMode(null);
+        await loadUsers(); // Refresh the user list
+        setTimeout(() => setSuccess(''), 3000);
+      } else {
+        setError(result.message);
+        setTimeout(() => setError(''), 3000);
+      }
+    } catch (error) {
+      setError('Failed to update upload mode. Please try again.');
+      setTimeout(() => setError(''), 3000);
+    } finally {
+      setIsUpdatingUploadMode(false);
+    }
+  };
   const togglePermission = (permissionKey: string) => {
     if (!selectedUser) return;
     
@@ -258,6 +296,94 @@ export default function UserManagementSettings({
 
   return (
     <div className="space-y-6">
+      {/* Upload Mode Modal */}
+      {showUploadModeModal && userForUploadMode && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+            <div className="text-center mb-6">
+              <div className="bg-indigo-100 p-3 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                <Brain className="h-8 w-8 text-indigo-600" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">Upload Mode Settings</h3>
+              <p className="text-gray-600">Configure upload mode for <strong>{userForUploadMode.username}</strong></p>
+            </div>
+            
+            <div className="space-y-4 mb-6">
+              <div
+                onClick={() => handleUpdateUploadMode('manual')}
+                className="p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 border-gray-200 bg-gray-50 hover:border-gray-300"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="bg-gray-100 p-2 rounded-lg">
+                      <Settings className="h-5 w-5 text-gray-500" />
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-700">Manual Selection</h4>
+                      <p className="text-sm text-gray-500">User manually selects extraction type for each PDF</p>
+                    </div>
+                  </div>
+                  <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
+                    userForUploadMode?.preferredUploadMode === 'manual'
+                      ? 'border-purple-500 bg-purple-500'
+                      : 'border-gray-300 bg-white'
+                  }`}>
+                    {userForUploadMode?.preferredUploadMode === 'manual' && (
+                      <div className="w-2 h-2 bg-white rounded-full"></div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              
+              <div
+                onClick={() => handleUpdateUploadMode('auto')}
+                className="p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 border-gray-200 bg-gray-50 hover:border-gray-300"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="bg-gray-100 p-2 rounded-lg">
+                      <Brain className="h-5 w-5 text-gray-500" />
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-700">AI Auto-Detect</h4>
+                      <p className="text-sm text-gray-500">AI automatically detects and selects the best extraction type</p>
+                    </div>
+                  </div>
+                  <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
+                    userForUploadMode?.preferredUploadMode === 'auto'
+                      ? 'border-purple-500 bg-purple-500'
+                      : 'border-gray-300 bg-white'
+                  }`}>
+                    {userForUploadMode?.preferredUploadMode === 'auto' && (
+                      <div className="w-2 h-2 bg-white rounded-full"></div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+                <p className="text-red-700 text-sm">{error}</p>
+              </div>
+            )}
+            
+            <div className="flex space-x-3">
+              <button
+                onClick={() => {
+                  setShowUploadModeModal(false);
+                  setUserForUploadMode(null);
+                  setError('');
+                }}
+                className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-lg transition-colors duration-200"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Delete User Modal */}
       {showDeleteModal && userToDelete && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -576,11 +702,23 @@ export default function UserManagementSettings({
                     <span className="text-sm text-blue-600">
                       {getPermissionCount(user)} permissions
                     </span>
+                    <span className={`text-sm font-medium ${
+                      user.preferredUploadMode === 'auto' ? 'text-orange-600' : 'text-gray-600'
+                    }`}>
+                      {user.preferredUploadMode === 'auto' ? 'AI Auto-Detect' : 'Manual Selection'}
+                    </span>
                   </div>
                 </div>
               </div>
 
               <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => handleManageUploadMode(user)}
+                  className="px-3 py-1 text-xs font-medium rounded-full bg-indigo-100 text-indigo-800 hover:bg-indigo-200 transition-colors duration-200 flex items-center space-x-1"
+                >
+                  <Settings className="h-3 w-3" />
+                  <span>Upload Mode</span>
+                </button>
                 <button
                   onClick={() => handleManagePermissions(user)}
                   className="px-3 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800 hover:bg-blue-200 transition-colors duration-200 flex items-center space-x-1"
