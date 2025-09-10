@@ -281,6 +281,20 @@ export default function ExtractionTypesSettings({
             <Plus className="h-4 w-4" />
             <span>Add Type</span>
           </button>
+          {localExtractionTypes.length > 0 && (
+            <button
+              onClick={() => {
+                const typeToDelete = localExtractionTypes[selectedTypeIndex];
+                if (confirm(`Are you sure you want to delete the extraction type "${typeToDelete.name}"? This action cannot be undone.`)) {
+                  removeExtractionType(selectedTypeIndex);
+                }
+              }}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
+            >
+              <Trash2 className="h-4 w-4" />
+              <span>Delete Selected</span>
+            </button>
+          )}
           <button
             onClick={handleSave}
             disabled={isSaving}
