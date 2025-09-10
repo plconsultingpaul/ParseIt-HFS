@@ -16,6 +16,9 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
   const [editingStep, setEditingStep] = useState<WorkflowStep | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Check if workflow has a temporary ID (not yet saved)
+  const isTemporaryWorkflow = workflow.id.startsWith('temp-');
+
   // Update local steps when props change
   React.useEffect(() => {
     setLocalSteps(steps);
@@ -175,6 +178,7 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
           <div className="flex items-center space-x-2">
             <button
               onClick={handleAddStep}
+              disabled={isTemporaryWorkflow}
               className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2"
             >
               <Plus className="h-4 w-4" />
@@ -183,6 +187,7 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
             <button
               onClick={handleSaveSteps}
               disabled={isSaving}
+              disabled={isSaving || isTemporaryWorkflow}
               className="px-3 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2"
             >
               <Save className="h-4 w-4" />
@@ -194,6 +199,29 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
 
       {/* Steps List */}
       <div className="p-6">
+        {isTemporaryWorkflow && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-yellow-800">
+                  Workflow Must Be Saved First
+                </h3>
+                <div className="mt-2 text-sm text-yellow-700">
+                  <p>
+                    Please save this workflow first using the "Save All" button above before adding or managing workflow steps. 
+                    Steps can only be added to workflows that have been permanently saved to the database.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        
         {localSteps.length === 0 ? (
           <div className="text-center py-8">
             <Settings className="h-12 w-12 text-gray-400 mx-auto mb-4" />
@@ -201,6 +229,7 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
             <p className="text-gray-600 mb-4">Add your first step to get started with this workflow.</p>
             <button
               onClick={handleAddStep}
+              disabled={isTemporaryWorkflow}
               className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2 mx-auto"
             >
               <Plus className="h-4 w-4" />
