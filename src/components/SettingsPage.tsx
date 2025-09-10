@@ -36,6 +36,7 @@ interface SettingsPageProps {
   updateUser: (userId: string, updates: { isAdmin?: boolean; isActive?: boolean }) => Promise<{ success: boolean; message: string }>;
   deleteUser: (userId: string) => Promise<{ success: boolean; message: string }>;
   onUpdateExtractionTypes: (types: ExtractionType[]) => Promise<void>;
+  onDeleteExtractionType: (id: string) => Promise<void>;
   onUpdateSftpConfig: (config: SftpConfig) => Promise<void>;
   onUpdateSettingsConfig: (config: SettingsConfig) => Promise<void>;
   onUpdateApiConfig: (config: ApiConfig) => Promise<void>;
@@ -72,6 +73,7 @@ export default function SettingsPage({
   updateUser,
   deleteUser,
   onUpdateExtractionTypes,
+  onDeleteExtractionType,
   onUpdateSftpConfig,
   onUpdateSettingsConfig,
   onUpdateApiConfig,
@@ -114,6 +116,7 @@ export default function SettingsPage({
           <ExtractionTypesSettings
             extractionTypes={extractionTypes}
             onUpdateExtractionTypes={onUpdateExtractionTypes}
+            onDeleteExtractionType={onDeleteExtractionType}
           />
         ) : <PermissionDenied />;
       case 'sftp':
