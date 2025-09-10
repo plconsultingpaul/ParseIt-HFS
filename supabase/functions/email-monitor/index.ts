@@ -1,696 +1,1330 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { GoogleGenerativeAI } from 'npm:@google/generative-ai@0.24.1';
+import { PDFDocument } from 'npm:pdf-lib@1.17.1';
+import { Buffer } from 'node:buffer';
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-}
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
+};
 
-interface EmailMonitoringConfig {
-  tenantId: string
-  clientId: string
-  clientSecret: string
-  monitoredEmail: string
-  pollingInterval: number
-  isEnabled: boolean
-  lastCheck?: string
-}
-
-interface EmailProcessingRule {
-  id: string
-  ruleName: string
-  senderPattern: string
-  subjectPattern: string
-  extractionTypeId: string
-  isEnabled: boolean
-  priority: number
-}
-
-interface ExtractionType {
-  id: string
-  name: string
-  defaultInstructions: string
-  xmlFormat: string
-  filename: string
-  formatType: string
-  jsonPath?: string
-  fieldMappings?: any[]
-}
-
-interface EmailAttachment {
-  id: string
-  name: string
-  contentType: string
-  size: number
-  contentBytes?: string
-}
-
-interface EmailMessage {
-  id: string
-  subject: string
-  from: { emailAddress: { address: string, name: string } }
-  receivedDateTime: string
-  hasAttachments: boolean
-  attachments?: EmailAttachment[]
-}
-
-serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, {
-      status: 200,
-      headers: corsHeaders,
-    })
+serve(async (req) => {
+  console.log('🚀 Email monitor function started');
+  
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
   }
 
+  const startTime = Date.now();
+  let pollingLogId = null;
+  let emailsCheckedCount = 0;
+  let emailsProcessedCount = 0;
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  const supabase = createClient(supabaseUrl, supabaseKey);
+
+  // Helper function to update polling log
+  const updatePollingLog = async (updates) => {
+    console.log('📝 Updating polling log with:', updates);
+    if (!pollingLogId) {
+      console.error('❌ No polling log ID available for update');
+      return;
+    }
+
+    const { error: updateError } = await supabase
+      .from('email_polling_logs')
+      .update(updates)
+      .eq('id', pollingLogId);
+
+    if (updateError) {
+      console.error('❌ Failed to update polling log:', updateError);
+    } else {
+      console.log('✅ Successfully updated polling log');
+    }
+  };
+
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    console.log('📊 Creating initial polling log entry');
     
-    if (!supabaseUrl || !supabaseServiceKey) {
-      throw new Error('Supabase configuration missing')
+    // Create initial polling log entry
+    const { data: logData, error: logError } = await supabase
+      .from('email_polling_logs')
+      .insert({
+        provider: 'office365', // Will be updated with correct provider
+        status: 'running',
+        emails_found: 0,
+        emails_processed: 0
+      })
+      .select()
+      .single();
+
+    if (logError) {
+      console.error('❌ Failed to create polling log:', logError);
+      throw logError;
     }
 
+    pollingLogId = logData.id;
+    console.log('✅ Created polling log with ID:', pollingLogId);
+
+    console.log('🔍 Fetching email monitoring configuration');
+    
     // Get email monitoring configuration
-    const configResponse = await fetch(`${supabaseUrl}/rest/v1/email_monitoring_config?select=*&order=updated_at.desc&limit=1`, {
-      headers: {
-        'Authorization': `Bearer ${supabaseServiceKey}`,
-        'Content-Type': 'application/json',
-        'apikey': supabaseServiceKey
-      }
-    })
+    const { data: config, error: configError } = await supabase
+      .from('email_monitoring_config')
+      .select('*')
+      .single();
 
-    if (!configResponse.ok) {
-      throw new Error('Failed to get email monitoring config')
+    if (configError) {
+      console.error('❌ Failed to fetch email monitoring config:', configError);
+      await updatePollingLog({
+        status: 'failed',
+        error_message: `Failed to fetch config: ${configError.message}`,
+        execution_time_ms: Date.now() - startTime
+      });
+      throw configError;
     }
 
-    const configData = await configResponse.json()
-    if (!configData || configData.length === 0) {
-      return new Response(
-        JSON.stringify({ message: "No email monitoring configuration found" }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      )
+    console.log('📧 Email monitoring config loaded, provider:', config.provider);
+
+    // Update log with correct provider
+    await updatePollingLog({
+      provider: config.provider
+    });
+
+    if (!config.is_enabled) {
+      console.log('⏸️ Email monitoring is disabled');
+      await updatePollingLog({
+        status: 'success',
+        execution_time_ms: Date.now() - startTime
+      });
+
+      return new Response(JSON.stringify({
+        success: true,
+        message: 'Email monitoring is disabled',
+        emailsChecked: 0,
+        emailsProcessed: 0,
+        results: []
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
-    const config: EmailMonitoringConfig = {
-      tenantId: configData[0].tenant_id,
-      clientId: configData[0].client_id,
-      clientSecret: configData[0].client_secret,
-      monitoredEmail: configData[0].monitored_email,
-      pollingInterval: configData[0].polling_interval,
-      isEnabled: configData[0].is_enabled,
-      lastCheck: configData[0].last_check
-    }
-
-    if (!config.isEnabled) {
-      return new Response(
-        JSON.stringify({ message: "Email monitoring is disabled" }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      )
-    }
-
-    // Get processing rules
-    const rulesResponse = await fetch(`${supabaseUrl}/rest/v1/email_processing_rules?select=*&is_enabled=eq.true&order=priority.asc`, {
-      headers: {
-        'Authorization': `Bearer ${supabaseServiceKey}`,
-        'Content-Type': 'application/json',
-        'apikey': supabaseServiceKey
-      }
-    })
-
-    if (!rulesResponse.ok) {
-      throw new Error('Failed to get processing rules')
-    }
-
-    const rulesData = await rulesResponse.json()
-    const rules: EmailProcessingRule[] = rulesData.map((rule: any) => ({
-      id: rule.id,
-      ruleName: rule.rule_name,
-      senderPattern: rule.sender_pattern,
-      subjectPattern: rule.subject_pattern,
-      extractionTypeId: rule.extraction_type_id,
-      isEnabled: rule.is_enabled,
-      priority: rule.priority
-    }))
-
-    // Get extraction types
-    const extractionTypesResponse = await fetch(`${supabaseUrl}/rest/v1/extraction_types?select=*`, {
-      headers: {
-        'Authorization': `Bearer ${supabaseServiceKey}`,
-        'Content-Type': 'application/json',
-        'apikey': supabaseServiceKey
-      }
-    })
-
-    if (!extractionTypesResponse.ok) {
-      throw new Error('Failed to get extraction types')
-    }
-
-    const extractionTypesData = await extractionTypesResponse.json()
-    const extractionTypes: ExtractionType[] = extractionTypesData.map((type: any) => ({
-      id: type.id,
-      name: type.name,
-      defaultInstructions: type.default_instructions,
-      xmlFormat: type.xml_format,
-      filename: type.filename,
-      formatType: type.format_type || 'XML',
-      jsonPath: type.json_path,
-      fieldMappings: type.field_mappings ? JSON.parse(type.field_mappings) : []
-    }))
-
-    // Get access token from Microsoft Graph
-    const accessToken = await getAccessToken(config)
-
-    // Calculate the time to check from (last check or 1 hour ago)
-    const lastCheckTime = config.lastCheck ? new Date(config.lastCheck) : new Date(Date.now() - 60 * 60 * 1000)
-    const filterTime = lastCheckTime.toISOString()
-
-    // Get new emails since last check
-    const emails = await getNewEmails(accessToken, config.monitoredEmail, filterTime)
+    console.log('📋 Fetching email processing rules and extraction types');
     
-    let processedCount = 0
-    const results = []
+    // Get email processing rules with joined extraction types
+    const { data: rules, error: rulesError } = await supabase
+      .from('email_processing_rules')
+      .select(`
+        id,
+        rule_name,
+        sender_pattern,
+        subject_pattern,
+        extraction_type_id,
+        is_enabled,
+        priority,
+        extraction_types (
+          id,
+          name,
+          default_instructions,
+          xml_format,
+          filename,
+          format_type,
+          auto_detect_instructions,
+          json_path,
+          field_mappings,
+          parseit_id_mapping,
+          trace_type_mapping,
+          trace_type_value
+        )
+      `)
+      .eq('is_enabled', true)
+      .order('priority', { ascending: false });
 
-    for (const email of emails) {
+    if (rulesError) {
+      console.error('❌ Failed to fetch processing rules:', rulesError);
+      await updatePollingLog({
+        status: 'failed',
+        error_message: `Failed to fetch rules: ${rulesError.message}`,
+        execution_time_ms: Date.now() - startTime
+      });
+      throw rulesError;
+    }
+
+    console.log('📊 Found', rules?.length || 0, 'active processing rules');
+
+    console.log('⚙️ Fetching SFTP and API configurations');
+    
+    const { data: sftpConfigData, error: sftpConfigError } = await supabase
+      .from('sftp_config')
+      .select('*')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (sftpConfigError) {
+      console.warn('⚠️ Could not fetch SFTP config:', sftpConfigError.message);
+    }
+
+    const sftpConfig = sftpConfigData || null;
+
+    const { data: apiConfigData, error: apiConfigError } = await supabase
+      .from('api_settings')
+      .select('*')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (apiConfigError) {
+      console.warn('⚠️ Could not fetch API config:', apiConfigError.message);
+    }
+
+    const apiConfig = apiConfigData || null;
+
+    const { data: settingsConfigData, error: settingsConfigError } = await supabase
+      .from('settings_config')
+      .select('gemini_api_key')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (settingsConfigError) {
+      console.warn('⚠️ Could not fetch settings config:', settingsConfigError.message);
+    }
+
+    const geminiApiKey = settingsConfigData?.gemini_api_key || apiConfig?.google_api_key || '';
+
+    let emails = [];
+    if (config.provider === 'gmail') {
+      console.log('📬 Processing Gmail emails');
+      emails = await processGmailEmails(config, rules || [], sftpConfig, apiConfig, geminiApiKey, supabase);
+    } else if (config.provider === 'office365') {
+      console.log('📬 Processing Office365 emails');
+      emails = await processOffice365Emails(config, rules || [], sftpConfig, apiConfig, geminiApiKey, supabase);
+    } else {
+      console.error('❌ Unsupported email provider:', config.provider);
+      await updatePollingLog({
+        status: 'failed',
+        error_message: `Unsupported provider: ${config.provider}`,
+        execution_time_ms: Date.now() - startTime
+      });
+      throw new Error(`Unsupported email provider: ${config.provider}`);
+    }
+
+    emailsCheckedCount = emails.length;
+    emailsProcessedCount = emails.filter(e => e.processedSuccessfully).length;
+
+    console.log('📊 Email processing completed. Found:', emailsCheckedCount, 'emails. Processed:', emailsProcessedCount);
+
+    // Update last check time
+    await supabase
+      .from('email_monitoring_config')
+      .update({ last_check: new Date().toISOString() })
+      .eq('id', config.id);
+
+    // Final log update
+    await updatePollingLog({
+      status: 'success',
+      emails_found: emailsCheckedCount,
+      emails_processed: emailsProcessedCount,
+      execution_time_ms: Date.now() - startTime
+    });
+
+    console.log('✅ Email monitoring completed successfully');
+
+    return new Response(JSON.stringify({
+      success: true,
+      message: `Email monitoring completed. Processed ${emailsProcessedCount} emails.`,
+      emailsChecked: emailsCheckedCount,
+      emailsProcessed: emailsProcessedCount,
+      results: [] // Changed to empty array to avoid sending large email objects in response
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+
+  } catch (error) {
+    console.error('💥 Email monitor function error:', error);
+    
+    if (pollingLogId) {
+      await updatePollingLog({
+        status: 'failed',
+        error_message: error.message,
+        execution_time_ms: Date.now() - startTime
+      });
+    }
+
+    return new Response(JSON.stringify({
+      success: false,
+      error: error.message,
+      emailsChecked: emailsCheckedCount,
+      emailsProcessed: emailsProcessedCount,
+      results: []
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+});
+
+async function processGmailEmails(config, rules, sftpConfig, apiConfig, geminiApiKey, supabase) {
+  console.log('📧 Starting Gmail email processing');
+  
+  try {
+    // Get access token using refresh token
+    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: new URLSearchParams({
+        client_id: config.gmail_client_id,
+        client_secret: config.gmail_client_secret,
+        refresh_token: config.gmail_refresh_token,
+        grant_type: 'refresh_token'
+      })
+    });
+
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      console.error('❌ Failed to refresh Gmail token:', errorText);
+      throw new Error(`Failed to refresh Gmail access token: ${errorText}`);
+    }
+
+    const tokenData = await tokenResponse.json();
+    const accessToken = tokenData.access_token;
+    console.log('✅ Gmail access token refreshed successfully');
+
+    // Build search query
+    let query = `has:attachment`;
+    
+    // Add label filter
+    if (config.gmail_monitored_label && config.gmail_monitored_label !== 'INBOX') {
+      query += ` label:${config.gmail_monitored_label}`;
+    } else {
+      query += ` in:inbox`;
+    }
+
+    if (config.last_check) {
+      const lastCheckDate = new Date(config.last_check);
+      const timestamp = Math.floor(lastCheckDate.getTime() / 1000);
+      query += ` after:${timestamp}`;
+    }
+
+    console.log('🔍 Gmail search query:', query);
+
+    // Search for emails
+    const searchResponse = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}`, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+
+    if (!searchResponse.ok) {
+      const errorText = await searchResponse.text();
+      console.error('❌ Gmail search failed:', errorText);
+      throw new Error(`Failed to search Gmail messages: ${errorText}`);
+    }
+
+    const searchData = await searchResponse.json();
+    const messages = searchData.messages || [];
+    console.log('📊 Found', messages.length, 'Gmail messages');
+
+    const processedEmailsResults = [];
+
+    for (const message of messages) {
+      // Declare variables at the beginning of the loop scope
+      let subject = '';
+      let fromEmail = '';
+      let receivedDate = '';
+      let attachments = [];
+      let matchingRule = null;
+      let parseitId = null;
+      let processedSuccessfully = false;
+      let errorMessage = null;
+      let extractionLogId = null;
+
       try {
-        // Check if email was already processed
-        const existingEmailResponse = await fetch(`${supabaseUrl}/rest/v1/processed_emails?email_id=eq.${email.id}`, {
-          headers: {
-            'Authorization': `Bearer ${supabaseServiceKey}`,
-            'Content-Type': 'application/json',
-            'apikey': supabaseServiceKey
-          }
-        })
+        console.log('📧 Processing Gmail message:', message.id);
 
-        if (existingEmailResponse.ok) {
-          const existingEmails = await existingEmailResponse.json()
-          if (existingEmails && existingEmails.length > 0) {
-            continue // Skip already processed emails
+        // Get full message details
+        const messageResponse = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${message.id}`, {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`
           }
+        });
+
+        if (!messageResponse.ok) {
+          const errorText = await messageResponse.text();
+          console.error('❌ Failed to fetch message details:', errorText);
+          throw new Error(`Failed to fetch message details: ${errorText}`);
         }
+
+        const messageData = await messageResponse.json();
+
+        // Extract email details
+        const headers = messageData.payload.headers;
+        subject = headers.find(h => h.name === 'Subject')?.value || '';
+        const fromHeader = headers.find(h => h.name === 'From')?.value || '';
+        receivedDate = headers.find(h => h.name === 'Date')?.value || '';
+
+        // Extract just the email address from the "From" header
+        const fromMatch = fromHeader.match(/<([^>]+)>/);
+        fromEmail = fromMatch ? fromMatch[1] : fromHeader;
+
+        console.log('📧 Email details - From:', fromEmail, 'Subject:', subject);
+
+        // Check for PDF attachments and download them
+        attachments = await findPdfAttachmentsGmail(messageData.payload, accessToken, message.id);
+        console.log('📎 PDF attachment detection result:', {
+          attachmentCount: attachments.length,
+          filenames: attachments.map(att => att.filename)
+        });
+
+        if (attachments.length === 0) {
+          console.log('⏭️ No PDF attachments found, skipping');
+          errorMessage = 'No PDF attachments found';
+          continue; // Skip to next email if no PDFs
+        }
+
+        console.log('📎 Found', attachments.length, 'PDF attachments');
 
         // Find matching rule
-        const matchingRule = findMatchingRule(email, rules)
+        matchingRule = findMatchingRule(fromEmail, subject, rules);
+        console.log('🔍 Rule matching result:', {
+          ruleFound: !!matchingRule,
+          ruleName: matchingRule?.rule_name || 'None',
+          totalRulesAvailable: rules.length
+        });
+
         if (!matchingRule) {
-          continue // No matching rule found
+          console.log('⏭️ No matching processing rule found, skipping');
+          errorMessage = 'No matching processing rule found';
+          continue; // Skip to next email if no rule matches
         }
 
-        // Get extraction type
-        const extractionType = extractionTypes.find(type => type.id === matchingRule.extractionTypeId)
+        console.log('✅ Found matching rule:', matchingRule.rule_name);
+
+        const extractionType = matchingRule.extraction_types;
+        console.log('🎯 Extraction type check:', {
+          extractionTypeFound: !!extractionType,
+          extractionTypeName: extractionType?.name || 'None',
+          extractionTypeId: extractionType?.id || 'None'
+        });
+        
         if (!extractionType) {
-          continue // Extraction type not found
-        }
-
-        // Get PDF attachments
-        const pdfAttachments = await getPdfAttachments(accessToken, config.monitoredEmail, email.id)
-        if (pdfAttachments.length === 0) {
-          continue // No PDF attachments found
+          console.error('❌ Extraction type not found for rule:', matchingRule.rule_name);
+          errorMessage = `Extraction type not found for rule: ${matchingRule.rule_name}`;
+          continue;
         }
 
         // Process each PDF attachment
-        for (const attachment of pdfAttachments) {
+        for (const attachment of attachments) {
+          console.log('🔄 Starting to process PDF attachment:', {
+            filename: attachment.filename,
+            sizeKB: Math.round(attachment.base64.length * 0.75 / 1024), // Approximate size from base64
+            extractionType: extractionType.name
+          });
+          
           try {
-            // Record the email as being processed
-            await recordProcessedEmail(supabaseUrl, supabaseServiceKey, {
-              emailId: email.id,
-              sender: email.from.emailAddress.address,
-              subject: email.subject,
-              receivedDate: email.receivedDateTime,
-              processingRuleId: matchingRule.id,
-              extractionTypeId: extractionType.id,
-              pdfFilename: attachment.name,
-              processingStatus: 'processing'
-            })
+            // Create initial extraction log entry
+            const { data: newLog, error: logInsertError } = await supabase
+              .from('extraction_logs')
+              .insert({
+                user_id: null,
+                extraction_type_id: extractionType.id,
+                pdf_filename: attachment.filename,
+                pdf_pages: 0,
+                extraction_status: 'running',
+                created_at: new Date().toISOString(),
+                extracted_data: null,
+                api_response: null,
+                api_status_code: null,
+                api_error: null,
+                error_message: null
+              })
+              .select()
+              .single();
 
-            // Only process XML format types for SFTP upload
-            if (extractionType.formatType === 'XML') {
-              await processEmailAttachment(
-                supabaseUrl,
-                supabaseServiceKey,
-                email,
-                attachment,
-                extractionType,
-                matchingRule
-              )
-              processedCount++
-              results.push({
-                emailId: email.id,
-                subject: email.subject,
-                attachment: attachment.name,
-                extractionType: extractionType.name,
-                status: 'processed'
-              })
-            } else {
-              // Update status to completed for non-XML types (they don't get SFTP upload)
-              await updateProcessedEmailStatus(supabaseUrl, supabaseServiceKey, email.id, 'completed', null)
-              results.push({
-                emailId: email.id,
-                subject: email.subject,
-                attachment: attachment.name,
-                extractionType: extractionType.name,
-                status: 'skipped - not XML format'
-              })
+            if (logInsertError) {
+              console.error('❌ Failed to create extraction log:', logInsertError);
+              throw new Error(`Failed to create extraction log: ${logInsertError.message}`);
             }
-          } catch (attachmentError) {
-            console.error('Error processing attachment:', attachmentError)
-            await updateProcessedEmailStatus(
-              supabaseUrl, 
-              supabaseServiceKey, 
-              email.id, 
-              'failed', 
-              attachmentError instanceof Error ? attachmentError.message : 'Unknown error'
-            )
 
-            // Move email to Archive folder after successful processing
-            await moveEmailToArchive(accessToken, config.monitoredEmail, email.id)
-            results.push({
-              emailId: email.id,
-              subject: email.subject,
-              attachment: attachment.name,
-              status: 'failed',
-              error: attachmentError instanceof Error ? attachmentError.message : 'Unknown error'
-            })
-          }
-        }
-      } catch (emailError) {
-        console.error('Error processing email:', emailError)
-        results.push({
-          emailId: email.id,
-          subject: email.subject,
-          status: 'failed',
-          error: emailError instanceof Error ? emailError.message : 'Unknown error'
-        })
-      }
-    }
+            extractionLogId = newLog.id;
 
-    // Update last check time
-    await fetch(`${supabaseUrl}/rest/v1/email_monitoring_config?id=eq.${configData[0].id}`, {
-      method: 'PATCH',
-      headers: {
-        'Authorization': `Bearer ${supabaseServiceKey}`,
-        'Content-Type': 'application/json',
-        'apikey': supabaseServiceKey
-      },
-      body: JSON.stringify({
-        last_check: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-    })
+            const pdfBuffer = Buffer.from(attachment.base64, 'base64');
+            const pdfDoc = await PDFDocument.load(pdfBuffer);
+            const pageCount = pdfDoc.getPageCount();
 
-    return new Response(
-      JSON.stringify({ 
-        success: true,
-        message: `Email monitoring completed. Processed ${processedCount} emails.`,
-        emailsChecked: emails.length,
-        emailsProcessed: processedCount,
-        results: results
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    )
+            // Update log with page count
+            await supabase
+              .from('extraction_logs')
+              .update({ pdf_pages: pageCount })
+              .eq('id', extractionLogId);
 
-  } catch (error) {
-    console.error("Email monitoring error:", error)
-    
-    return new Response(
-      JSON.stringify({ 
-        error: "Email monitoring failed", 
-        details: error instanceof Error ? error.message : "Unknown error"
-      }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    )
-  }
-})
+            // --- AI Extraction ---
+            const genAI = new GoogleGenerativeAI(geminiApiKey);
+            const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
-async function getAccessToken(config: EmailMonitoringConfig): Promise<string> {
-  const tokenUrl = `https://login.microsoftonline.com/${config.tenantId}/oauth2/v2.0/token`
-  
-  const tokenParams = new URLSearchParams({
-    client_id: config.clientId,
-    client_secret: config.clientSecret,
-    scope: 'https://graph.microsoft.com/.default',
-    grant_type: 'client_credentials'
-  })
+            const fullInstructions = extractionType.default_instructions;
+            const isJsonFormat = extractionType.format_type === 'JSON';
+            const outputFormat = isJsonFormat ? 'JSON' : 'XML';
+            const templateLabel = isJsonFormat ? 'JSON structure' : 'XML template structure';
 
-  const tokenResponse = await fetch(tokenUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: tokenParams.toString()
-  })
-
-  if (!tokenResponse.ok) {
-    const tokenError = await tokenResponse.json()
-    throw new Error(`Authentication failed: ${tokenError.error_description || tokenError.error}`)
-  }
-
-  const tokenData = await tokenResponse.json()
-  return tokenData.access_token
-}
-
-async function getNewEmails(accessToken: string, email: string, since: string): Promise<EmailMessage[]> {
-  const messagesUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(email)}/messages?$filter=receivedDateTime ge ${since} and hasAttachments eq true&$select=id,subject,from,receivedDateTime,hasAttachments&$orderby=receivedDateTime desc&$top=50`
-  
-  const response = await fetch(messagesUrl, {
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json'
-    }
-  })
-
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(`Failed to get emails: ${error.error?.message || 'Unknown error'}`)
-  }
-
-  const data = await response.json()
-  return data.value || []
-}
-
-async function getPdfAttachments(accessToken: string, email: string, messageId: string): Promise<EmailAttachment[]> {
-  const attachmentsUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(email)}/messages/${messageId}/attachments?$select=id,name,contentType,size`
-  
-  const response = await fetch(attachmentsUrl, {
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json'
-    }
-  })
-
-  if (!response.ok) {
-    return []
-  }
-
-  const data = await response.json()
-  const attachments = data.value || []
-  
-  // Filter for PDF attachments and get their content
-  const pdfAttachments = []
-  for (const attachment of attachments) {
-    if (attachment.contentType === 'application/pdf' || attachment.name.toLowerCase().endsWith('.pdf')) {
-      // Get attachment content
-      const contentUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(email)}/messages/${messageId}/attachments/${attachment.id}/$value`
-      
-      const contentResponse = await fetch(contentUrl, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
-      })
-
-      if (contentResponse.ok) {
-        const contentBuffer = await contentResponse.arrayBuffer()
-        const contentBytes = btoa(String.fromCharCode(...new Uint8Array(contentBuffer)))
-        
-        pdfAttachments.push({
-          ...attachment,
-          contentBytes
-        })
-      }
-    }
-  }
-  
-  return pdfAttachments
-}
-
-function findMatchingRule(email: EmailMessage, rules: EmailProcessingRule[]): EmailProcessingRule | null {
-  for (const rule of rules) {
-    if (!rule.isEnabled) continue
-
-    const senderMatch = !rule.senderPattern || 
-      email.from.emailAddress.address.toLowerCase().includes(rule.senderPattern.toLowerCase()) ||
-      email.from.emailAddress.name?.toLowerCase().includes(rule.senderPattern.toLowerCase())
-
-    const subjectMatch = !rule.subjectPattern || 
-      email.subject.toLowerCase().includes(rule.subjectPattern.toLowerCase())
-
-    if (senderMatch && subjectMatch) {
-      return rule
-    }
-  }
-  
-  return null
-}
-
-async function processEmailAttachment(
-  supabaseUrl: string,
-  supabaseServiceKey: string,
-  email: EmailMessage,
-  attachment: EmailAttachment,
-  extractionType: ExtractionType,
-  rule: EmailProcessingRule
-) {
-  try {
-    // Get API settings for Gemini API key
-    const apiSettingsResponse = await fetch(`${supabaseUrl}/rest/v1/api_settings?select=*&order=updated_at.desc&limit=1`, {
-      headers: {
-        'Authorization': `Bearer ${supabaseServiceKey}`,
-        'Content-Type': 'application/json',
-        'apikey': supabaseServiceKey
-      }
-    })
-
-    let geminiApiKey = ''
-    if (apiSettingsResponse.ok) {
-      const apiSettingsData = await apiSettingsResponse.json()
-      if (apiSettingsData && apiSettingsData.length > 0) {
-        geminiApiKey = apiSettingsData[0].google_api_key || ''
-      }
-    }
-
-    // Get settings config for fallback API key
-    const settingsResponse = await fetch(`${supabaseUrl}/rest/v1/settings_config?select=*&order=updated_at.desc&limit=1`, {
-      headers: {
-        'Authorization': `Bearer ${supabaseServiceKey}`,
-        'Content-Type': 'application/json',
-        'apikey': supabaseServiceKey
-      }
-    })
-
-    let fallbackApiKey = ''
-    if (settingsResponse.ok) {
-      const settingsData = await settingsResponse.json()
-      if (settingsData && settingsData.length > 0) {
-        fallbackApiKey = settingsData[0].gemini_api_key || ''
-      }
-    }
-
-    const apiKey = geminiApiKey || fallbackApiKey
-    if (!apiKey) {
-      throw new Error('No Gemini API key configured')
-    }
-
-    // Extract data using Gemini AI
-    const extractedXml = await extractDataWithGemini(
-      attachment.contentBytes!,
-      extractionType.defaultInstructions,
-      extractionType.xmlFormat,
-      apiKey
-    )
-
-    // Get SFTP configuration
-    const sftpResponse = await fetch(`${supabaseUrl}/rest/v1/sftp_config?select=*&order=updated_at.desc&limit=1`, {
-      headers: {
-        'Authorization': `Bearer ${supabaseServiceKey}`,
-        'Content-Type': 'application/json',
-        'apikey': supabaseServiceKey
-      }
-    })
-
-    if (!sftpResponse.ok) {
-      throw new Error('Failed to get SFTP configuration')
-    }
-
-    const sftpData = await sftpResponse.json()
-    if (!sftpData || sftpData.length === 0) {
-      throw new Error('No SFTP configuration found')
-    }
-
-    const sftpConfig = {
-      host: sftpData[0].host,
-      port: sftpData[0].port,
-      username: sftpData[0].username,
-      password: sftpData[0].password,
-      xmlPath: sftpData[0].remote_path,
-      pdfPath: sftpData[0].pdf_path
-    }
-
-    // Upload to SFTP
-    const uploadResponse = await fetch(`${supabaseUrl}/functions/v1/sftp-upload`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${supabaseServiceKey}`,
-      },
-      body: JSON.stringify({
-        sftpConfig,
-        xmlContent: extractedXml,
-        pdfBase64: attachment.contentBytes,
-        baseFilename: extractionType.filename || 'document'
-      })
-    })
-
-    if (!uploadResponse.ok) {
-      const errorData = await uploadResponse.json()
-      throw new Error(errorData.details || errorData.error || 'SFTP upload failed')
-    }
-
-    const uploadResult = await uploadResponse.json()
-    
-    // Update processed email status
-    await updateProcessedEmailStatus(
-      supabaseUrl, 
-      supabaseServiceKey, 
-      email.id, 
-      'completed', 
-      null, 
-      uploadResult.parseitId
-    )
-
-  } catch (error) {
-    console.error('Error processing email attachment:', error)
-    await updateProcessedEmailStatus(
-      supabaseUrl, 
-      supabaseServiceKey, 
-      email.id, 
-      'failed', 
-      error instanceof Error ? error.message : 'Unknown error'
-    )
-    throw error
-  }
-}
-
-async function extractDataWithGemini(
-  pdfBase64: string,
-  instructions: string,
-  xmlFormat: string,
-  apiKey: string
-): Promise<string> {
-  const prompt = `
+            const prompt = `
 You are a data extraction AI. Please analyze the provided PDF document and extract the requested information according to the following instructions:
 
 EXTRACTION INSTRUCTIONS:
-${instructions}
+${fullInstructions}
 
 OUTPUT FORMAT:
-Please format the extracted data as XML following this XML template structure:
-${xmlFormat}
+Please format the extracted data as ${outputFormat} following this EXACT ${templateLabel} structure:
+${extractionType.xml_format}
 
 IMPORTANT GUIDELINES:
 1. Only extract information that is clearly visible in the document
-2. If a field is not found, use "N/A" or leave it empty
-3. Maintain the exact XML structure provided
-4. Ensure all XML tags are properly closed
-5. Use appropriate data types (dates, numbers, text)
-6. Be precise and accurate with the extracted data
+2. CRITICAL: Follow the EXACT structure provided in the template. Do not add extra fields at the root level or change the nesting structure
+3. If a field is not found in JSON format, use empty string ("") for text fields, 0 for numbers, null for fields that should be null, or [] for arrays. For datetime fields that are empty, use today's date in yyyy-MM-ddThh:mm:ss format. For XML format, use "N/A" or leave it empty
+4. Maintain the exact ${outputFormat} structure provided and preserve exact case for all hardcoded values
+5. Do NOT duplicate fields outside of their proper nested structure
+6. ${isJsonFormat ? 'Ensure valid JSON syntax with proper quotes and brackets' : 'Ensure all XML tags are properly closed'}
+7. Use appropriate data types (dates, numbers, text). For JSON, ensure empty values are represented as empty strings (""), not "N/A". CRITICAL: For hardcoded values, use the EXACT case as specified (e.g., "True" not "true", "False" not "false"). For datetime fields, use the format yyyy-MM-ddThh:mm:ss (e.g., "2024-03-15T14:30:00"). If a datetime field is empty or not found, use today's date and current time in the same format
+8. Be precise and accurate with the extracted data
+9. ${isJsonFormat ? 'CRITICAL: For JSON output, the ONLY top-level key allowed is "orders". Do NOT include any other top-level keys or duplicate fields at the root level. Return ONLY the JSON structure from the template - no additional fields outside the "orders" array.' : 'CRITICAL FOR XML: Your response MUST start with the opening tag of the root element from the template and end with its closing tag. Do NOT include any XML content outside of this structure. Do NOT duplicate any elements or add extra XML blocks after the main structure. Return ONLY the complete XML structure from the template with no additional content before or after it.'}
 
-Please provide only the XML output without any additional explanation or formatting.
-`
+Please provide only the ${outputFormat} output without any additional explanation or formatting.
+`;
 
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      contents: [{
-        parts: [
-          {
-            inline_data: {
-              mime_type: 'application/pdf',
-              data: pdfBase64
+            const result = await model.generateContent([
+              {
+                inlineData: {
+                  mimeType: 'application/pdf',
+                  data: attachment.base64
+                }
+              },
+              prompt
+            ]);
+
+            let extractedContent = result.response.text();
+
+            // Clean up the response - remove any markdown formatting
+            if (isJsonFormat) {
+              extractedContent = extractedContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+              
+              console.log('🔍 Raw extracted data before validation:', extractedContent.substring(0, 500) + '...');
+              
+              // Post-process JSON to fix validation issues
+              try {
+                console.log('🔧 Applying validation fixes to JSON data...');
+                extractedContent = applyValidationFixes(extractedContent);
+                console.log('✅ Validation fixes applied. Final data preview:', extractedContent.substring(0, 500) + '...');
+              } catch (parseError) {
+                console.warn('⚠️ Could not parse JSON for validation fixes:', parseError);
+                // Continue with original content if parsing fails
+              }
+              
+              // Basic JSON validation
+              try {
+                JSON.parse(extractedContent);
+              } catch (e) {
+                throw new Error('AI returned invalid JSON format');
+              }
+            } else {
+              extractedContent = extractedContent.replace(/```xml\n?/g, '').replace(/```\n?/g, '').trim();
+              
+              // Basic XML validation
+              if (!extractedContent.startsWith('<') || !extractedContent.endsWith('>')) {
+                throw new Error('AI returned invalid XML format');
+              }
             }
-          },
-          {
-            text: prompt
+
+            // --- SFTP/API Upload ---
+            let finalDataToSend = extractedContent;
+
+            if (isJsonFormat) {
+              // Get ParseIt ID
+              const { data: newParseitId, error: parseitIdError } = await supabase.rpc('get_next_parseit_id');
+              if (parseitIdError) throw new Error(`Failed to get ParseIt ID: ${parseitIdError.message}`);
+              
+              parseitId = newParseitId;
+
+              // Inject ParseIt ID into JSON
+              if (extractionType.parseit_id_mapping && parseitId) {
+                finalDataToSend = injectParseitId(JSON.parse(extractedContent), extractionType.parseit_id_mapping, parseitId);
+                finalDataToSend = JSON.stringify(finalDataToSend, null, 2);
+              }
+
+              // Send to API
+              if (!apiConfig || !apiConfig.path || !extractionType.json_path) {
+                throw new Error('API configuration incomplete for JSON extraction');
+              }
+
+              const apiUrl = apiConfig.path.endsWith('/') 
+                ? `${apiConfig.path.slice(0, -1)}${extractionType.json_path}`
+                : `${apiConfig.path}${extractionType.json_path}`;
+
+              console.log('🌐 Sending to API URL:', apiUrl);
+              console.log('📤 Final JSON being sent (first 1000 chars):', finalDataToSend.substring(0, 1000));
+
+              const headers = {
+                'Content-Type': 'application/json'
+              };
+
+              if (apiConfig.password) {
+                headers['Authorization'] = `Bearer ${apiConfig.password}`;
+              }
+
+              const apiResponse = await fetch(apiUrl, {
+                method: 'POST',
+                headers,
+                body: finalDataToSend
+              });
+
+              if (!apiResponse.ok) {
+                const errorDetails = await apiResponse.text();
+                throw new Error(`API call failed: ${apiResponse.status} ${apiResponse.statusText} - ${errorDetails}`);
+              }
+
+              const apiResponseData = await apiResponse.json();
+              console.log('✅ API call successful:', apiResponseData);
+
+              // Log API response
+              await supabase
+                .from('extraction_logs')
+                .update({
+                  api_response: JSON.stringify(apiResponseData),
+                  api_status_code: apiResponse.status,
+                  extracted_data: finalDataToSend,
+                  extraction_status: 'success'
+                })
+                .eq('id', extractionLogId);
+
+              // Upload PDF to SFTP for JSON types (archival)
+              if (sftpConfig) {
+                await uploadToSftp(sftpConfig, attachment.base64, attachment.filename, extractionType.filename, extractionType.id, null, parseitId, supabase);
+                console.log('✅ PDF uploaded to SFTP for JSON type');
+              } else {
+                console.warn('⚠️ SFTP config missing, skipping PDF upload for JSON type');
+              }
+            } else {
+              if (!sftpConfig) {
+                throw new Error('SFTP configuration incomplete for XML extraction');
+              }
+
+              // Inject ParseIt ID into XML
+              finalDataToSend = extractedContent.replace(/{{PARSEIT_ID_PLACEHOLDER}}/g, (parseitId || '').toString());
+
+              await uploadToSftp(sftpConfig, attachment.base64, attachment.filename, extractionType.filename, extractionType.id, finalDataToSend, null, supabase);
+              console.log('✅ XML and PDF uploaded to SFTP');
+
+              await supabase
+                .from('extraction_logs')
+                .update({
+                  extracted_data: finalDataToSend,
+                  extraction_status: 'success'
+                })
+                .eq('id', extractionLogId);
+            }
+
+            processedSuccessfully = true;
+            console.log('✅ Email attachment processed successfully');
+
+            // Move email to archive label in Gmail
+            await moveGmailMessageToLabel(message.id, accessToken, 'ParseIt/Processed');
+
+          } catch (processError) {
+            console.error('❌ Error processing attachment:', processError);
+            errorMessage = processError.message || 'Unknown processing error';
+            
+            if (extractionLogId) {
+              await supabase
+                .from('extraction_logs')
+                .update({
+                  extraction_status: 'failed',
+                  error_message: errorMessage
+                })
+                .eq('id', extractionLogId);
+            }
           }
-        ]
-      }]
-    })
-  })
+        }
 
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(`Gemini API error: ${error.error?.message || 'Unknown error'}`)
+      } catch (emailError) {
+        console.error('❌ Error handling email:', emailError);
+        errorMessage = emailError.message || 'Unknown email handling error';
+      } finally {
+        processedEmailsResults.push({
+          id: message.id,
+          from: fromEmail,
+          subject: subject,
+          receivedDate: receivedDate,
+          processedSuccessfully,
+          errorMessage,
+          extractionLogId,
+          rule: matchingRule?.rule_name || 'No rule matched'
+        });
+
+        // Log processed email to processed_emails table
+        await supabase
+          .from('processed_emails')
+          .insert({
+            email_id: message.id,
+            sender: fromEmail,
+            subject: subject,
+            received_date: receivedDate,
+            processing_rule_id: matchingRule?.id || null,
+            extraction_type_id: matchingRule?.extraction_types?.id || null,
+            pdf_filename: attachments[0]?.filename || null,
+            processing_status: processedSuccessfully ? 'completed' : 'failed',
+            error_message: errorMessage,
+            parseit_id: parseitId || null,
+            processed_at: new Date().toISOString()
+          });
+      }
+    }
+
+    return processedEmailsResults;
+  } catch (error) {
+    console.error('❌ Gmail processing error:', error);
+    throw error;
   }
-
-  const result = await response.json()
-  let extractedContent = result.candidates?.[0]?.content?.parts?.[0]?.text || ''
-
-  // Clean up the response - remove any markdown formatting
-  extractedContent = extractedContent.replace(/```xml\n?/g, '').replace(/```\n?/g, '').trim()
-
-  if (!extractedContent.includes('<?xml') && !extractedContent.includes('<')) {
-    throw new Error('Invalid XML response from AI')
-  }
-
-  return extractedContent
 }
 
-async function recordProcessedEmail(
-  supabaseUrl: string,
-  supabaseServiceKey: string,
-  emailData: {
-    emailId: string
-    sender: string
-    subject: string
-    receivedDate: string
-    processingRuleId: string
-    extractionTypeId: string
-    pdfFilename: string
-    processingStatus: string
+async function processOffice365Emails(config, rules, sftpConfig, apiConfig, geminiApiKey, supabase) {
+  console.log('📧 Starting Office365 email processing');
+  
+  try {
+    // Get access token
+    const tokenResponse = await fetch(`https://login.microsoftonline.com/${config.tenant_id}/oauth2/v2.0/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: new URLSearchParams({
+        client_id: config.client_id,
+        client_secret: config.client_secret,
+        scope: 'https://graph.microsoft.com/.default',
+        grant_type: 'client_credentials'
+      })
+    });
+
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      console.error('❌ Failed to get Office365 token:', errorText);
+      throw new Error(`Failed to get Office365 access token: ${errorText}`);
+    }
+
+    const tokenData = await tokenResponse.json();
+    const accessToken = tokenData.access_token;
+    console.log('✅ Office365 access token obtained successfully');
+
+    // Build filter for emails with attachments
+    let filter = 'hasAttachments eq true';
+    if (config.last_check) {
+      const lastCheckDate = new Date(config.last_check).toISOString();
+      filter += ` and receivedDateTime gt ${lastCheckDate}`;
+    }
+
+    console.log('🔍 Office365 filter:', filter);
+
+    // Get emails
+    const emailsResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${config.monitored_email}/messages?$filter=${encodeURIComponent(filter)}&$select=id,subject,from,receivedDateTime,hasAttachments`, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+
+    if (!emailsResponse.ok) {
+      const errorText = await emailsResponse.text();
+      console.error('❌ Office365 emails fetch failed:', errorText);
+      throw new Error(`Failed to fetch Office365 emails: ${errorText}`);
+    }
+
+    const emailsData = await emailsResponse.json();
+    const emails = emailsData.value || [];
+    console.log('📊 Found', emails.length, 'Office365 emails');
+
+    const processedEmailsResults = [];
+
+    for (const email of emails) {
+      // Declare variables at the beginning of the loop scope
+      let subject = '';
+      let fromEmail = '';
+      let receivedDate = '';
+      let attachments = [];
+      let matchingRule = null;
+      let parseitId = null;
+      let processedSuccessfully = false;
+      let errorMessage = null;
+      let extractionLogId = null;
+
+      try {
+        console.log('📧 Processing Office365 email:', email.id);
+
+        subject = email.subject || '';
+        fromEmail = email.from?.emailAddress?.address || '';
+        receivedDate = email.receivedDateTime || '';
+
+        console.log('📧 Email details - From:', fromEmail, 'Subject:', subject);
+
+        // Get attachments and download them
+        attachments = await findPdfAttachmentsOffice365(config.monitored_email, email.id, accessToken);
+        console.log('📎 PDF attachment detection result:', {
+          attachmentCount: attachments.length,
+          filenames: attachments.map(att => att.filename)
+        });
+
+        if (attachments.length === 0) {
+          console.log('⏭️ No PDF attachments found, skipping');
+          errorMessage = 'No PDF attachments found';
+          continue; // Skip to next email if no PDFs
+        }
+
+        console.log('📎 Found', attachments.length, 'PDF attachments');
+
+        // Find matching rule
+        matchingRule = findMatchingRule(fromEmail, subject, rules);
+        console.log('🔍 Rule matching result:', {
+          ruleFound: !!matchingRule,
+          ruleName: matchingRule?.rule_name || 'None',
+          totalRulesAvailable: rules.length
+        });
+
+        if (!matchingRule) {
+          console.log('⏭️ No matching processing rule found, skipping');
+          errorMessage = 'No matching processing rule found';
+          continue; // Skip to next email if no rule matches
+        }
+
+        console.log('✅ Found matching rule:', matchingRule.rule_name);
+
+        const extractionType = matchingRule.extraction_types;
+        console.log('🎯 Extraction type check:', {
+          extractionTypeFound: !!extractionType,
+          extractionTypeName: extractionType?.name || 'None',
+          extractionTypeId: extractionType?.id || 'None'
+        });
+        
+        if (!extractionType) {
+          console.error('❌ Extraction type not found for rule:', matchingRule.rule_name);
+          errorMessage = `Extraction type not found for rule: ${matchingRule.rule_name}`;
+          continue;
+        }
+
+        // Process each PDF attachment
+        for (const attachment of attachments) {
+          console.log('🔄 Starting to process PDF attachment:', {
+            filename: attachment.filename,
+            sizeKB: Math.round(attachment.base64.length * 0.75 / 1024), // Approximate size from base64
+            extractionType: extractionType.name
+          });
+          
+          try {
+            // Create initial extraction log entry
+            const { data: newLog, error: logInsertError } = await supabase
+              .from('extraction_logs')
+              .insert({
+                user_id: null,
+                extraction_type_id: extractionType.id,
+                pdf_filename: attachment.filename,
+                pdf_pages: 0,
+                extraction_status: 'running',
+                created_at: new Date().toISOString(),
+                extracted_data: null,
+                api_response: null,
+                api_status_code: null,
+                api_error: null,
+                error_message: null
+              })
+              .select()
+              .single();
+
+            if (logInsertError) {
+              console.error('❌ Failed to create extraction log:', logInsertError);
+              throw new Error(`Failed to create extraction log: ${logInsertError.message}`);
+            }
+
+            extractionLogId = newLog.id;
+
+            const pdfBuffer = Buffer.from(attachment.base64, 'base64');
+            const pdfDoc = await PDFDocument.load(pdfBuffer);
+            const pageCount = pdfDoc.getPageCount();
+
+            // Update log with page count
+            await supabase
+              .from('extraction_logs')
+              .update({ pdf_pages: pageCount })
+              .eq('id', extractionLogId);
+
+            // --- AI Extraction ---
+            const genAI = new GoogleGenerativeAI(geminiApiKey);
+            const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
+            const fullInstructions = extractionType.default_instructions;
+            const isJsonFormat = extractionType.format_type === 'JSON';
+            const outputFormat = isJsonFormat ? 'JSON' : 'XML';
+            const templateLabel = isJsonFormat ? 'JSON structure' : 'XML template structure';
+
+            const prompt = `
+You are a data extraction AI. Please analyze the provided PDF document and extract the requested information according to the following instructions:
+
+EXTRACTION INSTRUCTIONS:
+${fullInstructions}
+
+OUTPUT FORMAT:
+Please format the extracted data as ${outputFormat} following this EXACT ${templateLabel} structure:
+${extractionType.xml_format}
+
+IMPORTANT GUIDELINES:
+1. Only extract information that is clearly visible in the document
+2. CRITICAL: Follow the EXACT structure provided in the template. Do not add extra fields at the root level or change the nesting structure
+3. If a field is not found in JSON format, use empty string ("") for text fields, 0 for numbers, null for fields that should be null, or [] for arrays. For datetime fields that are empty, use today's date in yyyy-MM-ddThh:mm:ss format. For XML format, use "N/A" or leave it empty
+4. Maintain the exact ${outputFormat} structure provided and preserve exact case for all hardcoded values
+5. Do NOT duplicate fields outside of their proper nested structure
+6. ${isJsonFormat ? 'Ensure valid JSON syntax with proper quotes and brackets' : 'Ensure all XML tags are properly closed'}
+7. Use appropriate data types (dates, numbers, text). For JSON, ensure empty values are represented as empty strings (""), not "N/A". CRITICAL: For hardcoded values, use the EXACT case as specified (e.g., "True" not "true", "False" not "false"). For datetime fields, use the format yyyy-MM-ddThh:mm:ss (e.g., "2024-03-15T14:30:00"). If a datetime field is empty or not found, use today's date and current time in the same format
+8. Be precise and accurate with the extracted data
+9. ${isJsonFormat ? 'CRITICAL: For JSON output, the ONLY top-level key allowed is "orders". Do NOT include any other top-level keys or duplicate fields at the root level. Return ONLY the JSON structure from the template - no additional fields outside the "orders" array.' : 'CRITICAL FOR XML: Your response MUST start with the opening tag of the root element from the template and end with its closing tag. Do NOT include any XML content outside of this structure. Do NOT duplicate any elements or add extra XML blocks after the main structure. Return ONLY the complete XML structure from the template with no additional content before or after it.'}
+
+Please provide only the ${outputFormat} output without any additional explanation or formatting.
+`;
+
+            const result = await model.generateContent([
+              {
+                inlineData: {
+                  mimeType: 'application/pdf',
+                  data: attachment.base64
+                }
+              },
+              prompt
+            ]);
+
+            let extractedContent = result.response.text();
+
+            // Clean up the response - remove any markdown formatting
+            if (isJsonFormat) {
+              extractedContent = extractedContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+              
+              console.log('🔍 Raw extracted data before validation:', extractedContent.substring(0, 500) + '...');
+              
+              // Post-process JSON to fix validation issues
+              try {
+                console.log('🔧 Applying validation fixes to JSON data...');
+                extractedContent = applyValidationFixes(extractedContent);
+                console.log('✅ Validation fixes applied. Final data preview:', extractedContent.substring(0, 500) + '...');
+              } catch (parseError) {
+                console.warn('⚠️ Could not parse JSON for validation fixes:', parseError);
+                // Continue with original content if parsing fails
+              }
+              
+              // Basic JSON validation
+              try {
+                JSON.parse(extractedContent);
+              } catch (e) {
+                throw new Error('AI returned invalid JSON format');
+              }
+            } else {
+              extractedContent = extractedContent.replace(/```xml\n?/g, '').replace(/```\n?/g, '').trim();
+              
+              // Basic XML validation
+              if (!extractedContent.startsWith('<') || !extractedContent.endsWith('>')) {
+                throw new Error('AI returned invalid XML format');
+              }
+            }
+
+            // --- SFTP/API Upload ---
+            let finalDataToSend = extractedContent;
+
+            if (isJsonFormat) {
+              // Get ParseIt ID
+              const { data: newParseitId, error: parseitIdError } = await supabase.rpc('get_next_parseit_id');
+              if (parseitIdError) throw new Error(`Failed to get ParseIt ID: ${parseitIdError.message}`);
+              
+              parseitId = newParseitId;
+
+              // Inject ParseIt ID into JSON
+              if (extractionType.parseit_id_mapping && parseitId) {
+                finalDataToSend = injectParseitId(JSON.parse(extractedContent), extractionType.parseit_id_mapping, parseitId);
+                finalDataToSend = JSON.stringify(finalDataToSend, null, 2);
+              }
+
+              // Send to API
+              if (!apiConfig || !apiConfig.path || !extractionType.json_path) {
+                throw new Error('API configuration incomplete for JSON extraction');
+              }
+
+              const apiUrl = apiConfig.path.endsWith('/') 
+                ? `${apiConfig.path.slice(0, -1)}${extractionType.json_path}`
+                : `${apiConfig.path}${extractionType.json_path}`;
+
+              console.log('🌐 Sending to API URL:', apiUrl);
+              console.log('📤 Final JSON being sent (first 1000 chars):', finalDataToSend.substring(0, 1000));
+
+              const headers = {
+                'Content-Type': 'application/json'
+              };
+
+              if (apiConfig.password) {
+                headers['Authorization'] = `Bearer ${apiConfig.password}`;
+              }
+
+              const apiResponse = await fetch(apiUrl, {
+                method: 'POST',
+                headers,
+                body: finalDataToSend
+              });
+
+              if (!apiResponse.ok) {
+                const errorDetails = await apiResponse.text();
+                throw new Error(`API call failed: ${apiResponse.status} ${apiResponse.statusText} - ${errorDetails}`);
+              }
+
+              const apiResponseData = await apiResponse.json();
+              console.log('✅ API call successful:', apiResponseData);
+
+              // Log API response
+              await supabase
+                .from('extraction_logs')
+                .update({
+                  api_response: JSON.stringify(apiResponseData),
+                  api_status_code: apiResponse.status,
+                  extracted_data: finalDataToSend,
+                  extraction_status: 'success'
+                })
+                .eq('id', extractionLogId);
+
+              // Upload PDF to SFTP for JSON types (archival)
+              if (sftpConfig) {
+                await uploadToSftp(sftpConfig, attachment.base64, attachment.filename, extractionType.filename, extractionType.id, null, parseitId, supabase);
+                console.log('✅ PDF uploaded to SFTP for JSON type');
+              } else {
+                console.warn('⚠️ SFTP config missing, skipping PDF upload for JSON type');
+              }
+            } else {
+              if (!sftpConfig) {
+                throw new Error('SFTP configuration incomplete for XML extraction');
+              }
+
+              // Inject ParseIt ID into XML
+              finalDataToSend = extractedContent.replace(/{{PARSEIT_ID_PLACEHOLDER}}/g, (parseitId || '').toString());
+
+              await uploadToSftp(sftpConfig, attachment.base64, attachment.filename, extractionType.filename, extractionType.id, finalDataToSend, null, supabase);
+              console.log('✅ XML and PDF uploaded to SFTP');
+
+              await supabase
+                .from('extraction_logs')
+                .update({
+                  extracted_data: finalDataToSend,
+                  extraction_status: 'success'
+                })
+                .eq('id', extractionLogId);
+            }
+
+            processedSuccessfully = true;
+            console.log('✅ Email attachment processed successfully');
+
+            // Move email to archive label in Office365 (if supported)
+            // Note: Office365 doesn't have the same label system as Gmail
+            // This would require additional implementation for folder management
+
+          } catch (processError) {
+            console.error('❌ Error processing attachment:', processError);
+            errorMessage = processError.message || 'Unknown processing error';
+            
+            if (extractionLogId) {
+              await supabase
+                .from('extraction_logs')
+                .update({
+                  extraction_status: 'failed',
+                  error_message: errorMessage
+                })
+                .eq('id', extractionLogId);
+            }
+          }
+        }
+
+      } catch (emailError) {
+        console.error('❌ Error handling email:', emailError);
+        errorMessage = emailError.message || 'Unknown email handling error';
+      } finally {
+        processedEmailsResults.push({
+          id: email.id,
+          from: fromEmail,
+          subject: subject,
+          receivedDate: receivedDate,
+          processedSuccessfully,
+          errorMessage,
+          extractionLogId,
+          rule: matchingRule?.rule_name || 'No rule matched'
+        });
+
+        // Log processed email to processed_emails table
+        await supabase
+          .from('processed_emails')
+          .insert({
+            email_id: email.id,
+            sender: fromEmail,
+            subject: subject,
+            received_date: receivedDate,
+            processing_rule_id: matchingRule?.id || null,
+            extraction_type_id: matchingRule?.extraction_types?.id || null,
+            pdf_filename: attachments[0]?.filename || null,
+            processing_status: processedSuccessfully ? 'completed' : 'failed',
+            error_message: errorMessage,
+            parseit_id: parseitId || null,
+            processed_at: new Date().toISOString()
+          });
+      }
+    }
+
+    return processedEmailsResults;
+  } catch (error) {
+    console.error('❌ Office365 processing error:', error);
+    throw error;
   }
-) {
-  await fetch(`${supabaseUrl}/rest/v1/processed_emails`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${supabaseServiceKey}`,
-      'Content-Type': 'application/json',
-      'apikey': supabaseServiceKey
-    },
-    body: JSON.stringify({
-      email_id: emailData.emailId,
-      sender: emailData.sender,
-      subject: emailData.subject,
-      received_date: emailData.receivedDate,
-      processing_rule_id: emailData.processingRuleId,
-      extraction_type_id: emailData.extractionTypeId,
-      pdf_filename: emailData.pdfFilename,
-      processing_status: emailData.processingStatus,
-      created_at: new Date().toISOString()
-    })
-  })
 }
 
-async function updateProcessedEmailStatus(
-  supabaseUrl: string,
-  supabaseServiceKey: string,
-  emailId: string,
-  status: string,
-  errorMessage: string | null,
-  parseitId?: number
-) {
-  const updateData: any = {
-    processing_status: status,
-    processed_at: new Date().toISOString()
+function findMatchingRule(fromEmail, subject, rules) {
+  for (const rule of rules) {
+    const senderMatches = !rule.sender_pattern || 
+      fromEmail.toLowerCase().includes(rule.sender_pattern.toLowerCase());
+    
+    const subjectMatches = !rule.subject_pattern || 
+      subject.toLowerCase().includes(rule.subject_pattern.toLowerCase());
+    
+    if (senderMatches && subjectMatches) {
+      return rule;
+    }
   }
-
-  if (errorMessage) {
-    updateData.error_message = errorMessage
-  }
-
-  if (parseitId) {
-    updateData.parseit_id = parseitId
-  }
-
-  await fetch(`${supabaseUrl}/rest/v1/processed_emails?email_id=eq.${emailId}`, {
-    method: 'PATCH',
-    headers: {
-      'Authorization': `Bearer ${supabaseServiceKey}`,
-      'Content-Type': 'application/json',
-      'apikey': supabaseServiceKey
-    },
-    body: JSON.stringify(updateData)
-  })
+  return null;
 }
+
+async function findPdfAttachmentsGmail(payload, accessToken, messageId) {
+  const attachments = [];
+  
+  const findAttachments = (part) => {
+    if (part.parts) {
+      part.parts.forEach(findAttachments);
+    } else if (part.filename && part.filename.toLowerCase().endsWith('.pdf') && part.body.attachmentId) {
+      attachments.push({
+        filename: part.filename,
+        attachmentId: part.body.attachmentId
+      });
+    }
+  };
+  
+  findAttachments(payload);
+  
+  // Download each PDF attachment
+  const downloadedAttachments = [];
+  for (const attachment of attachments) {
+    try {
+      const attachmentResponse = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/attachments/${attachment.attachmentId}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`
+          }
+        }
+      );
+      
+      if (attachmentResponse.ok) {
+        const attachmentData = await attachmentResponse.json();
+        downloadedAttachments.push({
+          filename: attachment.filename,
+          base64: attachmentData.data.replace(/-/g, '+').replace(/_/g, '/')
+        });
+      }
+    } catch (error) {
+      console.error('Error downloading Gmail attachment:', error);
+    }
+  }
+  
+  return downloadedAttachments;
+}
+
+async function findPdfAttachmentsOffice365(userEmail, messageId, accessToken) {
+  const attachments = [];
+  
+  try {
+    const attachmentsResponse = await fetch(
+      `https://graph.microsoft.com/v1.0/users/${userEmail}/messages/${messageId}/attachments`,
+      {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      }
+    );
+    
+    if (attachmentsResponse.ok) {
+      const attachmentsData = await attachmentsResponse.json();
+      
+      for (const attachment of attachmentsData.value) {
+        if (attachment.name && attachment.name.toLowerCase().endsWith('.pdf')) {
+          attachments.push({
+            filename: attachment.name,
+            base64: attachment.contentBytes
+          });
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error fetching Office365 attachments:', error);
+  }
+  
+  return attachments;
+}
+
+async function moveGmailMessageToLabel(messageId, accessToken, labelName) {
+  try {
+    // First, try to find or create the label
+    const labelsResponse = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/labels', {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+    
+    if (!labelsResponse.ok) {
+      console.warn('Could not fetch Gmail labels');
+      return;
+    }
+    
+    const labelsData = await labelsResponse.json();
+    let targetLabel = labelsData.labels.find(label => label.name === labelName);
+    
+    if (!targetLabel) {
+      // Create the label if it doesn't exist
+      const createLabelResponse = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/labels', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: labelName,
+          labelListVisibility: 'labelShow',
+          messageListVisibility: 'show'
+        })
+      });
+      
+      if (createLabelResponse.ok) {
+        targetLabel = await createLabelResponse.json();
+      } else {
+        console.warn('Could not create Gmail label:', labelName);
+        return;
+      }
+    }
+    
+    // Move message to the label
+    await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        addLabelIds: [targetLabel.id],
+        removeLabelIds: ['INBOX']
+      })
+    });
+    
+    console.log(`✅ Moved Gmail message to ${labelName}`);
+  } catch (error) {
+    console.warn('Could not move Gmail message to label:', error);
+  }
+}
+
+async function uploadToSftp(sftpConfig, base64Data, originalFilename, extractionTypeFilename, extractionTypeId, xmlData, parseitId, supabase) {
+  try {
+    const response = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/sftp-upload`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        sftpConfig,
+        base64Data,
+        originalFilename,
+        extractionTypeFilename,
+        extractionTypeId,
+        xmlData,
+        parseitId
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`SFTP upload failed: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+
+    const result = await response.json();
+    console.log('✅ SFTP upload successful:', result);
+    return result;
+  } catch (error) {
+    console.error('❌ SFTP upload error:', error);
+    throw error;
+  }
+}
+
+function injectParseitId(jsonData, parseitIdMapping, parseitId) {
+  try {
+    const mappingPath = parseitIdMapping.split('.');
+    let current = jsonData;
+    
+    // Navigate to the parent object
+    for (let i = 0; i < mappingPath.length - 1; i++) {
+      const key = mappingPath[i];
+      if (key === '[]' && Array.isArray(current) && current.length > 0) {
+        current = current[0];
+      } else if (current[key]) {
+        current = current[key];
+      } else {
+        console.warn('Could not navigate to parseit ID mapping path:', parseitIdMapping);
+        return jsonData;
+      }
+    }
+    
+    // Set the parseit ID
+    const finalKey = mappingPath[mappingPath.length - 1];
+    current[finalKey] = parseitId;
+    
+    return jsonData;
+  } catch (error) {
+    console.error('Error injecting ParseIt ID:', error);
+    return jsonData;
+  }
+}
+
+function applyValidationFixes(jsonString) {
+  try {
+    let parsed = JSON.parse(jsonString);
+    
+    // Apply validation fixes recursively
+    const fixObject = (obj) => {
+      if (Array.isArray(obj)) {
+        return obj.map(fixObject);
+      } else if (obj && typeof obj === 'object') {
+        const fixed = {};
+        for (const [key, value] of Object.entries(obj)) {
+          fixed[key] = fixObject(value);
+        }
+        return fixed;
+      } else if (typeof obj === 'string') {
+        // Fix common string issues
+        if (obj === 'N/A' || obj === 'n/a' || obj === 'null') {
+          return '';
+        }
+        return obj;
+      }
+      return obj;
+    };
+    
+    parsed = fixObject(parsed);
+    return JSON.stringify(parsed, null, 2);
+  } catch (error) {
+    console.warn('Could not apply validation fixes:', error);
+    return jsonString;
+  }
+}
+      
