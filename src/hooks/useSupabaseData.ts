@@ -1263,6 +1263,23 @@ export function useSupabaseData() {
     }
   };
 
+  const deleteExtractionType = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('extraction_types')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      // Update local state
+      setExtractionTypes(prev => prev.filter(type => type.id !== id));
+    } catch (error) {
+      console.error('Error deleting extraction type:', error);
+      throw error;
+    }
+  };
+
   return {
     extractionTypes,
     sftpConfig,
@@ -1277,6 +1294,7 @@ export function useSupabaseData() {
     workflowSteps,
     emailPollingLogs,
     workflowExecutionLogs,
+    securitySettings,
     loading,
     updateExtractionTypes,
     deleteExtractionType,
@@ -1288,10 +1306,12 @@ export function useSupabaseData() {
     updateWorkflows,
     updateWorkflowSteps,
     getWorkflowExecutionLog,
-    logExtraction
+    logExtraction,
+    refreshData: loadData,
     refreshPollingLogs,
     refreshProcessedEmails,
-  } = useSupabaseData();
+    refreshWorkflowExecutionLogs,
+    updateSecuritySettings,
     refreshLogs: async () => {
       try {
         // Load only extraction logs (recent ones) - this will be replaced by filtered query
