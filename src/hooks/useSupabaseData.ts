@@ -1279,25 +1279,6 @@ export function useSupabaseData() {
     }
   };
 
-  const deleteExtractionType = async (id: string): Promise<void> => {
-    try {
-      const { error } = await supabase
-        .from('extraction_types')
-        .delete()
-        .eq('id', id);
-
-      if (error) {
-        throw error;
-      }
-
-      // Refresh extraction types after deletion
-      await refreshData();
-    } catch (error) {
-      console.error('Error deleting extraction type:', error);
-      throw error;
-    }
-  };
-
   return {
     extractionTypes,
     sftpConfig,
