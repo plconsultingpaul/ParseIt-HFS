@@ -35,6 +35,7 @@ interface SettingsPageProps {
   createUser: (username: string, password: string, isAdmin: boolean) => Promise<{ success: boolean; message: string }>;
   updateUser: (userId: string, updates: { isAdmin?: boolean; isActive?: boolean }) => Promise<{ success: boolean; message: string }>;
   deleteUser: (userId: string) => Promise<{ success: boolean; message: string }>;
+  onUpdateExtractionTypes: (types: ExtractionType[]) => Promise<void>;
   onUpdateSftpConfig: (config: SftpConfig) => Promise<void>;
   onUpdateSettingsConfig: (config: SettingsConfig) => Promise<void>;
   onUpdateApiConfig: (config: ApiConfig) => Promise<void>;
@@ -70,6 +71,7 @@ export default function SettingsPage({
   createUser,
   updateUser,
   deleteUser,
+  onUpdateExtractionTypes,
   onUpdateSftpConfig,
   onUpdateSettingsConfig,
   onUpdateApiConfig,
