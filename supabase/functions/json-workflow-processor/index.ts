@@ -50,26 +50,26 @@ serve(async (req: Request) => {
     })
   }
 
-  console.log('Workflow processor function called');
+  console.log('Workflow processor function called')
   
-  let workflowExecutionLogId: string | undefined;
-  let extractionLogId: string | undefined;
+  let workflowExecutionLogId: string | undefined
+  let extractionLogId: string | undefined
   
   try {
-    const requestBody = await req.text();
-    console.log('Raw request body length:', requestBody.length);
-    console.log('Raw request body preview:', requestBody.substring(0, 500));
+    const requestBody = await req.text()
+    console.log('Raw request body length:', requestBody.length)
+    console.log('Raw request body preview:', requestBody.substring(0, 500))
     
-    let requestData: WorkflowExecutionRequest;
+    let requestData: WorkflowExecutionRequest
     try {
-      requestData = JSON.parse(requestBody);
+      requestData = JSON.parse(requestBody)
     } catch (parseError) {
-      console.error('Failed to parse request JSON:', parseError);
-      console.error('Request body that failed to parse:', requestBody);
-      throw new Error(`Invalid JSON in request: ${parseError instanceof Error ? parseError.message : 'Unknown parse error'}`);
+      console.error('Failed to parse request JSON:', parseError)
+      console.error('Request body that failed to parse:', requestBody)
+      throw new Error(`Invalid JSON in request: ${parseError instanceof Error ? parseError.message : 'Unknown parse error'}`)
     }
     
-    const { extractedData, workflowId, userId, extractionTypeId, pdfFilename, pdfPages, pdfBase64, originalPdfFilename } = requestData;
+    const { extractedData, workflowId, userId, extractionTypeId, pdfFilename, pdfPages, pdfBase64, originalPdfFilename } = requestData
     
     console.log('Parsed request data:', {
       workflowId,
@@ -80,17 +80,17 @@ serve(async (req: Request) => {
       extractedDataLength: extractedData?.length || 0,
       pdfBase64Length: pdfBase64?.length || 0,
       originalPdfFilename
-    });
+    })
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
     
     if (!supabaseUrl || !supabaseServiceKey) {
-      console.error('Supabase configuration missing');
+      console.error('Supabase configuration missing')
       throw new Error('Supabase configuration missing')
     }
 
-    console.log('Creating extraction log entry...');
+    console.log('Creating extraction log entry...')
     
     // Create extraction log entry first
     const extractionLogResponse = await fetch(`${supabaseUrl}/rest/v1/extraction_logs`, {
@@ -110,30 +110,30 @@ serve(async (req: Request) => {
         extracted_data: extractedData,
         created_at: new Date().toISOString()
       })
-    });
+    })
 
     if (!extractionLogResponse.ok) {
-      const errorText = await extractionLogResponse.text();
-      console.error('Failed to create extraction log:', errorText);
-      throw new Error(`Failed to create extraction log: ${errorText}`);
+      const errorText = await extractionLogResponse.text()
+      console.error('Failed to create extraction log:', errorText)
+      throw new Error(`Failed to create extraction log: ${errorText}`)
     }
 
     const extractionLogData = await extractionLogResponse.json()
-    console.log('Extraction log created:', extractionLogData);
+    console.log('Extraction log created:', extractionLogData)
     
     if (!extractionLogData || extractionLogData.length === 0) {
-      console.error('No extraction log data returned');
+      console.error('No extraction log data returned')
       throw new Error('Failed to create extraction log - no data returned')
     }
 
-    extractionLogId = extractionLogData[0].id;
+    extractionLogId = extractionLogData[0].id
     if (!extractionLogId) {
-      console.error('No extraction log ID returned');
+      console.error('No extraction log ID returned')
       throw new Error('Failed to get extraction log ID')
     }
 
     // Get workflow steps
-    console.log('Fetching workflow steps for workflow:', workflowId);
+    console.log('Fetching workflow steps for workflow:', workflowId)
     const stepsResponse = await fetch(`${supabaseUrl}/rest/v1/workflow_steps?workflow_id=eq.${workflowId}&order=step_order.asc`, {
       headers: {
         'Authorization': `Bearer ${supabaseServiceKey}`,
@@ -143,16 +143,16 @@ serve(async (req: Request) => {
     })
 
     if (!stepsResponse.ok) {
-      const errorText = await stepsResponse.text();
-      console.error('Failed to fetch workflow steps:', errorText);
+      const errorText = await stepsResponse.text()
+      console.error('Failed to fetch workflow steps:', errorText)
       throw new Error('Failed to fetch workflow steps')
     }
 
     const steps: WorkflowStep[] = await stepsResponse.json()
-    console.log('Workflow steps loaded:', steps.length, 'steps');
+    console.log('Workflow steps loaded:', steps.length, 'steps')
     
     if (steps.length === 0) {
-      console.error('No steps found for workflow:', workflowId);
+      console.error('No steps found for workflow:', workflowId)
       throw new Error('No steps found for workflow')
     }
 
@@ -161,10 +161,10 @@ serve(async (req: Request) => {
     let currentStepIndex = 0
     let lastApiResponse: any = null
     
-    console.log('Starting workflow execution with', steps.length, 'steps');
+    console.log('Starting workflow execution with', steps.length, 'steps')
 
     const createStepLog = async (step: WorkflowStep, status: string, contextData: any, errorMessage?: string): Promise<string> => {
-      console.log(`Creating step log for step ${step.step_order}: ${step.step_name} with status: ${status}`);
+      console.log(`Creating step log for step ${step.step_order}: ${step.step_name} with status: ${status}`)
       try {
         const stepLogResponse = await fetch(`${supabaseUrl}/rest/v1/workflow_execution_logs`, {
           method: 'POST',
@@ -191,43 +191,43 @@ serve(async (req: Request) => {
             updated_at: new Date().toISOString(),
             completed_at: status === 'completed' || status === 'failed' ? new Date().toISOString() : null
           })
-        });
+        })
 
         if (!stepLogResponse.ok) {
-          const errorText = await stepLogResponse.text();
-          console.error('Failed to create step log:', errorText);
-          throw new Error(`Failed to create step log: ${errorText}`);
+          const errorText = await stepLogResponse.text()
+          console.error('Failed to create step log:', errorText)
+          throw new Error(`Failed to create step log: ${errorText}`)
         } else {
-          const stepLogData = await stepLogResponse.json();
-          console.log('Step log created successfully:', stepLogData[0]?.id);
-          return stepLogData[0]?.id;
+          const stepLogData = await stepLogResponse.json()
+          console.log('Step log created successfully:', stepLogData[0]?.id)
+          return stepLogData[0]?.id
         }
       } catch (logError) {
-        console.error('Error creating step log:', logError);
-        throw logError;
+        console.error('Error creating step log:', logError)
+        throw logError
       }
     }
 
     while (currentStepIndex < steps.length) {
       const step = steps[currentStepIndex]
-      console.log(`Executing step ${step.step_order}: ${step.step_name} (${step.step_type})`);
+      console.log(`Executing step ${step.step_order}: ${step.step_name} (${step.step_type})`)
       
       // Create a running log for this step
       const stepLogId = await createStepLog(step, 'running', {
         extractedData: currentData,
         stepType: step.step_type
-      });
+      })
       
       // Store the first step log ID as the main workflow execution log ID
       if (!workflowExecutionLogId) {
-        workflowExecutionLogId = stepLogId;
+        workflowExecutionLogId = stepLogId
       }
 
       try {
         // Execute step based on type
         switch (step.step_type) {
           case 'api_call':
-            console.log('Executing API call step...');
+            console.log('Executing API call step...')
             const apiCallResult = await executeApiCall(step, currentData)
             currentData = apiCallResult.data
             lastApiResponse = apiCallResult.response
@@ -250,12 +250,12 @@ serve(async (req: Request) => {
                 completed_at: new Date().toISOString(),
                 updated_at: new Date().toISOString()
               })
-            });
+            })
             break
           case 'conditional_check':
-            console.log('Executing conditional check step...');
+            console.log('Executing conditional check step...')
             const conditionResult = await executeConditionalCheck(step, currentData)
-            console.log('Condition result:', conditionResult);
+            console.log('Condition result:', conditionResult)
             
             // Update the step log to completed
             await fetch(`${supabaseUrl}/rest/v1/workflow_execution_logs?id=eq.${stepLogId}`, {
@@ -275,13 +275,13 @@ serve(async (req: Request) => {
                 completed_at: new Date().toISOString(),
                 updated_at: new Date().toISOString()
               })
-            });
+            })
             
             if (conditionResult.success) {
               if (step.next_step_on_success_id) {
                 const nextStepIndex = steps.findIndex(s => s.id === step.next_step_on_success_id)
                 if (nextStepIndex !== -1) {
-                  console.log('Jumping to success step:', nextStepIndex + 1);
+                  console.log('Jumping to success step:', nextStepIndex + 1)
                   currentStepIndex = nextStepIndex
                   continue
                 }
@@ -290,18 +290,18 @@ serve(async (req: Request) => {
               if (step.next_step_on_failure_id) {
                 const nextStepIndex = steps.findIndex(s => s.id === step.next_step_on_failure_id)
                 if (nextStepIndex !== -1) {
-                  console.log('Jumping to failure step:', nextStepIndex + 1);
+                  console.log('Jumping to failure step:', nextStepIndex + 1)
                   currentStepIndex = nextStepIndex
                   continue
                 }
               } else {
-                console.error('Conditional check failed and no failure step defined');
+                console.error('Conditional check failed and no failure step defined')
                 throw new Error(`Conditional check failed: ${conditionResult.message}`)
               }
             }
             break
           case 'data_transform':
-            console.log('Executing data transform step...');
+            console.log('Executing data transform step...')
             currentData = await executeDataTransform(step, currentData)
             
             // Update the step log to completed
@@ -321,10 +321,10 @@ serve(async (req: Request) => {
                 completed_at: new Date().toISOString(),
                 updated_at: new Date().toISOString()
               })
-            });
+            })
             break
           case 'sftp_upload':
-            console.log('Executing SFTP upload step...');
+            console.log('Executing SFTP upload step...')
             await executeSftpUpload(step, currentData, lastApiResponse, pdfBase64, originalPdfFilename, supabaseUrl, supabaseServiceKey)
             
             // Update the step log to completed
@@ -344,18 +344,18 @@ serve(async (req: Request) => {
                 completed_at: new Date().toISOString(),
                 updated_at: new Date().toISOString()
               })
-            });
+            })
             break
           default:
-            console.error('Unknown step type:', step.step_type);
+            console.error('Unknown step type:', step.step_type)
             throw new Error(`Unknown step type: ${step.step_type}`)
         }
 
-        console.log(`Step ${step.step_order} completed successfully`);
+        console.log(`Step ${step.step_order} completed successfully`)
         
         currentStepIndex++
       } catch (stepError) {
-        console.error(`Step ${step.step_order} failed:`, stepError);
+        console.error(`Step ${step.step_order} failed:`, stepError)
         
         // Update the step log to failed
         await fetch(`${supabaseUrl}/rest/v1/workflow_execution_logs?id=eq.${stepLogId}`, {
@@ -375,10 +375,10 @@ serve(async (req: Request) => {
             completed_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           })
-        });
+        })
 
         // Update extraction log status
-        console.log('Updating extraction log with failure status...');
+        console.log('Updating extraction log with failure status...')
         try {
           await fetch(`${supabaseUrl}/rest/v1/extraction_logs?id=eq.${extractionLogId}`, {
             method: 'PATCH',
@@ -388,24 +388,22 @@ serve(async (req: Request) => {
               'apikey': supabaseServiceKey
             },
             body: JSON.stringify({
-              baseFilename: config.fallbackFilename || 'document',
               extraction_status: 'failed',
-              customFilenamePart: customFilenamePart,
               updated_at: new Date().toISOString()
             })
           })
         } catch (updateError) {
-          console.error('Failed to update extraction log with error:', updateError);
+          console.error('Failed to update extraction log with error:', updateError)
         }
 
         throw stepError
       }
     }
 
-    console.log('All workflow steps completed successfully');
+    console.log('All workflow steps completed successfully')
     
     // Update extraction log status
-    console.log('Updating extraction log with success status...');
+    console.log('Updating extraction log with success status...')
     try {
       await fetch(`${supabaseUrl}/rest/v1/extraction_logs?id=eq.${extractionLogId}`, {
         method: 'PATCH',
@@ -420,10 +418,10 @@ serve(async (req: Request) => {
         })
       })
     } catch (updateError) {
-      console.error('Failed to update extraction log with success:', updateError);
+      console.error('Failed to update extraction log with success:', updateError)
     }
 
-    console.log('Workflow execution completed successfully');
+    console.log('Workflow execution completed successfully')
     
     return new Response(
       JSON.stringify({ 
@@ -439,7 +437,7 @@ serve(async (req: Request) => {
 
   } catch (error) {
     console.error("Workflow execution error:", error)
-    console.error("Error stack:", error instanceof Error ? error.stack : 'No stack trace');
+    console.error("Error stack:", error instanceof Error ? error.stack : 'No stack trace')
     
     // Update extraction log with failure status if available
     if (extractionLogId) {
@@ -448,7 +446,7 @@ serve(async (req: Request) => {
         const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
         
         if (supabaseUrl && supabaseServiceKey) {
-          console.log('Updating extraction log with failure status...');
+          console.log('Updating extraction log with failure status...')
           await fetch(`${supabaseUrl}/rest/v1/extraction_logs?id=eq.${extractionLogId}`, {
             method: 'PATCH',
             headers: {
@@ -461,10 +459,10 @@ serve(async (req: Request) => {
               error_message: error instanceof Error ? error.message : 'Workflow execution failed',
               updated_at: new Date().toISOString()
             })
-          });
+          })
         }
       } catch (updateError) {
-        console.error('Failed to update extraction log with failure:', updateError);
+        console.error('Failed to update extraction log with failure:', updateError)
       }
     }
     
@@ -789,9 +787,9 @@ async function executeSftpUpload(step: WorkflowStep, extractedData: any, lastApi
       sftpConfig: sftpConfig,
       xmlContent: JSON.stringify(extractedData),
       pdfBase64: pdfBase64,
-      baseFilename: config.fallbackFilename || 'document', // This is the base prefix (e.g., "BL_")
+      baseFilename: config.fallbackFilename || 'document',
       originalFilename: originalPdfFilename,
-      customFilenamePart: customFilenamePart, // This is only the billNumber (e.g., "12345")
+      customFilenamePart: customFilenamePart,
       formatType: 'JSON' // Assuming JSON since this is in workflow context
     })
   })
