@@ -36,6 +36,20 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
         }));
       }
     }
+    
+    // Initialize conditional check config with default conditionType
+    if (localStep.stepType === 'conditional_check') {
+      const config = localStep.configJson as ConditionalCheckConfig;
+      if (!config.conditionType) {
+        setLocalStep(prev => ({
+          ...prev,
+          configJson: {
+            ...config,
+            conditionType: 'equals'
+          }
+        }));
+      }
+    }
   }, [localStep.stepType, apiConfig.password]);
 
   const handleSave = () => {
