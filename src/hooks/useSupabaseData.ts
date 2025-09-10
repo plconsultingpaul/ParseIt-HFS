@@ -1292,7 +1292,7 @@ export function useSupabaseData() {
     refreshData: loadData,
     refreshPollingLogs,
     refreshProcessedEmails,
-    refreshWorkflowExecutionLogs,
+  } = useSupabaseData();
     refreshLogs: async () => {
       try {
         // Load only extraction logs (recent ones) - this will be replaced by filtered query

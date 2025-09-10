@@ -42,6 +42,7 @@ export default function App() {
     refreshProcessedEmails,
     refreshWorkflowExecutionLogs,
     updateExtractionTypes,
+    deleteExtractionType,
     updateSftpConfig,
     updateSettingsConfig,
     updateApiConfig,
@@ -137,6 +138,15 @@ export default function App() {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       console.error('Detailed error:', errorMessage);
       throw new Error(`Failed to save email processing rules: ${errorMessage}`);
+    }
+  };
+
+  const handleDeleteExtractionType = async (id: string) => {
+    try {
+      await deleteExtractionType(id);
+    } catch (error) {
+      console.error('Failed to delete extraction type:', error);
+      alert('Failed to delete extraction type. Please try again.');
     }
   };
 
