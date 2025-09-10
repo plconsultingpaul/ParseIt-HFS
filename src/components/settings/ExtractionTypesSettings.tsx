@@ -109,14 +109,8 @@ export default function ExtractionTypesSettings({
       // Remove from local state after successful database deletion
       removeExtractionType(index);
     } catch (error) {
-      console.error('Failed to delete extraction type from database:', error);
-      alert('Failed to delete extraction type from database. Please try again.');
+      console.error('Failed to delete extraction type:', error);
     }
-  };
-
-  const cancelDelete = () => {
-    setShowDeleteModal(false);
-    setTypeToDelete(null);
   };
 
   const addFieldMapping = (typeIndex: number) => {
@@ -304,25 +298,7 @@ export default function ExtractionTypesSettings({
                 <Trash2 className="h-8 w-8 text-red-600" />
               </div>
               <h3 className="text-xl font-bold text-gray-900 mb-2">Delete Extraction Type</h3>
-              <p className="text-gray-600">
-                Are you sure you want to permanently delete the extraction type:
-              </p>
-              <p className="text-lg font-semibold text-red-600 mt-2">
-                "{typeToDelete.name}"
-              </p>
-            </div>
-            
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-              <div className="flex items-center space-x-2 mb-2">
-                <div className="w-4 h-4 bg-red-500 rounded-full"></div>
-                <span className="font-semibold text-red-800">Warning</span>
-              </div>
-              <ul className="text-red-700 text-sm space-y-1">
-                <li>• This action cannot be undone</li>
-                <li>• All extraction instructions and templates will be lost</li>
-                <li>• Any email rules using this type will need to be updated</li>
-                <li>• Workflows linked to this type will be unassigned</li>
-              </ul>
+              <p className="text-gray-600">Are you sure you want to delete "{typeToDelete.name}"? This action cannot be undone.</p>
             </div>
             
             <div className="flex space-x-3">
@@ -330,10 +306,10 @@ export default function ExtractionTypesSettings({
                 onClick={confirmDelete}
                 className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors duration-200"
               >
-                Yes, Delete Type
+                Delete
               </button>
               <button
-                onClick={cancelDelete}
+                onClick={() => setShowDeleteModal(false)}
                 className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-lg transition-colors duration-200"
               >
                 Cancel
@@ -363,15 +339,6 @@ export default function ExtractionTypesSettings({
             <Plus className="h-4 w-4" />
             <span>Add Type</span>
           </button>
-          {localExtractionTypes.length > 0 && (
-            <button
-              onClick={handleDeleteClick}
-              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
-            >
-              <Trash2 className="h-4 w-4" />
-              <span>Delete Selected</span>
-            </button>
-          )}
           <button
             onClick={handleSave}
             disabled={isSaving}
