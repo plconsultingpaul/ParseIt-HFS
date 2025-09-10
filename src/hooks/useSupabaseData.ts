@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import type { ExtractionType, SftpConfig, SettingsConfig, ApiConfig, EmailMonitoringConfig, EmailProcessingRule, ProcessedEmail, ExtractionLog, User, UserPermissions } from '../types';
+import type { ExtractionType, SftpConfig, SettingsConfig, ApiConfig, EmailMonitoringConfig, EmailProcessingRule, ProcessedEmail, ExtractionLog, User, UserPermissions, ExtractionWorkflow, WorkflowStep, WorkflowExecutionLog, SecuritySettings, EmailPollingLog } from '../types';
 
 export function useSupabaseData() {
   const [extractionTypes, setExtractionTypes] = useState<ExtractionType[]>([]);
@@ -34,6 +34,14 @@ export function useSupabaseData() {
   const [processedEmails, setProcessedEmails] = useState<ProcessedEmail[]>([]);
   const [extractionLogs, setExtractionLogs] = useState<ExtractionLog[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [workflows, setWorkflows] = useState<ExtractionWorkflow[]>([]);
+  const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
+  const [emailPollingLogs, setEmailPollingLogs] = useState<EmailPollingLog[]>([]);
+  const [workflowExecutionLogs, setWorkflowExecutionLogs] = useState<WorkflowExecutionLog[]>([]);
+  const [securitySettings, setSecuritySettings] = useState<SecuritySettings>({
+    id: '',
+    defaultUploadMode: 'manual'
+  });
 
   // Load data on mount
   useEffect(() => {
@@ -67,7 +75,9 @@ export function useSupabaseData() {
         jsonPath: type.json_path || '',
         parseitIdMapping: type.parseit_id_mapping || '',
         traceTypeMapping: type.trace_type_mapping || '',
-        traceTypeValue: type.trace_type_value || ''
+        traceTypeValue: type.trace_type_value || '',
+        workflowId: type.workflow_id || undefined,
+        autoDetectInstructions: type.auto_detect_instructions || ''
       }));
 
       setExtractionTypes(transformedTypes);
@@ -137,7 +147,7 @@ export function useSupabaseData() {
       // Load email monitoring config
       const { data: emailData, error: emailError } = await supabase
         .from('email_monitoring_config')
-        .select('*')
+        .select('provider, tenant_id, client_id, client_secret, monitored_email, gmail_client_id, gmail_client_secret, gmail_refresh_token, gmail_monitored_label, polling_interval, is_enabled, enable_auto_detect, last_check, created_at, updated_at')
         .order('updated_at', { ascending: false })
         .limit(1);
 
@@ -148,12 +158,18 @@ export function useSupabaseData() {
       if (emailData && emailData.length > 0) {
         const config = emailData[0];
         setEmailConfig({
+          provider: config.provider || 'office365',
           tenantId: config.tenant_id,
           clientId: config.client_id,
           clientSecret: config.client_secret,
           monitoredEmail: config.monitored_email,
+          gmailClientId: config.gmail_client_id || '',
+          gmailClientSecret: config.gmail_client_secret || '',
+          gmailRefreshToken: config.gmail_refresh_token || '',
+          gmailMonitoredLabel: config.gmail_monitored_label || 'INBOX',
           pollingInterval: config.polling_interval,
           isEnabled: config.is_enabled,
+          enableAutoDetect: config.enable_auto_detect || false,
           lastCheck: config.last_check
         });
       }
@@ -242,11 +258,64 @@ export function useSupabaseData() {
         setExtractionLogs([]);
       }
 
+      // Load workflows
+      try {
+        const { data: workflowsData, error: workflowsError } = await supabase
+          .from('extraction_workflows')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (workflowsError) {
+          console.error('Error loading workflows:', workflowsError);
+        } else if (workflowsData) {
+          const transformedWorkflows: ExtractionWorkflow[] = workflowsData.map(workflow => ({
+            id: workflow.id,
+            name: workflow.name,
+            description: workflow.description,
+            isActive: workflow.is_active,
+            createdAt: workflow.created_at,
+            updatedAt: workflow.updated_at
+          }));
+          setWorkflows(transformedWorkflows);
+          console.log('Loaded workflows:', transformedWorkflows);
+        }
+      } catch (error) {
+        console.error('Error loading workflows:', error);
+      }
+
+      // Load workflow steps
+      try {
+        const { data: stepsData, error: stepsError } = await supabase
+          .from('workflow_steps')
+          .select('*')
+          .order('workflow_id, step_order', { ascending: true });
+
+        if (stepsError) {
+          console.error('Error loading workflow steps:', stepsError);
+        } else if (stepsData) {
+          const transformedSteps: WorkflowStep[] = stepsData.map(step => ({
+            id: step.id,
+            workflowId: step.workflow_id,
+            stepOrder: step.step_order,
+            stepType: step.step_type,
+            stepName: step.step_name,
+            configJson: step.config_json,
+            nextStepOnSuccessId: step.next_step_on_success_id,
+            nextStepOnFailureId: step.next_step_on_failure_id,
+            createdAt: step.created_at,
+            updatedAt: step.updated_at
+          }));
+          setWorkflowSteps(transformedSteps);
+        }
+      } catch (error) {
+        console.error('Error loading workflow steps:', error);
+      }
+
       // Load users for extraction logs
       try {
         const { data: usersData, error: usersError } = await supabase
           .from('users')
-          .select('id, username, is_admin, is_active, permissions')
+          .select('id, username, is_admin, is_active, permissions, preferred_upload_mode')
           .order('created_at', { ascending: false });
 
         if (usersError) {
@@ -257,12 +326,94 @@ export function useSupabaseData() {
             username: user.username,
             isAdmin: user.is_admin,
             isActive: user.is_active,
-            permissions: user.permissions ? JSON.parse(user.permissions) : getDefaultPermissions(user.is_admin)
+            permissions: user.permissions ? JSON.parse(user.permissions) : getDefaultPermissions(user.is_admin),
+            preferredUploadMode: user.preferred_upload_mode || 'manual'
           }));
           setUsers(transformedUsers);
         }
       } catch (error) {
         console.error('Error loading users:', error);
+      }
+
+      // Load security settings
+      try {
+        const { data: securityData, error: securityError } = await supabase
+          .from('security_settings')
+          .select('*')
+          .order('updated_at', { ascending: false })
+          .limit(1);
+
+        if (securityError) {
+          console.error('Error loading security settings:', securityError);
+        } else if (securityData && securityData.length > 0) {
+          const settings = securityData[0];
+          setSecuritySettings({
+            id: settings.id,
+            defaultUploadMode: settings.default_upload_mode || 'manual',
+            createdAt: settings.created_at,
+            updatedAt: settings.updated_at
+          });
+        }
+      } catch (error) {
+        console.error('Error loading security settings:', error);
+      }
+
+      // Load email polling logs
+      try {
+        const { data: pollingLogsData, error: pollingLogsError } = await supabase
+          .from('email_polling_logs')
+          .select('*')
+          .order('timestamp', { ascending: false })
+          .limit(100);
+
+        if (pollingLogsError) {
+          console.error('Error loading email polling logs:', pollingLogsError);
+        } else if (pollingLogsData) {
+          const transformedPollingLogs: EmailPollingLog[] = pollingLogsData.map(log => ({
+            id: log.id,
+            timestamp: log.timestamp,
+            provider: log.provider,
+            status: log.status,
+            emailsFound: log.emails_found,
+            emailsProcessed: log.emails_processed,
+            errorMessage: log.error_message,
+            executionTimeMs: log.execution_time_ms,
+            createdAt: log.created_at
+          }));
+          setEmailPollingLogs(transformedPollingLogs);
+        }
+      } catch (error) {
+        console.error('Error loading email polling logs:', error);
+      }
+
+      // Load workflow execution logs
+      try {
+        const { data: workflowLogsData, error: workflowLogsError } = await supabase
+          .from('workflow_execution_logs')
+          .select('*')
+          .order('started_at', { ascending: false })
+          .limit(100);
+
+        if (workflowLogsError) {
+          console.error('Error loading workflow execution logs:', workflowLogsError);
+        } else if (workflowLogsData) {
+          const transformedWorkflowLogs: WorkflowExecutionLog[] = workflowLogsData.map(log => ({
+            id: log.id,
+            extractionLogId: log.extraction_log_id,
+            workflowId: log.workflow_id,
+            status: log.status,
+            currentStepId: log.current_step_id,
+            currentStepName: log.current_step_name,
+            errorMessage: log.error_message,
+            contextData: log.context_data,
+            startedAt: log.started_at,
+            updatedAt: log.updated_at,
+            completedAt: log.completed_at
+          }));
+          setWorkflowExecutionLogs(transformedWorkflowLogs);
+        }
+      } catch (error) {
+        console.error('Error loading workflow execution logs:', error);
       }
     } catch (error) {
       console.error('Error loading data:', error);
@@ -306,6 +457,7 @@ export function useSupabaseData() {
           format_type: type.formatType,
           json_path: type.jsonPath,
           parseit_id_mapping: type.parseitIdMapping || null,
+          auto_detect_instructions: type.autoDetectInstructions || null,
           user_id: null,
           updated_at: new Date().toISOString()
         }));
@@ -324,7 +476,8 @@ export function useSupabaseData() {
           formatTemplate: type.xml_format,
           filename: type.filename || '',
           formatType: type.format_type || 'XML',
-          jsonPath: type.json_path || ''
+          jsonPath: type.json_path || '',
+          autoDetectInstructions: type.auto_detect_instructions || ''
         }));
 
         allUpdatedTypes.push(...insertedTypes);
@@ -344,6 +497,8 @@ export function useSupabaseData() {
           parseit_id_mapping: type.parseitIdMapping || null,
           trace_type_mapping: type.traceTypeMapping || null,
           trace_type_value: type.traceTypeValue || null,
+          workflow_id: type.workflowId || null,
+          auto_detect_instructions: type.autoDetectInstructions || null,
           user_id: null,
           updated_at: new Date().toISOString()
         }));
@@ -366,7 +521,9 @@ export function useSupabaseData() {
           fieldMappings: type.field_mappings ? JSON.parse(type.field_mappings) : undefined,
           parseitIdMapping: type.parseit_id_mapping || '',
           traceTypeMapping: type.trace_type_mapping || '',
-          traceTypeValue: type.trace_type_value || ''
+          traceTypeValue: type.trace_type_value || '',
+          workflowId: type.workflow_id || undefined,
+          autoDetectInstructions: type.auto_detect_instructions || ''
         }));
 
         allUpdatedTypes.push(...updatedExistingTypes);
@@ -494,12 +651,18 @@ export function useSupabaseData() {
       const { error } = await supabase
         .from('email_monitoring_config')
         .insert({
+          provider: config.provider,
           tenant_id: config.tenantId,
           client_id: config.clientId,
           client_secret: config.clientSecret,
           monitored_email: config.monitoredEmail,
+          gmail_client_id: config.gmailClientId || '',
+          gmail_client_secret: config.gmailClientSecret || '',
+          gmail_refresh_token: config.gmailRefreshToken || '',
+          gmail_monitored_label: config.gmailMonitoredLabel || 'INBOX',
           polling_interval: config.pollingInterval,
           is_enabled: config.isEnabled,
+          enable_auto_detect: config.enableAutoDetect || false,
           last_check: config.lastCheck || null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
@@ -649,6 +812,457 @@ export function useSupabaseData() {
     }
   };
 
+  const updateWorkflows = async (workflows: ExtractionWorkflow[]) => {
+    try {
+      // Get current workflows from database
+      const { data: currentWorkflows } = await supabase
+        .from('extraction_workflows')
+        .select('id');
+
+      const currentIds = new Set((currentWorkflows || []).map(w => w.id));
+      const newIds = new Set(workflows.map(w => w.id));
+
+      // Delete removed workflows
+      const toDelete = [...currentIds].filter(id => !newIds.has(id));
+      if (toDelete.length > 0) {
+        await supabase
+          .from('extraction_workflows')
+          .delete()
+          .in('id', toDelete);
+      }
+
+      // Separate new and existing workflows
+      const newWorkflows = workflows.filter(workflow => workflow.id.startsWith('temp-'));
+      const existingWorkflows = workflows.filter(workflow => !workflow.id.startsWith('temp-'));
+
+      let allUpdatedWorkflows: ExtractionWorkflow[] = [];
+
+      // Insert new workflows
+      if (newWorkflows.length > 0) {
+        const insertData = newWorkflows.map(workflow => ({
+          name: workflow.name,
+          description: workflow.description,
+          is_active: workflow.isActive,
+          updated_at: new Date().toISOString()
+        }));
+
+        const { data: insertedData, error: insertError } = await supabase
+          .from('extraction_workflows')
+          .insert(insertData)
+          .select();
+
+        if (insertError) throw insertError;
+
+        const insertedWorkflows: ExtractionWorkflow[] = (insertedData || []).map(workflow => ({
+          id: workflow.id,
+          name: workflow.name,
+          description: workflow.description,
+          isActive: workflow.is_active,
+          createdAt: workflow.created_at,
+          updatedAt: workflow.updated_at
+        }));
+
+        allUpdatedWorkflows.push(...insertedWorkflows);
+      }
+
+      // Update existing workflows
+      if (existingWorkflows.length > 0) {
+        const updateData = existingWorkflows.map(workflow => ({
+          id: workflow.id,
+          name: workflow.name,
+          description: workflow.description,
+          is_active: workflow.isActive,
+          updated_at: new Date().toISOString()
+        }));
+
+        const { data: updatedData, error: updateError } = await supabase
+          .from('extraction_workflows')
+          .upsert(updateData, { onConflict: 'id' })
+          .select();
+
+        if (updateError) throw updateError;
+
+        const updatedExistingWorkflows: ExtractionWorkflow[] = (updatedData || []).map(workflow => ({
+          id: workflow.id,
+          name: workflow.name,
+          description: workflow.description,
+          isActive: workflow.is_active,
+          createdAt: workflow.created_at,
+          updatedAt: workflow.updated_at
+        }));
+
+        allUpdatedWorkflows.push(...updatedExistingWorkflows);
+      }
+
+      setWorkflows(allUpdatedWorkflows);
+    } catch (error) {
+      console.error('Error updating workflows:', error);
+      throw error;
+    }
+  };
+
+  const updateWorkflowSteps = async (workflowId: string, steps: WorkflowStep[]) => {
+    try {
+      // Utility function to validate UUID
+      const isValidUuid = (str: string): boolean => {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        return uuidRegex.test(str);
+      };
+
+      // Check if workflowId is a valid UUID before proceeding
+      if (!isValidUuid(workflowId)) {
+        throw new Error('Workflow must be saved first before managing its steps. Please save the workflow to generate a permanent ID.');
+      }
+
+      console.log('Updating workflow steps for workflow:', workflowId);
+      console.log('Steps to save:', steps);
+      
+      // SAFE APPROACH: Handle new and existing steps separately to avoid data loss
+      
+      // Separate new steps (temp IDs) from existing steps (real UUIDs)
+      const newSteps = steps.filter(step => step.id.startsWith('temp-'));
+      const existingSteps = steps.filter(step => !step.id.startsWith('temp-') && isValidUuid(step.id));
+      
+      console.log('New steps to insert:', newSteps.length);
+      console.log('Existing steps to update:', existingSteps.length);
+      
+      // Get current steps from database
+      const { data: currentStepsData, error: fetchError } = await supabase
+        .from('workflow_steps')
+        .select('*')
+        .eq('workflow_id', workflowId)
+        .order('step_order', { ascending: true });
+      
+      if (fetchError) {
+        console.error('Error fetching current steps:', fetchError);
+        throw new Error(`Failed to fetch current steps: ${fetchError.message}`);
+      }
+      
+      console.log('Current steps in database:', currentStepsData);
+      
+      // Find steps to delete (exist in DB but not in our current list)
+      const currentDbIds = new Set((currentStepsData || []).map(s => s.id));
+      const keepIds = new Set(existingSteps.map(s => s.id));
+      const stepsToDelete = [...currentDbIds].filter(id => !keepIds.has(id));
+      
+      console.log('Steps to delete:', stepsToDelete);
+      
+      // Delete removed steps
+      if (stepsToDelete.length > 0) {
+        const { error: deleteError } = await supabase
+          .from('workflow_steps')
+          .delete()
+          .in('id', stepsToDelete);
+        
+        if (deleteError) {
+          console.error('Error deleting removed steps:', deleteError);
+          throw new Error(`Failed to delete removed steps: ${deleteError.message}`);
+        }
+        console.log('Successfully deleted removed steps');
+      }
+      
+      // Re-index ALL steps to ensure sequential step_order
+      const allStepsToSave = [...existingSteps, ...newSteps]
+        .sort((a, b) => a.stepOrder - b.stepOrder)
+        .map((step, index) => ({
+          ...step,
+          stepOrder: index + 1,
+          workflowId: workflowId
+        }));
+      
+      console.log('All steps after re-indexing:', allStepsToSave);
+      
+      let finalSteps: WorkflowStep[] = [];
+      
+      // Update existing steps
+      if (existingSteps.length > 0) {
+        const existingStepsToUpdate = allStepsToSave.filter(step => !step.id.startsWith('temp-'));
+        
+        if (existingStepsToUpdate.length > 0) {
+          const updateData = existingStepsToUpdate.map(step => ({
+            id: step.id,
+            workflow_id: workflowId,
+            step_order: step.stepOrder,
+            step_type: step.stepType,
+            step_name: step.stepName,
+            config_json: step.configJson || {},
+            next_step_on_success_id: step.nextStepOnSuccessId || null,
+            next_step_on_failure_id: step.nextStepOnFailureId || null,
+            updated_at: new Date().toISOString()
+          }));
+
+          console.log('Updating existing steps:', updateData);
+          const { data: updatedData, error: updateError } = await supabase
+            .from('workflow_steps')
+            .upsert(updateData, { onConflict: 'id' })
+            .select();
+
+          if (updateError) {
+            console.error('Update error details:', updateError);
+            throw new Error(`Failed to update existing steps: ${updateError.message}`);
+          }
+
+          console.log('Successfully updated existing steps:', updatedData);
+          
+          const updatedSteps: WorkflowStep[] = (updatedData || []).map(step => ({
+            id: step.id,
+            workflowId: step.workflow_id,
+            stepOrder: step.step_order,
+            stepType: step.step_type,
+            stepName: step.step_name,
+            configJson: step.config_json,
+            nextStepOnSuccessId: step.next_step_on_success_id,
+            nextStepOnFailureId: step.next_step_on_failure_id,
+            createdAt: step.created_at,
+            updatedAt: step.updated_at
+          }));
+          
+          finalSteps.push(...updatedSteps);
+        }
+      }
+      
+      // Insert new steps
+      if (newSteps.length > 0) {
+        const newStepsToInsert = allStepsToSave.filter(step => step.id.startsWith('temp-'));
+        
+        if (newStepsToInsert.length > 0) {
+          const insertData = newStepsToInsert.map(step => ({
+            workflow_id: workflowId,
+            step_order: step.stepOrder,
+            step_type: step.stepType,
+            step_name: step.stepName,
+            config_json: step.configJson || {},
+            next_step_on_success_id: step.nextStepOnSuccessId || null,
+            next_step_on_failure_id: step.nextStepOnFailureId || null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }));
+
+          console.log('Inserting new steps:', insertData);
+          const { data: insertedData, error: insertError } = await supabase
+            .from('workflow_steps')
+            .insert(insertData)
+            .select();
+
+          if (insertError) {
+            console.error('Insert error details:', insertError);
+            throw new Error(`Failed to insert new steps: ${insertError.message}`);
+          }
+
+          console.log('Successfully inserted new steps:', insertedData);
+          
+          const insertedSteps: WorkflowStep[] = (insertedData || []).map(step => ({
+            id: step.id,
+            workflowId: step.workflow_id,
+            stepOrder: step.step_order,
+            stepType: step.step_type,
+            stepName: step.step_name,
+            configJson: step.config_json,
+            nextStepOnSuccessId: step.next_step_on_success_id,
+            nextStepOnFailureId: step.next_step_on_failure_id,
+            createdAt: step.created_at,
+            updatedAt: step.updated_at
+          }));
+          
+          finalSteps.push(...insertedSteps);
+        }
+      }
+      
+      // Update the workflowSteps state
+      setWorkflowSteps(prev => [
+        ...prev.filter(s => s.workflowId !== workflowId),
+        ...finalSteps.sort((a, b) => a.stepOrder - b.stepOrder)
+      ]);
+      
+      console.log('Successfully updated workflow steps in state');
+      console.log('Final steps in state:', finalSteps);
+    } catch (error) {
+      console.error('Error updating workflow steps:', error);
+      throw error;
+    }
+  };
+
+  const getWorkflowExecutionLog = async (logId: string): Promise<WorkflowExecutionLog | null> => {
+    try {
+      const { data, error } = await supabase
+        .from('workflow_execution_logs')
+        .select('*')
+        .eq('id', logId);
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        const log = data[0];
+        return {
+          id: log.id,
+          extractionLogId: log.extraction_log_id,
+          workflowId: log.workflow_id,
+          status: log.status,
+          currentStepId: log.current_step_id,
+          currentStepName: log.current_step_name,
+          errorMessage: log.error_message,
+          contextData: log.context_data,
+          startedAt: log.started_at,
+          updatedAt: log.updated_at,
+          completedAt: log.completed_at
+        };
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error getting workflow execution log:', error);
+      return null;
+    }
+  };
+
+  const updateSecuritySettings = async (settings: SecuritySettings) => {
+    try {
+      // Delete all existing security settings first
+      const { error: deleteError } = await supabase
+        .from('security_settings')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all records
+
+      if (deleteError) {
+        console.warn('Warning: Could not delete old security settings:', deleteError);
+      }
+
+      // Insert the new configuration
+      const { error } = await supabase
+        .from('security_settings')
+        .insert({
+          default_upload_mode: settings.defaultUploadMode,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+
+      if (error) throw error;
+
+      setSecuritySettings(settings);
+    } catch (error) {
+      console.error('Error updating security settings:', error);
+      throw error;
+    }
+  };
+
+  const refreshPollingLogs = async () => {
+    try {
+      const { data: pollingLogsData, error: pollingLogsError } = await supabase
+        .from('email_polling_logs')
+        .select('*')
+        .order('timestamp', { ascending: false })
+        .limit(100);
+
+      if (pollingLogsError) {
+        console.error('Error loading email polling logs:', pollingLogsError);
+        throw pollingLogsError;
+      }
+
+      if (pollingLogsData) {
+        const transformedPollingLogs: EmailPollingLog[] = pollingLogsData.map(log => ({
+          id: log.id,
+          timestamp: log.timestamp,
+          provider: log.provider,
+          status: log.status,
+          emailsFound: log.emails_found,
+          emailsProcessed: log.emails_processed,
+          errorMessage: log.error_message,
+          executionTimeMs: log.execution_time_ms,
+          createdAt: log.created_at
+        }));
+        setEmailPollingLogs(transformedPollingLogs);
+        return transformedPollingLogs;
+      }
+      
+      return [];
+    } catch (error) {
+      console.error('Error refreshing email polling logs:', error);
+      throw error;
+    }
+  };
+
+  const refreshProcessedEmails = async () => {
+    try {
+      const { data: emailsData, error: emailsError } = await supabase
+        .from('processed_emails')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (emailsError) {
+        console.error('Error loading processed emails:', emailsError);
+        throw emailsError;
+      }
+
+      if (emailsData) {
+        const transformedEmails: ProcessedEmail[] = emailsData.map(email => ({
+          id: email.id,
+          emailId: email.email_id,
+          sender: email.sender,
+          subject: email.subject,
+          receivedDate: email.received_date,
+          processingRuleId: email.processing_rule_id,
+          extractionTypeId: email.extraction_type_id,
+          pdfFilename: email.pdf_filename,
+          processingStatus: email.processing_status,
+          errorMessage: email.error_message,
+          parseitId: email.parseit_id,
+          processedAt: email.processed_at
+        }));
+        setProcessedEmails(transformedEmails);
+        return transformedEmails;
+      }
+      
+      return [];
+    } catch (error) {
+      console.error('Error refreshing processed emails:', error);
+      throw error;
+    }
+  };
+
+  const refreshWorkflowExecutionLogs = async () => {
+    console.log('Starting workflow execution logs refresh...');
+    try {
+      const { data: workflowLogsData, error: workflowLogsError } = await supabase
+        .from('workflow_execution_logs')
+        .select('*')
+        .order('started_at', { ascending: false })
+        .limit(100);
+
+      console.log('Workflow logs query result:', { data: workflowLogsData, error: workflowLogsError });
+
+      if (workflowLogsError) {
+        console.error('Error loading workflow execution logs:', workflowLogsError);
+        throw workflowLogsError;
+      }
+
+      if (workflowLogsData) {
+        const transformedWorkflowLogs: WorkflowExecutionLog[] = workflowLogsData.map(log => ({
+          id: log.id,
+          extractionLogId: log.extraction_log_id,
+          workflowId: log.workflow_id,
+          status: log.status,
+          currentStepId: log.current_step_id,
+          currentStepName: log.current_step_name,
+          errorMessage: log.error_message,
+          contextData: log.context_data,
+          startedAt: log.started_at,
+          updatedAt: log.updated_at,
+          completedAt: log.completed_at
+        }));
+        console.log('Transformed workflow logs:', transformedWorkflowLogs);
+        setWorkflowExecutionLogs(transformedWorkflowLogs);
+        return transformedWorkflowLogs;
+      }
+      
+      console.log('No workflow logs data returned');
+      return [];
+    } catch (error) {
+      console.error('Error refreshing workflow execution logs:', error);
+      throw error;
+    }
+  };
+
   return {
     extractionTypes,
     sftpConfig,
@@ -659,6 +1273,10 @@ export function useSupabaseData() {
     processedEmails,
     extractionLogs,
     users,
+    workflows,
+    workflowSteps,
+    emailPollingLogs,
+    workflowExecutionLogs,
     loading,
     updateExtractionTypes,
     updateSftpConfig,
@@ -666,8 +1284,14 @@ export function useSupabaseData() {
     updateApiConfig,
     updateEmailConfig,
     updateEmailRules,
+    updateWorkflows,
+    updateWorkflowSteps,
+    getWorkflowExecutionLog,
     logExtraction,
     refreshData: loadData,
+    refreshPollingLogs,
+    refreshProcessedEmails,
+    refreshWorkflowExecutionLogs,
     refreshLogs: async () => {
       try {
         // Load only extraction logs (recent ones) - this will be replaced by filtered query
@@ -805,7 +1429,8 @@ function getDefaultPermissions(isAdmin: boolean): UserPermissions {
       emailRules: true,
       processedEmails: true,
       extractionLogs: true,
-      userManagement: true
+      userManagement: true,
+      workflowManagement: true
     };
   }
   
@@ -817,6 +1442,7 @@ function getDefaultPermissions(isAdmin: boolean): UserPermissions {
     emailRules: false,
     processedEmails: false,
     extractionLogs: false,
-    userManagement: false
+    userManagement: false,
+    workflowManagement: false
   };
 }

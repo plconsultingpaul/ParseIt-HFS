@@ -33,12 +33,13 @@ export function useAuth() {
             });
           } else {
             // User exists and is active, update with latest data from database
+            const userData = data[0];
             const validatedUser: User = {
-              id: data[0].id,
-              username: data[0].username,
-              isAdmin: data[0].is_admin,
-              isActive: data[0].is_active,
-              permissions: data[0].permissions ? JSON.parse(data[0].permissions) : getDefaultPermissions(data[0].is_admin)
+              id: userData.id,
+              username: userData.username,
+              isAdmin: userData.is_admin,
+              isActive: userData.is_active,
+              permissions: userData.permissions ? JSON.parse(userData.permissions) : getDefaultPermissions(userData.is_admin)
             };
 
             setAuthState({
@@ -90,7 +91,8 @@ export function useAuth() {
           username: data.user.username,
           isAdmin: data.user.is_admin,
           isActive: data.user.is_active,
-          permissions: userPermissions
+          permissions: userPermissions,
+          preferredUploadMode: data.user.preferred_upload_mode || 'manual'
         };
 
         setAuthState({
@@ -148,7 +150,7 @@ export function useAuth() {
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('id, username, is_admin, is_active, permissions')
+        .select('id, username, is_admin, is_active, permissions, preferred_upload_mode')
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -160,7 +162,8 @@ export function useAuth() {
         username: user.username,
         isAdmin: user.is_admin,
         isActive: user.is_active,
-        permissions: user.permissions ? JSON.parse(user.permissions) : getDefaultPermissions(user.is_admin)
+        permissions: user.permissions ? JSON.parse(user.permissions) : getDefaultPermissions(user.is_admin),
+        preferredUploadMode: user.preferred_upload_mode || 'manual'
       }));
     } catch (error) {
       console.error('Get users error:', error);
@@ -168,12 +171,13 @@ export function useAuth() {
     }
   };
 
-  const updateUser = async (userId: string, updates: { isAdmin?: boolean; isActive?: boolean; permissions?: UserPermissions }): Promise<{ success: boolean; message: string }> => {
+  const updateUser = async (userId: string, updates: { isAdmin?: boolean; isActive?: boolean; permissions?: UserPermissions; preferredUploadMode?: 'manual' | 'auto' }): Promise<{ success: boolean; message: string }> => {
     try {
       const updateData: any = {};
       if (updates.isAdmin !== undefined) updateData.is_admin = updates.isAdmin;
       if (updates.isActive !== undefined) updateData.is_active = updates.isActive;
       if (updates.permissions !== undefined) updateData.permissions = JSON.stringify(updates.permissions);
+      if (updates.preferredUploadMode !== undefined) updateData.preferred_upload_mode = updates.preferredUploadMode;
       updateData.updated_at = new Date().toISOString();
 
       const { error } = await supabase
@@ -244,7 +248,8 @@ function getDefaultPermissions(isAdmin: boolean): UserPermissions {
       emailRules: true,
       processedEmails: true,
       extractionLogs: true,
-      userManagement: true
+      userManagement: true,
+      workflowManagement: true
     };
   }
   
@@ -256,6 +261,7 @@ function getDefaultPermissions(isAdmin: boolean): UserPermissions {
     emailRules: false,
     processedEmails: false,
     extractionLogs: false,
-    userManagement: false
+    userManagement: false,
+    workflowManagement: false
   };
 }
