@@ -23,9 +23,11 @@ export default function ExtractionTypesSettings({
   const [showAddModal, setShowAddModal] = useState(false);
   const [showMappingPage, setShowMappingPage] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [typeToDelete, setTypeToDelete] = useState<{ index: number; name: string } | null>(null);
+  const [typeToDelete, setTypeToDelete] = useState<{ index: number; name: string; id?: string } | null>(null);
   const [newTypeName, setNewTypeName] = useState('');
   const [nameError, setNameError] = useState('');
+
+  const handleAddTypeClick = () => {
     setShowAddModal(true);
     setNewTypeName('');
     setNameError('');
@@ -98,7 +100,7 @@ export default function ExtractionTypesSettings({
     
     try {
       // Only call database delete if this is not a temporary type
-      if (!typeToDelete.id.startsWith('temp-')) {
+      if (typeToDelete.id && !typeToDelete.id.startsWith('temp-')) {
         await onDeleteExtractionType(typeToDelete.id);
       }
       
@@ -110,22 +112,6 @@ export default function ExtractionTypesSettings({
     } catch (error) {
       console.error('Failed to delete extraction type:', error);
       alert('Failed to delete extraction type. Please try again.');
-    }
-  };
-
-  const handleDeleteClick = () => {
-    if (localExtractionTypes.length === 0) return;
-    
-    const typeToDelete = localExtractionTypes[selectedTypeIndex];
-    setTypeToDelete({ index: selectedTypeIndex, name: typeToDelete.name });
-    setShowDeleteModal(true);
-  };
-
-  const confirmDelete = () => {
-    if (typeToDelete) {
-      removeExtractionType(typeToDelete.index);
-      setShowDeleteModal(false);
-      setTypeToDelete(null);
     }
   };
 
@@ -310,36 +296,6 @@ export default function ExtractionTypesSettings({
                   Cancel
                 </button>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Confirmation Modal */}
-      {showDeleteModal && typeToDelete && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
-            <div className="text-center mb-6">
-              <div className="bg-red-100 p-3 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-                <Trash2 className="h-8 w-8 text-red-600" />
-              </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-2">Delete Extraction Type</h3>
-              <p className="text-gray-600">Are you sure you want to delete "{typeToDelete.name}"? This action cannot be undone.</p>
-            </div>
-            
-            <div className="flex space-x-3">
-              <button
-                onClick={confirmDelete}
-                className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors duration-200"
-              >
-                Delete
-              </button>
-              <button
-                onClick={() => setShowDeleteModal(false)}
-                className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-lg transition-colors duration-200"
-              >
-                Cancel
-              </button>
             </div>
           </div>
         </div>
