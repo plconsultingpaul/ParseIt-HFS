@@ -286,10 +286,7 @@ serve(async (req: Request) => {
                   continue
                 }
               }
-              console.log('Extraction log ID for failure update:', extractionLogId)
-              
-              const failureUpdateResponse = await fetch(`${supabaseUrl}/rest/v1/extraction_logs?id=eq.${extractionLogId}`, {
-                          } else {
+            } else {
               if (step.next_step_on_failure_id) {
                 const nextStepIndex = steps.findIndex(s => s.id === step.next_step_on_failure_id)
                 if (nextStepIndex !== -1) {
@@ -301,18 +298,6 @@ serve(async (req: Request) => {
                 console.error('Conditional check failed and no failure step defined')
                 throw new Error(`Conditional check failed: ${conditionResult.message}`)
               }
-              
-              console.log('Failure update response status:', failureUpdateResponse.status)
-              console.log('Failure update response ok:', failureUpdateResponse.ok)
-              
-              if (!failureUpdateResponse.ok) {
-                const failureErrorText = await failureUpdateResponse.text()
-                console.error('Failed to update extraction log with failure status:', failureErrorText)
-              } else {
-                console.log('Successfully updated extraction log to failed status')
-              }
-            }
-              )
             }
             break
           case 'data_transform':
@@ -688,10 +673,6 @@ async function executeConditionalCheck(step: WorkflowStep, data: any): Promise<{
   // Provide a default conditionType if missing or undefined
   const conditionType = config.conditionType || 'equals';
   
-  if (!config.jsonPath) {
-    throw new Error('Conditional check step missing JSON path configuration')
-  }
-
   const value = getValueByPath(data, config.jsonPath)
   
   switch (conditionType) {
