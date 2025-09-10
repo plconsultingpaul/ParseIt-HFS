@@ -381,7 +381,7 @@ Please provide only the ${outputFormat} output without any additional explanatio
           });
         }
         
-        extractedContent = JSON.stringify(jsonData, null, 2);
+        extractedContent = JSON.stringify(jsonData);
       } catch (parseError) {
         console.warn('Could not parse JSON for post-processing:', parseError);
         // If parsing fails, we'll continue with the original content

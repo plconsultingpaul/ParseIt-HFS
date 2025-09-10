@@ -21,7 +21,8 @@ export async function uploadToSftp({
   useExistingParseitId,
   userId,
   extractionTypeId,
-  formatType
+  formatType,
+  customFilenamePart
 }: SftpUploadOptions): Promise<void> {
   try {
     // Convert PDF file to base64
@@ -50,7 +51,8 @@ export async function uploadToSftp({
         useExistingParseitId,
         userId,
         extractionTypeId,
-        formatType
+        formatType,
+        customFilenamePart
       })
     });
 
