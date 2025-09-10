@@ -390,8 +390,7 @@ serve(async (req: Request) => {
               'apikey': supabaseServiceKey
             },
             body: JSON.stringify({
-              extraction_status: 'failed',
-              updated_at: new Date().toISOString()
+              extraction_status: 'failed'
             })
           })
           
@@ -430,8 +429,7 @@ serve(async (req: Request) => {
           'apikey': supabaseServiceKey
         },
         body: JSON.stringify({
-          extraction_status: 'success',
-          updated_at: new Date().toISOString()
+          extraction_status: 'success'
         })
       })
       
@@ -498,8 +496,7 @@ serve(async (req: Request) => {
             },
             body: JSON.stringify({
               extraction_status: 'failed',
-              error_message: error instanceof Error ? error.message : 'Workflow execution failed',
-              updated_at: new Date().toISOString()
+              error_message: error instanceof Error ? error.message : 'Workflow execution failed'
             })
           })
         }
