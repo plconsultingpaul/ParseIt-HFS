@@ -1,173 +1,239 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from './hooks/useAuth';
-import LoginPage from './components/LoginPage';
-import Layout from './components/Layout';
-import ExtractPage from './components/ExtractPage';
-import SettingsPage from './components/SettingsPage';
-import { useSupabaseData } from './hooks/useSupabaseData';
-import { Loader2 } from 'lucide-react';
-import type { ExtractionType, SftpConfig, SettingsConfig, ApiConfig, EmailMonitoringConfig, EmailProcessingRule, User } from './types';
+export interface ExtractionType {
+  id: string;
+  name: string;
+  defaultInstructions: string;
+  formatTemplate: string;
+  filename: string;
+  formatType?: 'XML' | 'JSON';
+  jsonPath?: string;
+  fieldMappings?: FieldMapping[];
+  parseitIdMapping?: string;
+  traceTypeMapping?: string;
+  traceTypeValue?: string;
+  workflowId?: string;
+  autoDetectInstructions?: string;
+}
 
-export default function App() {
-  const { 
-    isAuthenticated, 
-    user, 
-    loading: authLoading, 
-    login, 
-    logout,
-    getAllUsers,
-    createUser,
-    updateUser
-  } = useAuth();
-  const [currentPage, setCurrentPage] = useState<'extract' | 'settings'>('extract');
-  const {
-    extractionTypes,
-    sftpConfig,
-    settingsConfig,
-    apiConfig,
-    emailConfig,
-    emailRules,
-    processedEmails,
-    loading,
-    updateExtractionTypes,
-    updateSftpConfig,
-    updateSettingsConfig,
-    updateApiConfig,
-    updateEmailConfig,
-    updateEmailRules
-  } = useSupabaseData();
+export interface FieldMapping {
+  fieldName: string;
+  type: 'ai' | 'mapped' | 'hardcoded';
+  value: string;
+  dataType?: 'string' | 'number' | 'integer' | 'datetime';
+  maxLength?: number;
+  sourceJsonPath?: string;
+}
 
-  // Always navigate to extract page when user logs in
-  useEffect(() => {
-    if (isAuthenticated && user) {
-      setCurrentPage('extract');
-    }
-  }, [isAuthenticated, user]);
+export interface SftpConfig {
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  xmlPath: string;
+  pdfPath: string;
+  jsonPath: string;
+}
 
-  if (authLoading || loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-indigo-50 flex items-center justify-center">
-        <div className="flex items-center space-x-3">
-          <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
-          <span className="text-lg font-medium text-purple-600">
-            {authLoading ? 'Checking authentication...' : 'Loading your data...'}
-          </span>
-        </div>
-      </div>
-    );
-  }
+export interface SettingsConfig {
+  geminiApiKey: string;
+}
 
-  // Show login page if not authenticated
-  if (!isAuthenticated || !user) {
-    return <LoginPage onLogin={login} />;
-  }
+export interface ApiConfig {
+  path: string;
+  password: string;
+  googleApiKey: string;
+}
 
-  const handleNavigate = (page: 'extract' | 'settings') => {
-    if (page === 'settings') {
-      const hasAnyPermission = Object.values(user.permissions).some(permission => permission === true);
-      if (!hasAnyPermission) {
-        alert('You do not have permission to access settings.');
-        return;
-      }
-    }
-    setCurrentPage(page);
-  };
+export interface EmailMonitoringConfig {
+  provider?: 'office365' | 'gmail';
+  tenantId: string;
+  clientId: string;
+  clientSecret: string;
+  monitoredEmail: string;
+  gmailClientId?: string;
+  gmailClientSecret?: string;
+  gmailRefreshToken?: string;
+  gmailMonitoredLabel?: string;
+  pollingInterval: number;
+  isEnabled: boolean;
+  enableAutoDetect?: boolean;
+  lastCheck?: string;
+}
 
-  const handleUpdateExtractionTypes = async (types: ExtractionType[]) => {
-    try {
-      await updateExtractionTypes(types);
-    } catch (error) {
-      console.error('Failed to update extraction types:', error);
-      alert('Failed to save extraction types. Please try again.');
-    }
-  };
+export interface EmailProcessingRule {
+  id: string;
+  ruleName: string;
+  senderPattern: string;
+  subjectPattern: string;
+  extractionTypeId: string;
+  isEnabled: boolean;
+  priority: number;
+}
 
-  const handleUpdateSftpConfig = async (config: SftpConfig) => {
-    try {
-      await updateSftpConfig(config);
-    } catch (error) {
-      console.error('Failed to update SFTP config:', error);
-      alert('Failed to save SFTP configuration. Please try again.');
-    }
-  };
+export interface ProcessedEmail {
+  id: string;
+  emailId: string;
+  sender: string;
+  subject: string;
+  receivedDate: string;
+  processingRuleId?: string;
+  extractionTypeId?: string;
+  pdfFilename?: string;
+  processingStatus: string;
+  errorMessage?: string;
+  parseitId?: number;
+  processedAt?: string;
+}
 
-  const handleUpdateSettingsConfig = async (config: SettingsConfig) => {
-    try {
-      await updateSettingsConfig(config);
-    } catch (error) {
-      console.error('Failed to update settings config:', error);
-      alert('Failed to save settings configuration. Please try again.');
-    }
-  };
+export interface ExtractionLog {
+  id: string;
+  userId: string | null;
+  extractionTypeId: string | null;
+  pdfFilename: string;
+  pdfPages: number;
+  extractionStatus: 'success' | 'failed';
+  errorMessage?: string | null;
+  createdAt: string;
+  apiResponse?: string | null;
+  apiStatusCode?: number | null;
+  apiError?: string | null;
+  extractedData?: string | null;
+}
 
-  const handleUpdateApiConfig = async (config: ApiConfig) => {
-    try {
-      await updateApiConfig(config);
-    } catch (error) {
-      console.error('Failed to update API config:', error);
-      alert('Failed to save API configuration. Please try again.');
-    }
-  };
+export interface User {
+  id: string;
+  username: string;
+  isAdmin: boolean;
+  isActive: boolean;
+  permissions: UserPermissions;
+  preferredUploadMode?: 'manual' | 'auto';
+}
 
-  const handleUpdateEmailConfig = async (config: EmailMonitoringConfig) => {
-    try {
-      await updateEmailConfig(config);
-    } catch (error) {
-      console.error('Failed to update email config:', error);
-      alert('Failed to save email configuration. Please try again.');
-    }
-  };
+export interface UserPermissions {
+  extractionTypes: boolean;
+  sftp: boolean;
+  api: boolean;
+  emailMonitoring: boolean;
+  emailRules: boolean;
+  processedEmails: boolean;
+  extractionLogs: boolean;
+  userManagement: boolean;
+  workflowManagement: boolean;
+}
 
-  const handleUpdateEmailRules = async (rules: EmailProcessingRule[]) => {
-    try {
-      await updateEmailRules(rules);
-    } catch (error) {
-      console.error('Failed to update email rules:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      console.error('Detailed error:', errorMessage);
-      throw new Error(`Failed to save email processing rules: ${errorMessage}`);
-    }
-  };
+export interface AuthState {
+  isAuthenticated: boolean;
+  user: User | null;
+}
 
-  return (
-    <Layout 
-      currentPage={currentPage} 
-      onNavigate={handleNavigate}
-      user={user}
-      onLogout={logout}
-    >
-      {currentPage === 'extract' && (
-        <ExtractPage
-          extractionTypes={extractionTypes}
-          sftpConfig={sftpConfig}
-          settingsConfig={settingsConfig}
-          apiConfig={apiConfig}
-          onNavigateToSettings={() => setCurrentPage('settings')}
-        />
-      )}
-      {currentPage === 'settings' && (
-        <SettingsPage
-          extractionTypes={extractionTypes}
-          sftpConfig={sftpConfig}
-          settingsConfig={settingsConfig}
-          apiConfig={apiConfig}
-          emailConfig={emailConfig}
-          emailRules={emailRules}
-          processedEmails={processedEmails}
-          currentUser={user}
-          getAllUsers={getAllUsers}
-          createUser={createUser}
-          updateUser={updateUser}
-          onUpdateExtractionTypes={handleUpdateExtractionTypes}
-          onUpdateSftpConfig={handleUpdateSftpConfig}
-          onUpdateSettingsConfig={handleUpdateSettingsConfig}
-          onUpdateApiConfig={handleUpdateApiConfig}
-          onUpdateEmailConfig={handleUpdateEmailConfig}
-          onUpdateEmailRules={handleUpdateEmailRules}
-        />
-      )}
-    </Layout>
-  );
+export interface ApiError {
+  statusCode: number;
+  statusText: string;
+  details: any;
+  url?: string;
+  headers?: Record<string, string>;
+}
+
+export interface PageProcessingState {
+  isProcessing: boolean;
+  isExtracting: boolean;
+  extractedData: string;
+  extractionError: string;
+  apiResponse: string;
+  apiError: ApiError | null;
+  success: boolean;
+  workflowExecutionLogId?: string;
+  workflowExecutionLog?: WorkflowExecutionLog | null;
+}
+
+export interface DetectionResult {
+  detectedTypeId: string | null;
+  confidence: 'high' | 'medium' | 'low' | null;
+  reasoning?: string;
+}
+
+export interface ExtractionWorkflow {
+  id: string;
+  name: string;
+  description?: string;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface WorkflowStep {
+  id: string;
+  workflowId: string;
+  stepOrder: number;
+  stepType: 'api_call' | 'conditional_check' | 'data_transform' | 'sftp_upload';
+  stepName: string;
+  configJson: ApiCallConfig | ConditionalCheckConfig | DataTransformConfig | SftpUploadConfig;
+  nextStepOnSuccessId?: string;
+  nextStepOnFailureId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ApiCallConfig {
+  url: string;
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  headers?: Record<string, string>;
+  requestBody?: string;
+  responseDataPath?: string;
+  updateJsonPath?: string;
+}
+
+export interface ConditionalCheckConfig {
+  jsonPath: string;
+  conditionType: 'is_null' | 'is_not_null' | 'equals' | 'contains' | 'greater_than' | 'less_than';
+  expectedValue?: string;
+}
+
+export interface DataTransformConfig {
+  transformations: Array<{
+    jsonPath: string;
+    operation: 'set_value' | 'copy_from' | 'append' | 'remove' | 'format_phone_us';
+    value?: string;
+    sourceJsonPath?: string;
+  }>;
+}
+
+export interface SftpUploadConfig {
+  useApiResponseForFilename: boolean;
+  filenameSourcePath?: string;
+  fallbackFilename?: string;
+}
+
+export interface WorkflowExecutionLog {
+  id: string;
+  extractionLogId?: string;
+  workflowId: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  currentStepId?: string;
+  currentStepName?: string;
+  errorMessage?: string;
+  contextData?: any;
+  startedAt: string;
+  updatedAt: string;
+  completedAt?: string;
+}
+
+export interface SecuritySettings {
+  id: string;
+  defaultUploadMode: 'manual' | 'auto';
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface EmailPollingLog {
+  id: string;
+  timestamp: string;
+  provider: string;
+  status: string;
+  emailsFound: number;
+  emailsProcessed: number;
+  errorMessage?: string;
+  executionTimeMs?: number;
+  createdAt: string;
 }
 
 export interface SftpUploadOptions {
@@ -180,34 +246,5 @@ export interface SftpUploadOptions {
   userId?: string;
   extractionTypeId?: string;
   formatType?: string;
-}
-
-export interface FieldMapping {
-  id: string;
-  name: string;
-  userId: string | null;
-  extractionTypeId: string | null;
-  apiResponse?: string;
-  type: 'ai' | 'mapped' | 'hardcoded';
-  apiError?: string;
-  extractedData?: string;
-  maxLength?: number;
-}
-
-export interface PageProcessingState {
-  isProcessing: boolean;
-  isExtracting: boolean;
-  extractedData: string;
-  extractionError: string;
-  apiResponse: string;
-  apiError: ApiError | null;
-  success: boolean;
-}
-
-export interface ApiError {
-  statusCode: number;
-  statusText: string;
-  details: any;
-  url?: string;
-  headers?: Record<string, string>;
+  customFilenamePart?: string;
 }
