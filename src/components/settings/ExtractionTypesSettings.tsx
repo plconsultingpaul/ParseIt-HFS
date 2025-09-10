@@ -7,10 +7,12 @@ import MappingPage from '../MappingPage';
 interface ExtractionTypesSettingsProps {
   extractionTypes: ExtractionType[];
   onUpdateExtractionTypes: (types: ExtractionType[]) => Promise<void>;
+}
 
 export default function ExtractionTypesSettings({ 
   extractionTypes, 
   onUpdateExtractionTypes 
+}: ExtractionTypesSettingsProps) {
   const { workflows } = useSupabaseData();
   const [localExtractionTypes, setLocalExtractionTypes] = useState<ExtractionType[]>(extractionTypes);
   const [selectedTypeIndex, setSelectedTypeIndex] = useState<number>(0);
@@ -18,6 +20,7 @@ export default function ExtractionTypesSettings({
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showMappingPage, setShowMappingPage] = useState(false);
+  const [typeToDelete, setTypeToDelete] = useState<{ index: number; name: string } | null>(null);
   const [newTypeName, setNewTypeName] = useState('');
   const [nameError, setNameError] = useState('');
 
@@ -83,6 +86,28 @@ export default function ExtractionTypesSettings({
     }
   };
 
+  const handleDeleteClick = () => {
+    if (localExtractionTypes.length === 0) return;
+    
+    const typeToDelete = localExtractionTypes[selectedTypeIndex];
+    setTypeToDelete({ index: selectedTypeIndex, name: typeToDelete.name });
+    setShowDeleteModal(true);
+  };
+
+  const confirmDelete = () => {
+    if (typeToDelete) {
+      removeExtractionType(typeToDelete.index);
+      setShowDeleteModal(false);
+      setTypeToDelete(null);
+    }
+  };
+
+  const handleDeleteFromDatabase = async (extractionTypeId: string, index: number) => {
+    try {
+      await onDeleteExtractionType(extractionTypeId);
+      // Remove from local state after successful database deletion
+      removeExtractionType(index);
+    } catch (error) {
   const addFieldMapping = (typeIndex: number) => {
     const updated = [...localExtractionTypes];
     const newMapping: FieldMapping = {
@@ -260,7 +285,9 @@ export default function ExtractionTypesSettings({
       )}
 
       {/* Delete Confirmation Modal */}
-
+      {showDeleteModal && typeToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-xl font-bold text-gray-900">Extraction Types</h3>
