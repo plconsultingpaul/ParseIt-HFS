@@ -145,6 +145,8 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
         return 'Conditional Check';
       case 'data_transform':
         return 'Data Transform';
+      case 'sftp_upload':
+        return 'SFTP Upload';
       default:
         return 'Unknown';
     }
