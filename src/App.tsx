@@ -6,7 +6,7 @@ import ExtractPage from './components/ExtractPage';
 import SettingsPage from './components/SettingsPage';
 import { useSupabaseData } from './hooks/useSupabaseData';
 import { Loader2 } from 'lucide-react';
-import type { ExtractionType, SftpConfig, SettingsConfig, ApiConfig, EmailMonitoringConfig, EmailProcessingRule, User } from './types';
+import type { ExtractionType, SftpConfig, SettingsConfig, ApiConfig, EmailMonitoringConfig, EmailProcessingRule, User, SecuritySettings, EmailPollingLog } from './types';
 
 export default function App() {
   const { 
@@ -31,16 +31,23 @@ export default function App() {
     processedEmails,
     extractionLogs,
     users,
+    workflows,
+    workflowSteps,
+    emailPollingLogs,
+    workflowExecutionLogs,
     loading,
     refreshData,
     refreshLogs,
     refreshLogsWithFilters,
+    refreshProcessedEmails,
+    refreshWorkflowExecutionLogs,
     updateExtractionTypes,
     updateSftpConfig,
     updateSettingsConfig,
     updateApiConfig,
     updateEmailConfig,
     updateEmailRules,
+    refreshPollingLogs,
     logExtraction
   } = useSupabaseData();
 
@@ -161,6 +168,12 @@ export default function App() {
           extractionLogs={extractionLogs}
           users={users}
           currentUser={user}
+          emailPollingLogs={emailPollingLogs}
+          workflowExecutionLogs={workflowExecutionLogs}
+          workflows={workflows}
+          workflowSteps={workflowSteps}
+          workflows={workflows}
+          workflowSteps={workflowSteps}
           getAllUsers={getAllUsers}
           createUser={createUser}
           updateUser={updateUser}
@@ -173,6 +186,9 @@ export default function App() {
           onUpdateEmailRules={handleUpdateEmailRules}
           onRefreshLogs={refreshLogs}
           onRefreshLogsWithFilters={refreshLogsWithFilters}
+          onRefreshPollingLogs={refreshPollingLogs}
+          onRefreshWorkflowLogs={refreshWorkflowExecutionLogs}
+          onRefreshProcessedEmails={refreshProcessedEmails}
         />
       )}
     </Layout>
