@@ -1093,10 +1093,8 @@ export function useSupabaseData() {
       // Update the workflowSteps state
       setWorkflowSteps(prev => [
         ...prev.filter(s => s.workflowId !== workflowId),
-          console.error('Insert error:', insertError);
         ...finalSteps.sort((a, b) => a.stepOrder - b.stepOrder)
       ]);
-        console.log('Successfully inserted new steps');
       
       console.log('Successfully updated workflow steps in state');
       console.log('Refreshing data after workflow steps update...');
@@ -1151,17 +1149,12 @@ export function useSupabaseData() {
   const updateSecuritySettings = async (settings: SecuritySettings) => {
     try {
       // Delete all existing security settings first
-      console.log('Deleting existing steps for workflow:', workflowId);
       const { error: deleteError } = await supabase
         .from('security_settings')
         .delete()
-      console.log('Successfully deleted existing steps');
         .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all records
 
       if (deleteError) {
-        console.log('Inserting new steps...');
-        
-        console.error('Delete error:', deleteError);
         console.warn('Warning: Could not delete old security settings:', deleteError);
       }
 
@@ -1173,8 +1166,6 @@ export function useSupabaseData() {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         });
-        
-        console.log('Steps to insert:', stepsToInsert);
 
       if (error) throw error;
 
@@ -1327,10 +1318,9 @@ export function useSupabaseData() {
     updateEmailConfig,
     updateEmailRules,
     updateWorkflows,
+    updateWorkflowSteps,
     logExtraction,
-    deleteExtractionType,
     getWorkflowExecutionLog,
-    logExtraction,
     updateSecuritySettings,
     refreshPollingLogs,
     refreshProcessedEmails,
