@@ -112,11 +112,35 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
   const handleSaveStepsToDatabase = async (stepsToSave: WorkflowStep[]) => {
     setIsSaving(true);
     try {
+      console.log('=== WORKFLOW STEP SAVE DEBUG ===');
+      console.log('Steps to save:', stepsToSave);
+      console.log('Number of steps:', stepsToSave.length);
+      console.log('Workflow ID:', workflow.id);
+      
+      // Log each step in detail
+      stepsToSave.forEach((step, index) => {
+        console.log(`Step ${index + 1}:`, {
+          id: step.id,
+          workflowId: step.workflowId,
+          stepOrder: step.stepOrder,
+          stepType: step.stepType,
+          stepName: step.stepName,
+          configJson: step.configJson,
+          nextStepOnSuccessId: step.nextStepOnSuccessId,
+          nextStepOnFailureId: step.nextStepOnFailureId
+        });
+      });
+      
       console.log('Saving steps to database:', stepsToSave);
       await onUpdateSteps(stepsToSave);
       console.log('Steps saved successfully');
     } catch (error) {
       console.error('Failed to save steps:', error);
+      console.error('Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : 'No stack trace',
+        errorObject: error
+      });
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       alert(`Failed to save workflow steps: ${errorMessage}`);
     } finally {

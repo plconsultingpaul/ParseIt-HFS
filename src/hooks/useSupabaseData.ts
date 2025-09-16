@@ -918,7 +918,13 @@ export function useSupabaseData() {
   };
 
   const updateWorkflowSteps = async (workflowId: string, steps: WorkflowStep[]) => {
+    console.log('=== UPDATE WORKFLOW STEPS DEBUG ===');
+    console.log('Workflow ID:', workflowId);
+    console.log('Steps to update:', steps);
+    
     try {
+      console.log('Starting workflow steps update process...');
+      
       // Utility function to validate UUID
       const isValidUuid = (str: string): boolean => {
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -1087,13 +1093,24 @@ export function useSupabaseData() {
       // Update the workflowSteps state
       setWorkflowSteps(prev => [
         ...prev.filter(s => s.workflowId !== workflowId),
+          console.error('Insert error:', insertError);
         ...finalSteps.sort((a, b) => a.stepOrder - b.stepOrder)
       ]);
+        console.log('Successfully inserted new steps');
       
       console.log('Successfully updated workflow steps in state');
+      console.log('Refreshing data after workflow steps update...');
       console.log('Final steps in state:', finalSteps);
+      console.log('Data refresh completed');
     } catch (error) {
+      console.error('=== WORKFLOW STEPS UPDATE ERROR ===');
       console.error('Error updating workflow steps:', error);
+      console.error('Error type:', typeof error);
+      console.error('Error constructor:', error?.constructor?.name);
+      if (error instanceof Error) {
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
+      }
       throw error;
     }
   };
@@ -1134,12 +1151,17 @@ export function useSupabaseData() {
   const updateSecuritySettings = async (settings: SecuritySettings) => {
     try {
       // Delete all existing security settings first
+      console.log('Deleting existing steps for workflow:', workflowId);
       const { error: deleteError } = await supabase
         .from('security_settings')
         .delete()
+      console.log('Successfully deleted existing steps');
         .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all records
 
       if (deleteError) {
+        console.log('Inserting new steps...');
+        
+        console.error('Delete error:', deleteError);
         console.warn('Warning: Could not delete old security settings:', deleteError);
       }
 
@@ -1151,6 +1173,8 @@ export function useSupabaseData() {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         });
+        
+        console.log('Steps to insert:', stepsToInsert);
 
       if (error) throw error;
 
