@@ -918,197 +918,52 @@ export function useSupabaseData() {
   };
 
   const updateWorkflowSteps = async (workflowId: string, steps: WorkflowStep[]) => {
-    console.log('=== UPDATE WORKFLOW STEPS DEBUG ===');
-    console.log('Workflow ID:', workflowId);
-    console.log('Steps to update:', steps);
-    
     try {
-      console.log('Starting workflow steps update process...');
-      
-      // Utility function to validate UUID
-      const isValidUuid = (str: string): boolean => {
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-        return uuidRegex.test(str);
-      };
-
-      // Check if workflowId is a valid UUID before proceeding
-      if (!isValidUuid(workflowId)) {
-        throw new Error('Workflow must be saved first before managing its steps. Please save the workflow to generate a permanent ID.');
-      }
-
-      console.log('Updating workflow steps for workflow:', workflowId);
-      console.log('Steps to save:', steps);
-      
-      // SAFE APPROACH: Handle new and existing steps separately to avoid data loss
-      
-      // Separate new steps (temp IDs) from existing steps (real UUIDs)
-      const newSteps = steps.filter(step => step.id.startsWith('temp-'));
-      const existingSteps = steps.filter(step => !step.id.startsWith('temp-') && isValidUuid(step.id));
-      
-      console.log('New steps to insert:', newSteps.length);
-      console.log('Existing steps to update:', existingSteps.length);
-      
-      // Get current steps from database
-      const { data: currentStepsData, error: fetchError } = await supabase
+      // First, delete all existing steps for this workflow
+      const { error: deleteError } = await supabase
         .from('workflow_steps')
-        .select('*')
-        .eq('workflow_id', workflowId)
-        .order('step_order', { ascending: true });
-      
-      if (fetchError) {
-        console.error('Error fetching current steps:', fetchError);
-        throw new Error(`Failed to fetch current steps: ${fetchError.message}`);
+        .delete()
+        .eq('workflow_id', workflowId);
+
+      if (deleteError) {
+        throw deleteError;
       }
-      
-      console.log('Current steps in database:', currentStepsData);
-      
-      // Find steps to delete (exist in DB but not in our current list)
-      const currentDbIds = new Set((currentStepsData || []).map(s => s.id));
-      const keepIds = new Set(existingSteps.map(s => s.id));
-      const stepsToDelete = [...currentDbIds].filter(id => !keepIds.has(id));
-      
-      console.log('Steps to delete:', stepsToDelete);
-      
-      // Delete removed steps
-      if (stepsToDelete.length > 0) {
-        const { error: deleteError } = await supabase
-          .from('workflow_steps')
-          .delete()
-          .in('id', stepsToDelete);
+
+      // Prepare steps for insertion (filter out temporary IDs and ensure proper structure)
+      const finalSteps = steps.map((step, index) => {
         
-        if (deleteError) {
-          console.error('Error deleting removed steps:', deleteError);
-          throw new Error(`Failed to delete removed steps: ${deleteError.message}`);
-        }
-        console.log('Successfully deleted removed steps');
-      }
-      
-      // Re-index ALL steps to ensure sequential step_order
-      const allStepsToSave = [...existingSteps, ...newSteps]
-        .sort((a, b) => a.stepOrder - b.stepOrder)
-        .map((step, index) => ({
-          ...step,
-          stepOrder: index + 1,
-          workflowId: workflowId
-        }));
-      
-      console.log('All steps after re-indexing:', allStepsToSave);
-      
-      let finalSteps: WorkflowStep[] = [];
-      
-      // Update existing steps
-      if (existingSteps.length > 0) {
-        const existingStepsToUpdate = allStepsToSave.filter(step => !step.id.startsWith('temp-'));
+        const stepData = {
+          workflow_id: workflowId,
+          step_order: index + 1,
+          step_type: step.stepType,
+          step_name: step.stepName,
+          config_json: step.configJson || {},
+          next_step_on_success_id: step.nextStepOnSuccessId || null,
+          next_step_on_failure_id: step.nextStepOnFailureId || null
+        };
         
-        if (existingStepsToUpdate.length > 0) {
-          const updateData = existingStepsToUpdate.map(step => ({
-            id: step.id,
-            workflow_id: workflowId,
-            step_order: step.stepOrder,
-            step_type: step.stepType,
-            step_name: step.stepName,
-            config_json: step.configJson || {},
-            next_step_on_success_id: step.nextStepOnSuccessId || null,
-            next_step_on_failure_id: step.nextStepOnFailureId || null,
-            updated_at: new Date().toISOString()
-          }));
+        return stepData;
+      });
 
-          console.log('Updating existing steps:', updateData);
-          const { data: updatedData, error: updateError } = await supabase
-            .from('workflow_steps')
-            .upsert(updateData, { onConflict: 'id' })
-            .select();
-
-          if (updateError) {
-            console.error('Update error details:', updateError);
-            throw new Error(`Failed to update existing steps: ${updateError.message}`);
-          }
-
-          console.log('Successfully updated existing steps:', updatedData);
-          
-          const updatedSteps: WorkflowStep[] = (updatedData || []).map(step => ({
-            id: step.id,
-            workflowId: step.workflow_id,
-            stepOrder: step.step_order,
-            stepType: step.step_type,
-            stepName: step.step_name,
-            configJson: step.config_json,
-            nextStepOnSuccessId: step.next_step_on_success_id,
-            nextStepOnFailureId: step.next_step_on_failure_id,
-            createdAt: step.created_at,
-            updatedAt: step.updated_at
-          }));
-          
-          finalSteps.push(...updatedSteps);
-        }
-      }
-      
       // Insert new steps
-      if (newSteps.length > 0) {
-        const newStepsToInsert = allStepsToSave.filter(step => step.id.startsWith('temp-'));
-        
-        if (newStepsToInsert.length > 0) {
-          const insertData = newStepsToInsert.map(step => ({
-            workflow_id: workflowId,
-            step_order: step.stepOrder,
-            step_type: step.stepType,
-            step_name: step.stepName,
-            config_json: step.configJson || {},
-            next_step_on_success_id: step.nextStepOnSuccessId || null,
-            next_step_on_failure_id: step.nextStepOnFailureId || null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          }));
+      if (finalSteps.length > 0) {
+        const { data: insertedSteps, error: insertError } = await supabase
+          .from('workflow_steps')
+          .insert(finalSteps)
+          .select();
 
-          console.log('Inserting new steps:', insertData);
-          const { data: insertedData, error: insertError } = await supabase
-            .from('workflow_steps')
-            .insert(insertData)
-            .select();
-
-          if (insertError) {
-            console.error('Insert error details:', insertError);
-            throw new Error(`Failed to insert new steps: ${insertError.message}`);
-          }
-
-          console.log('Successfully inserted new steps:', insertedData);
-          
-          const insertedSteps: WorkflowStep[] = (insertedData || []).map(step => ({
-            id: step.id,
-            workflowId: step.workflow_id,
-            stepOrder: step.step_order,
-            stepType: step.step_type,
-            stepName: step.step_name,
-            configJson: step.config_json,
-            nextStepOnSuccessId: step.next_step_on_success_id,
-            nextStepOnFailureId: step.next_step_on_failure_id,
-            createdAt: step.created_at,
-            updatedAt: step.updated_at
-          }));
-          
-          finalSteps.push(...insertedSteps);
+        if (insertError) {
+          throw insertError;
         }
       }
-      
-      // Update the workflowSteps state
+
+      // Update local state with the new steps
       setWorkflowSteps(prev => [
         ...prev.filter(s => s.workflowId !== workflowId),
         ...finalSteps.sort((a, b) => a.stepOrder - b.stepOrder)
       ]);
-      
-      console.log('Successfully updated workflow steps in state');
-      console.log('Refreshing data after workflow steps update...');
-      console.log('Final steps in state:', finalSteps);
-      console.log('Data refresh completed');
     } catch (error) {
-      console.error('=== WORKFLOW STEPS UPDATE ERROR ===');
-      console.error('Error updating workflow steps:', error);
-      console.error('Error type:', typeof error);
-      console.error('Error constructor:', error?.constructor?.name);
-      if (error instanceof Error) {
-        console.error('Error message:', error.message);
-        console.error('Error stack:', error.stack);
-      }
+      console.error('Failed to update workflow steps:', error);
       throw error;
     }
   };
