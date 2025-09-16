@@ -58,6 +58,14 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
       localStep.configJson = {};
     }
     
+    // For conditional checks with is_null or is_not_null, clear the expectedValue
+    if (localStep.stepType === 'conditional_check') {
+      const config = localStep.configJson as ConditionalCheckConfig;
+      if (config.conditionType === 'is_null' || config.conditionType === 'is_not_null') {
+        config.expectedValue = undefined;
+      }
+    }
+    
     console.log('Saving step with config:', localStep);
     onSave(localStep);
   };
