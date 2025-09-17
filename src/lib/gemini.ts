@@ -56,6 +56,44 @@ function truncateJsonEscaped(str: string, maxLength: number): string {
   return result;
 }
 
+/**
+ * Formats a phone number to ensure it follows the nnn-nnn-nnnn format
+ * If the phone number doesn't have enough digits, adds a default area code (111)
+ * @param phoneNumber The phone number string to format
+ * @returns Formatted phone number in nnn-nnn-nnnn format
+ */
+function formatPhoneNumber(phoneNumber: string): string {
+  if (!phoneNumber || typeof phoneNumber !== 'string') {
+    return '';
+  }
+  
+  // Remove all non-digit characters
+  const digits = phoneNumber.replace(/\D/g, '');
+  
+  // Handle different digit lengths
+  if (digits.length === 0) {
+    return '';
+  } else if (digits.length === 7) {
+    // Format: nnn-nnnn -> 111-nnn-nnnn (add default area code)
+    return `111-${digits.slice(0, 3)}-${digits.slice(3)}`;
+  } else if (digits.length === 10) {
+    // Format: nnnnnnnnnn -> nnn-nnn-nnnn
+    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+  } else if (digits.length === 11 && digits.startsWith('1')) {
+    // Format: 1nnnnnnnnnn -> nnn-nnn-nnnn (remove leading 1)
+    const tenDigits = digits.slice(1);
+    return `${tenDigits.slice(0, 3)}-${tenDigits.slice(3, 6)}-${tenDigits.slice(6)}`;
+  } else if (digits.length < 7) {
+    // Too few digits - pad with default area code and exchange
+    const paddedDigits = digits.padStart(7, '0');
+    return `111-${paddedDigits.slice(0, 3)}-${paddedDigits.slice(3)}`;
+  } else {
+    // Too many digits - take the last 10 digits
+    const lastTenDigits = digits.slice(-10);
+    return `${lastTenDigits.slice(0, 3)}-${lastTenDigits.slice(3, 6)}-${lastTenDigits.slice(6)}`;
+  }
+}
+
 export async function extractDataFromPDF({
   pdfFile,
   defaultInstructions,
@@ -278,6 +316,13 @@ Please provide only the ${outputFormat} output without any additional explanatio
                     console.log('Reason: JSON-escaped length <= max length or not a string');
                     console.log('=== END MAX LENGTH CHECK ===');
                   }
+                }
+                
+                // Apply phone number formatting for fields that contain "phone" in their name
+                if (typeof current[finalField] === 'string' && 
+                    mapping.fieldName.toLowerCase().includes('phone') && 
+                    current[finalField].trim() !== '') {
+                  current[finalField] = formatPhoneNumber(current[finalField]);
                 }
               }
             });
