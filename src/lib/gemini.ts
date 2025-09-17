@@ -427,6 +427,18 @@ Please provide only the ${outputFormat} output without any additional explanatio
             cleanupNullStrings(order);
             formatPostalCodes(order);
           });
+          
+          // Filter out traceNumbers entries with null or empty traceNumber values
+          jsonData.orders.forEach((order: any) => {
+            if (order.traceNumbers && Array.isArray(order.traceNumbers)) {
+              order.traceNumbers = order.traceNumbers.filter((trace: any) => {
+                return trace.traceNumber && 
+                       trace.traceNumber !== "" && 
+                       trace.traceNumber !== null && 
+                       trace.traceNumber !== "null";
+              });
+            }
+          });
         } else {
           // Even without field mappings, format postal codes
           const formatPostalCodes = (obj: any) => {
@@ -485,6 +497,18 @@ Please provide only the ${outputFormat} output without any additional explanatio
           // Format postal codes even without field mappings
           jsonData.orders.forEach((order: any) => {
             formatPostalCodes(order);
+          });
+          
+          // Filter out traceNumbers entries with null or empty traceNumber values (even without field mappings)
+          jsonData.orders.forEach((order: any) => {
+            if (order.traceNumbers && Array.isArray(order.traceNumbers)) {
+              order.traceNumbers = order.traceNumbers.filter((trace: any) => {
+                return trace.traceNumber && 
+                       trace.traceNumber !== "" && 
+                       trace.traceNumber !== null && 
+                       trace.traceNumber !== "null";
+              });
+            }
           });
         }
         
