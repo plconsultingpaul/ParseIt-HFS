@@ -214,7 +214,24 @@ Please provide only the ${outputFormat} output without any additional explanatio
                 // Apply max length truncation for string fields
                 if (mapping.maxLength && typeof mapping.maxLength === 'number' && mapping.maxLength > 0) {
                   if (typeof current[finalField] === 'string' && current[finalField].length > mapping.maxLength) {
+                    console.log('=== MAX LENGTH TRUNCATION DEBUG ===');
+                    console.log('Field Name:', mapping.fieldName);
+                    console.log('Original Value:', JSON.stringify(current[finalField]));
+                    console.log('Original Length:', current[finalField].length);
+                    console.log('Max Length Setting:', mapping.maxLength);
+                    console.log('Should Truncate:', current[finalField].length > mapping.maxLength);
                     current[finalField] = current[finalField].substring(0, mapping.maxLength);
+                    console.log('Truncated Value:', JSON.stringify(current[finalField]));
+                    console.log('Truncated Length:', current[finalField].length);
+                    console.log('=== END TRUNCATION DEBUG ===');
+                  } else {
+                    console.log('=== MAX LENGTH CHECK (NO TRUNCATION) ===');
+                    console.log('Field Name:', mapping.fieldName);
+                    console.log('Value:', JSON.stringify(current[finalField]));
+                    console.log('Value Length:', typeof current[finalField] === 'string' ? current[finalField].length : 'N/A (not string)');
+                    console.log('Max Length Setting:', mapping.maxLength);
+                    console.log('Reason: Value length <= max length or not a string');
+                    console.log('=== END MAX LENGTH CHECK ===');
                   }
                 }
               }
