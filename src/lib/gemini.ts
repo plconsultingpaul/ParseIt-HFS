@@ -14,6 +14,48 @@ export interface ExtractionRequest {
   apiKey: string;
 }
 
+/**
+ * Truncates a string so that its JSON-escaped representation does not exceed maxLength
+ * @param str The string to truncate
+ * @param maxLength The maximum length for the JSON-escaped string (excluding quotes)
+ * @returns The truncated string
+ */
+function truncateJsonEscaped(str: string, maxLength: number): string {
+  if (!str || maxLength <= 0) return '';
+  
+  // Helper function to get the JSON-escaped length (excluding surrounding quotes)
+  const getEscapedLength = (s: string): number => {
+    const jsonString = JSON.stringify(s);
+    // Subtract 2 for the surrounding quotes
+    return jsonString.length - 2;
+  };
+  
+  // If the string is already within the limit, return as-is
+  if (getEscapedLength(str) <= maxLength) {
+    return str;
+  }
+  
+  // Binary search approach for efficiency with very long strings
+  let left = 0;
+  let right = str.length;
+  let result = '';
+  
+  while (left <= right) {
+    const mid = Math.floor((left + right) / 2);
+    const candidate = str.substring(0, mid);
+    const escapedLength = getEscapedLength(candidate);
+    
+    if (escapedLength <= maxLength) {
+      result = candidate;
+      left = mid + 1;
+    } else {
+      right = mid - 1;
+    }
+  }
+  
+  return result;
+}
+
 export async function extractDataFromPDF({
   pdfFile,
   defaultInstructions,
@@ -213,24 +255,27 @@ Please provide only the ${outputFormat} output without any additional explanatio
                 
                 // Apply max length truncation for string fields
                 if (mapping.maxLength && typeof mapping.maxLength === 'number' && mapping.maxLength > 0) {
-                  if (typeof current[finalField] === 'string' && current[finalField].length > mapping.maxLength) {
+                  if (typeof current[finalField] === 'string' && (JSON.stringify(current[finalField]).length - 2) > mapping.maxLength) {
                     console.log('=== MAX LENGTH TRUNCATION DEBUG ===');
                     console.log('Field Name:', mapping.fieldName);
                     console.log('Original Value:', JSON.stringify(current[finalField]));
                     console.log('Original Length:', current[finalField].length);
+                    console.log('Original JSON-Escaped Length:', JSON.stringify(current[finalField]).length - 2);
                     console.log('Max Length Setting:', mapping.maxLength);
-                    console.log('Should Truncate:', current[finalField].length > mapping.maxLength);
-                    current[finalField] = current[finalField].substring(0, mapping.maxLength);
+                    console.log('Should Truncate (JSON-escaped):', (JSON.stringify(current[finalField]).length - 2) > mapping.maxLength);
+                    current[finalField] = truncateJsonEscaped(current[finalField], mapping.maxLength);
                     console.log('Truncated Value:', JSON.stringify(current[finalField]));
-                    console.log('Truncated Length:', current[finalField].length);
+                    console.log('Truncated Raw Length:', current[finalField].length);
+                    console.log('Truncated JSON-Escaped Length:', JSON.stringify(current[finalField]).length - 2);
                     console.log('=== END TRUNCATION DEBUG ===');
                   } else {
                     console.log('=== MAX LENGTH CHECK (NO TRUNCATION) ===');
                     console.log('Field Name:', mapping.fieldName);
                     console.log('Value:', JSON.stringify(current[finalField]));
                     console.log('Value Length:', typeof current[finalField] === 'string' ? current[finalField].length : 'N/A (not string)');
+                    console.log('JSON-Escaped Length:', typeof current[finalField] === 'string' ? JSON.stringify(current[finalField]).length - 2 : 'N/A');
                     console.log('Max Length Setting:', mapping.maxLength);
-                    console.log('Reason: Value length <= max length or not a string');
+                    console.log('Reason: JSON-escaped length <= max length or not a string');
                     console.log('=== END MAX LENGTH CHECK ===');
                   }
                 }
