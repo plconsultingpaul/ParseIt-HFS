@@ -112,7 +112,7 @@ export async function extractDataFromPDF({
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-pro-vision' });
 
     // Convert PDF to base64
     const pdfBase64 = await fileToBase64(pdfFile);
