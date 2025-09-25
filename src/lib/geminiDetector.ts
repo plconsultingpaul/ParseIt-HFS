@@ -28,7 +28,7 @@ export async function detectExtractionType({
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 
     // Convert PDF to base64
     const pdfBase64 = await fileToBase64(pdfFile);
