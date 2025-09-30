@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Save, Users, Shield, User as UserIcon, Eye, EyeOff, Settings, FileText, Server, Key, Mail, Filter, Database, GitBranch, Brain } from 'lucide-react';
+import { Plus, Trash2, Save, Users, Shield, User as UserIcon, Eye, EyeOff, Settings, FileText, Server, Key, Mail, Filter, Database, GitBranch, Brain, RefreshCw } from 'lucide-react';
 import type { User } from '../../types';
 
 interface UserManagementSettingsProps {
@@ -25,7 +25,8 @@ export default function UserManagementSettings({
   const [newUser, setNewUser] = useState({
     username: '',
     password: '',
-    isAdmin: false
+    isAdmin: false,
+    role: 'user' as 'admin' | 'user' | 'vendor'
   });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -38,9 +39,14 @@ export default function UserManagementSettings({
   const [showUploadModeModal, setShowUploadModeModal] = useState(false);
   const [userForUploadMode, setUserForUploadMode] = useState<User | null>(null);
   const [isUpdatingUploadMode, setIsUpdatingUploadMode] = useState(false);
+  const [showCurrentZoneModal, setShowCurrentZoneModal] = useState(false);
+  const [userForCurrentZone, setUserForCurrentZone] = useState<User | null>(null);
+  const [isUpdatingCurrentZone, setIsUpdatingCurrentZone] = useState(false);
+  const [newCurrentZone, setNewCurrentZone] = useState('');
 
   const permissionOptions = [
     { key: 'extractionTypes', label: 'Extraction Types', icon: FileText, description: 'Manage PDF extraction templates and configurations' },
+    { key: 'transformationTypes', label: 'Transformation Types', icon: RefreshCw, description: 'Manage PDF transformation and renaming templates' },
     { key: 'sftp', label: 'SFTP Settings', icon: Server, description: 'Configure SFTP server connection settings' },
     { key: 'api', label: 'API Settings', icon: Key, description: 'Manage API keys and endpoint configurations' },
     { key: 'emailMonitoring', label: 'Email Monitoring', icon: Mail, description: 'Configure Office 365 email monitoring' },
@@ -78,12 +84,12 @@ export default function UserManagementSettings({
     setSuccess('');
 
     try {
-      const result = await createUser(newUser.username.trim(), newUser.password, newUser.isAdmin);
+      const result = await createUser(newUser.username.trim(), newUser.password, newUser.isAdmin, newUser.role);
       
       if (result.success) {
         setSuccess(result.message);
         setShowAddModal(false);
-        setNewUser({ username: '', password: '', isAdmin: false });
+        setNewUser({ username: '', password: '', isAdmin: false, role: 'user' });
         await loadUsers(); // Refresh the user list
         setTimeout(() => setSuccess(''), 3000);
       } else {
@@ -108,7 +114,11 @@ export default function UserManagementSettings({
     }
 
     try {
-      const result = await updateUser(user.id, { isAdmin: !user.isAdmin });
+      const newRole = !user.isAdmin ? 'admin' : 'user';
+      const result = await updateUser(user.id, { 
+        isAdmin: !user.isAdmin,
+        role: newRole
+      });
       
       if (result.success) {
         setSuccess(result.message);
@@ -270,6 +280,43 @@ export default function UserManagementSettings({
       setIsUpdatingUploadMode(false);
     }
   };
+
+  const handleManageCurrentZone = (user: User) => {
+    setUserForCurrentZone(user);
+    setNewCurrentZone(user.currentZone || '');
+    setShowCurrentZoneModal(true);
+  };
+
+  const handleUpdateCurrentZone = async () => {
+    if (!userForCurrentZone) return;
+
+    setIsUpdatingCurrentZone(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const result = await updateUser(userForCurrentZone.id, { 
+        currentZone: newCurrentZone.trim() 
+      });
+      
+      if (result.success) {
+        setSuccess(`Current zone updated to "${newCurrentZone.trim() || 'None'}"`);
+        setShowCurrentZoneModal(false);
+        setUserForCurrentZone(null);
+        setNewCurrentZone('');
+        await loadUsers(); // Refresh the user list
+        setTimeout(() => setSuccess(''), 3000);
+      } else {
+        setError(result.message);
+        setTimeout(() => setError(''), 3000);
+      }
+    } catch (error) {
+      setError('Failed to update current zone. Please try again.');
+      setTimeout(() => setError(''), 3000);
+    } finally {
+      setIsUpdatingCurrentZone(false);
+    }
+  };
   const togglePermission = (permissionKey: string) => {
     if (!selectedUser) return;
     
@@ -296,37 +343,97 @@ export default function UserManagementSettings({
 
   return (
     <div className="space-y-6">
+      {/* Current Zone Modal */}
+      {showCurrentZoneModal && userForCurrentZone && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+            <div className="text-center mb-6">
+              <div className="bg-purple-100 dark:bg-purple-900/50 p-3 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                <Settings className="h-8 w-8 text-purple-600 dark:text-purple-400" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">Current Zone Settings</h3>
+              <p className="text-gray-600 dark:text-gray-400">Configure current zone for <strong>{userForCurrentZone.username}</strong></p>
+            </div>
+            
+            <div className="space-y-4 mb-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Current Zone
+                </label>
+                <input
+                  type="text"
+                  value={newCurrentZone}
+                  onChange={(e) => setNewCurrentZone(e.target.value)}
+                  placeholder="e.g., AT GARDEN, DOCK 5, ZONE A"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  This zone will be used to filter orders in the Orders dashboard
+                </p>
+              </div>
+            </div>
+
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+                <p className="text-red-700 text-sm">{error}</p>
+              </div>
+            )}
+            
+            <div className="flex space-x-3">
+              <button
+                onClick={handleUpdateCurrentZone}
+                disabled={isUpdatingCurrentZone}
+                className="flex-1 px-4 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200"
+              >
+                {isUpdatingCurrentZone ? 'Updating...' : 'Update Zone'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowCurrentZoneModal(false);
+                  setUserForCurrentZone(null);
+                  setNewCurrentZone('');
+                  setError('');
+                }}
+                className="flex-1 px-4 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-semibold rounded-lg transition-colors duration-200"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Upload Mode Modal */}
       {showUploadModeModal && userForUploadMode && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
             <div className="text-center mb-6">
-              <div className="bg-indigo-100 p-3 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-                <Brain className="h-8 w-8 text-indigo-600" />
+              <div className="bg-indigo-100 dark:bg-indigo-900/50 p-3 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                <Brain className="h-8 w-8 text-indigo-600 dark:text-indigo-400" />
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-2">Upload Mode Settings</h3>
-              <p className="text-gray-600">Configure upload mode for <strong>{userForUploadMode.username}</strong></p>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">Upload Mode Settings</h3>
+              <p className="text-gray-600 dark:text-gray-400">Configure upload mode for <strong>{userForUploadMode.username}</strong></p>
             </div>
             
             <div className="space-y-4 mb-6">
               <div
                 onClick={() => handleUpdateUploadMode('manual')}
-                className="p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 border-gray-200 bg-gray-50 hover:border-gray-300"
+                className="p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-500"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
-                    <div className="bg-gray-100 p-2 rounded-lg">
-                      <Settings className="h-5 w-5 text-gray-500" />
+                    <div className="bg-gray-100 dark:bg-gray-600 p-2 rounded-lg">
+                      <Settings className="h-5 w-5 text-gray-500 dark:text-gray-400" />
                     </div>
                     <div>
-                      <h4 className="font-semibold text-gray-700">Manual Selection</h4>
-                      <p className="text-sm text-gray-500">User manually selects extraction type for each PDF</p>
+                      <h4 className="font-semibold text-gray-700 dark:text-gray-200">Manual Selection</h4>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">User manually selects extraction type for each PDF</p>
                     </div>
                   </div>
                   <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
                     userForUploadMode?.preferredUploadMode === 'manual'
                       ? 'border-purple-500 bg-purple-500'
-                      : 'border-gray-300 bg-white'
+                      : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700'
                   }`}>
                     {userForUploadMode?.preferredUploadMode === 'manual' && (
                       <div className="w-2 h-2 bg-white rounded-full"></div>
@@ -337,22 +444,22 @@ export default function UserManagementSettings({
               
               <div
                 onClick={() => handleUpdateUploadMode('auto')}
-                className="p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 border-gray-200 bg-gray-50 hover:border-gray-300"
+                className="p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-500"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
-                    <div className="bg-gray-100 p-2 rounded-lg">
-                      <Brain className="h-5 w-5 text-gray-500" />
+                    <div className="bg-gray-100 dark:bg-gray-600 p-2 rounded-lg">
+                      <Brain className="h-5 w-5 text-gray-500 dark:text-gray-400" />
                     </div>
                     <div>
-                      <h4 className="font-semibold text-gray-700">AI Auto-Detect</h4>
-                      <p className="text-sm text-gray-500">AI automatically detects and selects the best extraction type</p>
+                      <h4 className="font-semibold text-gray-700 dark:text-gray-200">AI Auto-Detect</h4>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">AI automatically detects and selects the best extraction type</p>
                     </div>
                   </div>
                   <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
                     userForUploadMode?.preferredUploadMode === 'auto'
                       ? 'border-purple-500 bg-purple-500'
-                      : 'border-gray-300 bg-white'
+                      : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700'
                   }`}>
                     {userForUploadMode?.preferredUploadMode === 'auto' && (
                       <div className="w-2 h-2 bg-white rounded-full"></div>
@@ -375,7 +482,7 @@ export default function UserManagementSettings({
                   setUserForUploadMode(null);
                   setError('');
                 }}
-                className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-lg transition-colors duration-200"
+                className="flex-1 px-4 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-semibold rounded-lg transition-colors duration-200"
               >
                 Close
               </button>
@@ -440,13 +547,13 @@ export default function UserManagementSettings({
       {/* Permissions Modal */}
       {showPermissionsModal && selectedUser && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-8 max-w-2xl w-full mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-2xl w-full mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="text-center mb-6">
-              <div className="bg-purple-100 p-3 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-                <Settings className="h-8 w-8 text-purple-600" />
+              <div className="bg-purple-100 dark:bg-purple-900/50 p-3 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                <Settings className="h-8 w-8 text-purple-600 dark:text-purple-400" />
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-2">Manage Permissions</h3>
-              <p className="text-gray-600">Configure access permissions for <strong>{selectedUser.username}</strong></p>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">Manage Permissions</h3>
+              <p className="text-gray-600 dark:text-gray-400">Configure access permissions for <strong>{selectedUser.username}</strong></p>
             </div>
             
             <div className="space-y-4 mb-6">
@@ -459,28 +566,28 @@ export default function UserManagementSettings({
                     key={option.key}
                     className={`p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 ${
                       isEnabled
-                        ? 'border-purple-300 bg-purple-50'
-                        : 'border-gray-200 bg-gray-50 hover:border-gray-300'
+                        ? 'border-purple-300 dark:border-purple-600 bg-purple-50 dark:bg-purple-900/20'
+                        : 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-500'
                     }`}
                     onClick={() => togglePermission(option.key)}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-3">
                         <div className={`p-2 rounded-lg ${
-                          isEnabled ? 'bg-purple-100' : 'bg-gray-100'
+                          isEnabled ? 'bg-purple-100 dark:bg-purple-800' : 'bg-gray-100 dark:bg-gray-600'
                         }`}>
                           <Icon className={`h-5 w-5 ${
-                            isEnabled ? 'text-purple-600' : 'text-gray-500'
+                            isEnabled ? 'text-purple-600 dark:text-purple-400' : 'text-gray-500 dark:text-gray-400'
                           }`} />
                         </div>
                         <div>
                           <h4 className={`font-semibold ${
-                            isEnabled ? 'text-purple-900' : 'text-gray-700'
+                            isEnabled ? 'text-purple-900 dark:text-purple-200' : 'text-gray-700 dark:text-gray-200'
                           }`}>
                             {option.label}
                           </h4>
                           <p className={`text-sm ${
-                            isEnabled ? 'text-purple-600' : 'text-gray-500'
+                            isEnabled ? 'text-purple-600 dark:text-purple-300' : 'text-gray-500 dark:text-gray-400'
                           }`}>
                             {option.description}
                           </p>
@@ -489,7 +596,7 @@ export default function UserManagementSettings({
                       <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
                         isEnabled
                           ? 'border-purple-500 bg-purple-500'
-                          : 'border-gray-300 bg-white'
+                          : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700'
                       }`}>
                         {isEnabled && (
                           <div className="w-2 h-2 bg-white rounded-full"></div>
@@ -502,8 +609,8 @@ export default function UserManagementSettings({
             </div>
 
             {error && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
-                <p className="text-red-700 text-sm">{error}</p>
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-3 mb-4">
+                <p className="text-red-700 dark:text-red-400 text-sm">{error}</p>
               </div>
             )}
             
@@ -521,7 +628,7 @@ export default function UserManagementSettings({
                   setSelectedUser(null);
                   setError('');
                 }}
-                className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-lg transition-colors duration-200"
+                className="flex-1 px-4 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-semibold rounded-lg transition-colors duration-200"
               >
                 Cancel
               </button>
@@ -533,18 +640,18 @@ export default function UserManagementSettings({
       {/* Add User Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
             <div className="text-center mb-6">
-              <div className="bg-purple-100 p-3 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-                <Plus className="h-8 w-8 text-purple-600" />
+              <div className="bg-purple-100 dark:bg-purple-900/50 p-3 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                <Plus className="h-8 w-8 text-purple-600 dark:text-purple-400" />
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-2">Add New User</h3>
-              <p className="text-gray-600">Create a new user account</p>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">Add New User</h3>
+              <p className="text-gray-600 dark:text-gray-400">Create a new user account</p>
             </div>
             
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Username
                 </label>
                 <input
@@ -552,12 +659,31 @@ export default function UserManagementSettings({
                   value={newUser.username}
                   onChange={(e) => setNewUser(prev => ({ ...prev, username: e.target.value }))}
                   placeholder="Enter username"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Role
+                </label>
+                <select
+                  value={newUser.role}
+                  onChange={(e) => setNewUser(prev => ({ 
+                    ...prev, 
+                    role: e.target.value as 'admin' | 'user' | 'vendor',
+                    isAdmin: e.target.value === 'admin'
+                  }))}
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                >
+                  <option value="user">User</option>
+                  <option value="vendor">Vendor</option>
+                  <option value="admin">Administrator</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Password
                 </label>
                 <div className="relative">
@@ -566,7 +692,7 @@ export default function UserManagementSettings({
                     value={newUser.password}
                     onChange={(e) => setNewUser(prev => ({ ...prev, password: e.target.value }))}
                     placeholder="Enter password"
-                    className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    className="w-full px-4 py-3 pr-12 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                   />
                   <button
                     type="button"
@@ -574,9 +700,9 @@ export default function UserManagementSettings({
                     className="absolute inset-y-0 right-0 pr-3 flex items-center"
                   >
                     {showPassword ? (
-                      <EyeOff className="h-5 w-5 text-gray-400 hover:text-gray-600" />
+                      <EyeOff className="h-5 w-5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300" />
                     ) : (
-                      <Eye className="h-5 w-5 text-gray-400 hover:text-gray-600" />
+                      <Eye className="h-5 w-5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300" />
                     )}
                   </button>
                 </div>
@@ -587,23 +713,31 @@ export default function UserManagementSettings({
                   type="checkbox"
                   id="isAdmin"
                   checked={newUser.isAdmin}
-                  onChange={(e) => setNewUser(prev => ({ ...prev, isAdmin: e.target.checked }))}
-                  className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                  onChange={(e) => setNewUser(prev => ({ 
+                    ...prev, 
+                    isAdmin: e.target.checked,
+                    role: e.target.checked ? 'admin' : 'user'
+                  }))}
+                  disabled={newUser.role === 'vendor'}
+                  className="w-4 h-4 text-purple-600 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded focus:ring-purple-500"
                 />
-                <label htmlFor="isAdmin" className="text-sm font-medium text-gray-700">
-                  Administrator (default permissions for all settings)
+                <label htmlFor="isAdmin" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Administrator (default permissions for all settings) {newUser.role === 'vendor' && '(Not available for vendors)'}
                 </label>
               </div>
               
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <p className="text-blue-700 text-sm">
-                  <strong>Note:</strong> You can customize specific permissions after creating the user.
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-3">
+                <p className="text-blue-700 dark:text-blue-400 text-sm">
+                  <strong>Note:</strong> {newUser.role === 'vendor' 
+                    ? 'Vendors have limited access to upload and process PDFs only.' 
+                    : 'You can customize specific permissions after creating the user.'
+                  }
                 </p>
               </div>
 
               {error && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                  <p className="text-red-700 text-sm">{error}</p>
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-3">
+                  <p className="text-red-700 dark:text-red-400 text-sm">{error}</p>
                 </div>
               )}
               
@@ -618,10 +752,10 @@ export default function UserManagementSettings({
                 <button
                   onClick={() => {
                     setShowAddModal(false);
-                    setNewUser({ username: '', password: '', isAdmin: false });
+                    setNewUser({ username: '', password: '', isAdmin: false, role: 'user' });
                     setError('');
                   }}
-                  className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-lg transition-colors duration-200"
+                  className="flex-1 px-4 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-semibold rounded-lg transition-colors duration-200"
                 >
                   Cancel
                 </button>
@@ -633,8 +767,8 @@ export default function UserManagementSettings({
 
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-xl font-bold text-gray-900">User Management</h3>
-          <p className="text-gray-600 mt-1">Manage user accounts and permissions</p>
+          <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">User Management</h3>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">Manage user accounts and permissions</p>
         </div>
         <button
           onClick={() => setShowAddModal(true)}
@@ -646,42 +780,42 @@ export default function UserManagementSettings({
       </div>
 
       {success && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg p-4">
           <div className="flex items-center space-x-2">
             <div className="w-4 h-4 bg-green-500 rounded-full"></div>
-            <span className="font-semibold text-green-800">Success!</span>
+            <span className="font-semibold text-green-800 dark:text-green-300">Success!</span>
           </div>
-          <p className="text-green-700 text-sm mt-1">{success}</p>
+          <p className="text-green-700 dark:text-green-400 text-sm mt-1">{success}</p>
         </div>
       )}
 
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-4">
           <div className="flex items-center space-x-2">
             <div className="w-4 h-4 bg-red-500 rounded-full"></div>
-            <span className="font-semibold text-red-800">Error</span>
+            <span className="font-semibold text-red-800 dark:text-red-300">Error</span>
           </div>
-          <p className="text-red-700 text-sm mt-1">{error}</p>
+          <p className="text-red-700 dark:text-red-400 text-sm mt-1">{error}</p>
         </div>
       )}
 
       <div className="space-y-4">
         {users.map((user) => (
-          <div key={user.id} className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+          <div key={user.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 shadow-sm">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-4">
                 <div className={`p-3 rounded-full ${
-                  user.isAdmin ? 'bg-purple-100' : 'bg-gray-100'
+                  user.isAdmin ? 'bg-purple-100 dark:bg-purple-900/50' : 'bg-gray-100 dark:bg-gray-700'
                 }`}>
                   {user.isAdmin ? (
-                    <Shield className="h-6 w-6 text-purple-600" />
+                    <Shield className="h-6 w-6 text-purple-600 dark:text-purple-400" />
                   ) : (
-                    <UserIcon className="h-6 w-6 text-gray-600" />
+                    <UserIcon className="h-6 w-6 text-gray-600 dark:text-gray-400" />
                   )}
                 </div>
                 <div>
                   <div className="flex items-center space-x-2">
-                    <h4 className="font-semibold text-gray-900">{user.username}</h4>
+                    <h4 className="font-semibold text-gray-900 dark:text-gray-100">{user.username}</h4>
                     {user.id === currentUser.id && (
                       <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
                         You
@@ -690,28 +824,45 @@ export default function UserManagementSettings({
                   </div>
                   <div className="flex items-center space-x-4 mt-1">
                     <span className={`text-sm ${
-                      user.isAdmin ? 'text-purple-600 font-medium' : 'text-gray-500'
+                      user.role === 'admin' ? 'text-purple-600 dark:text-purple-400 font-medium' : 
+                      user.role === 'vendor' ? 'text-orange-600 dark:text-orange-400 font-medium' :
+                      'text-gray-500 dark:text-gray-400'
                     }`}>
-                      {user.isAdmin ? 'Administrator' : 'User'}
+                      {user.role === 'admin' ? 'Administrator' : 
+                       user.role === 'vendor' ? 'Vendor' : 'User'}
                     </span>
                     <span className={`text-sm ${
-                      user.isActive ? 'text-green-600' : 'text-red-600'
+                      user.isActive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
                     }`}>
                       {user.isActive ? 'Active' : 'Inactive'}
                     </span>
-                    <span className="text-sm text-blue-600">
+                    <span className="text-sm text-blue-600 dark:text-blue-400">
                       {getPermissionCount(user)} permissions
                     </span>
                     <span className={`text-sm font-medium ${
-                      user.preferredUploadMode === 'auto' ? 'text-orange-600' : 'text-gray-600'
+                      user.preferredUploadMode === 'auto' ? 'text-orange-600 dark:text-orange-400' : 'text-gray-600 dark:text-gray-400'
                     }`}>
                       {user.preferredUploadMode === 'auto' ? 'AI Auto-Detect' : 'Manual Selection'}
                     </span>
+                    {user.role === 'vendor' && (
+                      <span className="text-sm text-purple-600 dark:text-purple-400">
+                        Zone: {user.currentZone || 'Not Set'}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
 
               <div className="flex items-center space-x-2">
+                {user.role === 'vendor' && (
+                  <button
+                    onClick={() => handleManageCurrentZone(user)}
+                    className="px-3 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-800 hover:bg-purple-200 transition-colors duration-200 flex items-center space-x-1"
+                  >
+                    <Settings className="h-3 w-3" />
+                    <span>Zone</span>
+                  </button>
+                )}
                 <button
                   onClick={() => handleManageUploadMode(user)}
                   className="px-3 py-1 text-xs font-medium rounded-full bg-indigo-100 text-indigo-800 hover:bg-indigo-200 transition-colors duration-200 flex items-center space-x-1"
@@ -767,16 +918,16 @@ export default function UserManagementSettings({
 
       {users.length === 0 && (
         <div className="text-center py-12">
-          <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No Users Found</h3>
-          <p className="text-gray-600">There are no users in the system.</p>
+          <Users className="h-12 w-12 text-gray-400 dark:text-gray-500 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No Users Found</h3>
+          <p className="text-gray-600 dark:text-gray-400">There are no users in the system.</p>
         </div>
       )}
 
       {/* Information */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h4 className="font-semibold text-blue-800 mb-2">User Management Information</h4>
-        <ul className="text-sm text-blue-700 space-y-1">
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
+        <h4 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">User Management Information</h4>
+        <ul className="text-sm text-blue-700 dark:text-blue-400 space-y-1">
           <li>• Users can only access settings sections they have permissions for</li>
           <li>• Admin status provides default access to all settings (can be customized)</li>
           <li>• Regular users start with no settings access (can be granted specific permissions)</li>

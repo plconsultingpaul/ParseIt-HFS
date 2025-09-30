@@ -161,8 +161,8 @@ export default function EmailMonitoringSettings({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-xl font-bold text-gray-900">Email Monitoring</h3>
-          <p className="text-gray-600 mt-1">Configure email monitoring for automatic PDF processing</p>
+          <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">Email Monitoring</h3>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">Configure email monitoring for automatic PDF processing</p>
         </div>
         <div className="flex items-center space-x-3">
           {localConfig.provider === 'office365' && (
@@ -204,20 +204,20 @@ export default function EmailMonitoringSettings({
       </div>
 
       {saveSuccess && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg p-4">
           <div className="flex items-center space-x-2">
             <div className="w-4 h-4 bg-green-500 rounded-full"></div>
-            <span className="font-semibold text-green-800">Success!</span>
+            <span className="font-semibold text-green-800 dark:text-green-300">Success!</span>
           </div>
-          <p className="text-green-700 text-sm mt-1">Email monitoring configuration saved successfully!</p>
+          <p className="text-green-700 dark:text-green-400 text-sm mt-1">Email monitoring configuration saved successfully!</p>
         </div>
       )}
 
       {testResult && (
         <div className={`border rounded-lg p-4 ${
           testResult.success 
-            ? 'bg-green-50 border-green-200' 
-            : 'bg-red-50 border-red-200'
+            ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700' 
+            : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700'
         }`}>
           <div className="flex items-center space-x-2">
             <div className={`w-4 h-4 rounded-full ${
@@ -225,12 +225,12 @@ export default function EmailMonitoringSettings({
             }`}></div>
             <span className={`font-semibold ${
               testResult.success ? 'text-green-800' : 'text-red-800'
-            }`}>
+            } dark:${testResult.success ? 'text-green-300' : 'text-red-300'}`}>
               {testResult.success ? 'Connection Test Passed' : 'Connection Test Failed'}
             </span>
           </div>
           <p className={`text-sm mt-1 ${
-            testResult.success ? 'text-green-700' : 'text-red-700'
+            testResult.success ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'
           }`}>
             {testResult.message}
             {testResult.emailCount !== undefined && (
@@ -243,8 +243,8 @@ export default function EmailMonitoringSettings({
       {gmailTestResult && (
         <div className={`border rounded-lg p-4 ${
           gmailTestResult.success 
-            ? 'bg-green-50 border-green-200' 
-            : 'bg-red-50 border-red-200'
+            ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700' 
+            : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700'
         }`}>
           <div className="flex items-center space-x-2">
             <div className={`w-4 h-4 rounded-full ${
@@ -252,12 +252,12 @@ export default function EmailMonitoringSettings({
             }`}></div>
             <span className={`font-semibold ${
               gmailTestResult.success ? 'text-green-800' : 'text-red-800'
-            }`}>
+            } dark:${gmailTestResult.success ? 'text-green-300' : 'text-red-300'}`}>
               {gmailTestResult.success ? 'Gmail Test Passed' : 'Gmail Test Failed'}
             </span>
           </div>
           <p className={`text-sm mt-1 ${
-            gmailTestResult.success ? 'text-green-700' : 'text-red-700'
+            gmailTestResult.success ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'
           }`}>
             {gmailTestResult.message}
             {gmailTestResult.emailCount !== undefined && (
@@ -267,15 +267,15 @@ export default function EmailMonitoringSettings({
         </div>
       )}
 
-      <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 shadow-sm">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center space-x-3">
-            <div className="bg-purple-100 p-2 rounded-lg">
-              <Mail className="h-5 w-5 text-purple-600" />
+            <div className="bg-purple-100 dark:bg-purple-900/50 p-2 rounded-lg">
+              <Mail className="h-5 w-5 text-purple-600 dark:text-purple-400" />
             </div>
             <div>
-              <h4 className="font-semibold text-gray-900">Email Provider Configuration</h4>
-              <p className="text-sm text-gray-500">Configure your email provider settings</p>
+              <h4 className="font-semibold text-gray-900 dark:text-gray-100">Email Provider Configuration</h4>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Configure your email provider settings</p>
             </div>
           </div>
           <div className="flex items-center space-x-2">
@@ -301,8 +301,8 @@ export default function EmailMonitoringSettings({
         <div className="mb-6">
           <div className="flex items-center justify-between">
             <div>
-              <h5 className="font-medium text-gray-900">AI Auto-Detection</h5>
-              <p className="text-sm text-gray-500">Use AI to automatically detect extraction type before applying email rules</p>
+              <h5 className="font-medium text-gray-900 dark:text-gray-100">AI Auto-Detection</h5>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Use AI to automatically detect extraction type before applying email rules</p>
             </div>
             <div className="flex items-center space-x-2">
               <button
@@ -327,17 +327,17 @@ export default function EmailMonitoringSettings({
         {/* Provider Selection */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-3">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
               Email Provider
             </label>
-            <div className="flex bg-gray-100 rounded-lg p-1">
+            <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
               <button
                 type="button"
                 onClick={() => updateConfig('provider', 'office365')}
                 className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 flex items-center justify-center space-x-2 ${
                   localConfig.provider === 'office365'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
+                    ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
                 }`}
               >
                 <Cloud className="h-4 w-4" />
@@ -348,8 +348,8 @@ export default function EmailMonitoringSettings({
                 onClick={() => updateConfig('provider', 'gmail')}
                 className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 flex items-center justify-center space-x-2 ${
                   localConfig.provider === 'gmail'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
+                    ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
                 }`}
               >
                 <Globe className="h-4 w-4" />
@@ -363,26 +363,26 @@ export default function EmailMonitoringSettings({
           {localConfig.provider === 'office365' ? (
             <>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Tenant ID
                 </label>
                 <input
                   type="text"
                   value={localConfig.tenantId}
                   onChange={(e) => updateConfig('tenantId', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                   placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Client ID
                 </label>
                 <input
                   type="text"
                   value={localConfig.clientId}
                   onChange={(e) => updateConfig('clientId', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                   placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                 />
               </div>
@@ -390,26 +390,26 @@ export default function EmailMonitoringSettings({
           ) : (
             <>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Gmail Client ID
                 </label>
                 <input
                   type="text"
                   value={localConfig.gmailClientId || ''}
                   onChange={(e) => updateConfig('gmailClientId', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                   placeholder="xxxxxxxxxx.apps.googleusercontent.com"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Gmail Client Secret
                 </label>
                 <input
                   type="password"
                   value={localConfig.gmailClientSecret || ''}
                   onChange={(e) => updateConfig('gmailClientSecret', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                   placeholder="Gmail OAuth client secret"
                 />
               </div>
@@ -421,26 +421,26 @@ export default function EmailMonitoringSettings({
           {localConfig.provider === 'office365' ? (
             <>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Client Secret
                 </label>
                 <input
                   type="password"
                   value={localConfig.clientSecret}
                   onChange={(e) => updateConfig('clientSecret', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                   placeholder="Client secret value"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Monitored Email
                 </label>
                 <input
                   type="email"
                   value={localConfig.monitoredEmail}
                   onChange={(e) => updateConfig('monitoredEmail', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                   placeholder="email@company.com"
                 />
               </div>
@@ -448,29 +448,29 @@ export default function EmailMonitoringSettings({
           ) : (
             <>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Gmail Refresh Token
                 </label>
                 <input
                   type="password"
                   value={localConfig.gmailRefreshToken || ''}
                   onChange={(e) => updateConfig('gmailRefreshToken', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                   placeholder="OAuth refresh token"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Monitored Label/Folder
                 </label>
                 <input
                   type="text"
                   value={localConfig.gmailMonitoredLabel || 'INBOX'}
                   onChange={(e) => updateConfig('gmailMonitoredLabel', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                   placeholder="INBOX or custom label name"
                 />
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   Gmail label to monitor (e.g., "INBOX", "ParseIt", "Invoices")
                 </p>
               </div>
@@ -480,20 +480,20 @@ export default function EmailMonitoringSettings({
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Polling Interval (minutes)
             </label>
             <input
               type="number"
               value={localConfig.pollingInterval}
               onChange={(e) => updateConfig('pollingInterval', parseInt(e.target.value) || 5)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
               min="1"
               max="60"
             />
           </div>
           <div className="flex items-end">
-            <div className="text-sm text-gray-500">
+            <div className="text-sm text-gray-500 dark:text-gray-400">
               {localConfig.lastCheck && (
                 <p>Last check: {new Date(localConfig.lastCheck).toLocaleString()}</p>
               )}
@@ -504,9 +504,9 @@ export default function EmailMonitoringSettings({
 
       {/* Setup Instructions */}
       {localConfig.provider === 'office365' ? (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <h4 className="font-semibold text-blue-800 mb-2">Office 365 Setup Instructions</h4>
-          <ol className="text-sm text-blue-700 space-y-1 list-decimal list-inside">
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
+          <h4 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">Office 365 Setup Instructions</h4>
+          <ol className="text-sm text-blue-700 dark:text-blue-400 space-y-1 list-decimal list-inside">
             <li>Register an application in Azure AD</li>
             <li>Grant Mail.Read permissions for the target mailbox</li>
             <li>Create a client secret</li>
@@ -515,9 +515,9 @@ export default function EmailMonitoringSettings({
           </ol>
         </div>
       ) : (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-          <h4 className="font-semibold text-green-800 mb-2">Gmail Setup Instructions</h4>
-          <ol className="text-sm text-green-700 space-y-1 list-decimal list-inside">
+        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg p-4">
+          <h4 className="font-semibold text-green-800 dark:text-green-300 mb-2">Gmail Setup Instructions</h4>
+          <ol className="text-sm text-green-700 dark:text-green-400 space-y-1 list-decimal list-inside">
             <li>Create a project in <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer" className="underline hover:text-green-900">Google Cloud Console</a></li>
             <li>Enable the Gmail API for your project</li>
             <li>Configure OAuth consent screen with gmail.readonly scope</li>
@@ -525,9 +525,9 @@ export default function EmailMonitoringSettings({
             <li>Use <a href="https://developers.google.com/oauthplayground/" target="_blank" rel="noopener noreferrer" className="underline hover:text-green-900">OAuth 2.0 Playground</a> to get refresh token</li>
             <li>Enter your credentials here and test the connection</li>
           </ol>
-          <div className="mt-3 p-3 bg-green-100 rounded-lg">
-            <p className="text-xs text-green-800">
-              <strong>Required OAuth Scope:</strong> <code className="bg-green-200 px-1 rounded">https://www.googleapis.com/auth/gmail.readonly</code>
+          <div className="mt-3 p-3 bg-green-100 dark:bg-green-800/50 rounded-lg">
+            <p className="text-xs text-green-800 dark:text-green-300">
+              <strong>Required OAuth Scope:</strong> <code className="bg-green-200 dark:bg-green-700 px-1 rounded">https://www.googleapis.com/auth/gmail.readonly</code>
             </p>
           </div>
         </div>

@@ -75,8 +75,8 @@ export default function EmailPollingLogsSettings({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-xl font-bold text-gray-900">Email Polling Activity</h3>
-          <p className="text-gray-600 mt-1">Monitor email polling attempts and their results</p>
+          <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">Email Polling Activity</h3>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">Monitor email polling attempts and their results</p>
         </div>
         <button
           onClick={handleRefresh}
@@ -91,87 +91,87 @@ export default function EmailPollingLogsSettings({
       {/* Statistics Cards */}
       {totalPolls > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
             <div className="flex items-center space-x-2">
               <Activity className="h-5 w-5 text-blue-600" />
-              <span className="text-sm font-medium text-gray-600">Total Polls</span>
+              <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Polls</span>
             </div>
-            <p className="text-2xl font-bold text-gray-900 mt-1">{totalPolls}</p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">{totalPolls}</p>
           </div>
           
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
             <div className="flex items-center space-x-2">
               <CheckCircle className="h-5 w-5 text-green-600" />
-              <span className="text-sm font-medium text-gray-600">Successful</span>
+              <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Successful</span>
             </div>
-            <p className="text-2xl font-bold text-green-600 mt-1">{successfulPolls}</p>
+            <p className="text-2xl font-bold text-green-600 dark:text-green-400 mt-1">{successfulPolls}</p>
           </div>
           
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
             <div className="flex items-center space-x-2">
               <XCircle className="h-5 w-5 text-red-600" />
-              <span className="text-sm font-medium text-gray-600">Failed</span>
+              <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Failed</span>
             </div>
-            <p className="text-2xl font-bold text-red-600 mt-1">{failedPolls}</p>
+            <p className="text-2xl font-bold text-red-600 dark:text-red-400 mt-1">{failedPolls}</p>
           </div>
           
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
             <div className="flex items-center space-x-2">
               <Activity className="h-5 w-5 text-purple-600" />
-              <span className="text-sm font-medium text-gray-600">Emails Found</span>
+              <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Emails Found</span>
             </div>
-            <p className="text-2xl font-bold text-purple-600 mt-1">{totalEmailsFound}</p>
+            <p className="text-2xl font-bold text-purple-600 dark:text-purple-400 mt-1">{totalEmailsFound}</p>
           </div>
           
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
             <div className="flex items-center space-x-2">
               <CheckCircle className="h-5 w-5 text-indigo-600" />
-              <span className="text-sm font-medium text-gray-600">Processed</span>
+              <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Processed</span>
             </div>
-            <p className="text-2xl font-bold text-indigo-600 mt-1">{totalEmailsProcessed}</p>
+            <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mt-1">{totalEmailsProcessed}</p>
           </div>
         </div>
       )}
 
       {/* Polling Logs Table */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-          <h4 className="font-semibold text-gray-900">Recent Polling Activity</h4>
-          <p className="text-sm text-gray-600 mt-1">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700">
+          <h4 className="font-semibold text-gray-900 dark:text-gray-100">Recent Polling Activity</h4>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
             {emailPollingLogs.length} polling attempt{emailPollingLogs.length !== 1 ? 's' : ''} recorded
           </p>
         </div>
         
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Status
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Provider
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Timestamp
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Emails Found
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Emails Processed
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Execution Time
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Error Message
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
               {emailPollingLogs.map((log) => (
-                <tr key={log.id} className="hover:bg-gray-50">
+                <tr key={log.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(log.status)}`}>
                       {getStatusIcon(log.status)}
@@ -181,25 +181,25 @@ export default function EmailPollingLogsSettings({
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center space-x-2">
                       <span className="text-lg">{getProviderIcon(log.provider)}</span>
-                      <span className="text-sm text-gray-900 capitalize">{log.provider}</span>
+                      <span className="text-sm text-gray-900 dark:text-gray-100 capitalize">{log.provider}</span>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center space-x-2">
                       <Calendar className="h-4 w-4 text-gray-400" />
-                      <span className="text-sm text-gray-900">{formatDate(log.timestamp)}</span>
+                      <span className="text-sm text-gray-900 dark:text-gray-100">{formatDate(log.timestamp)}</span>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="text-sm text-gray-900">{log.emailsFound}</span>
+                    <span className="text-sm text-gray-900 dark:text-gray-100">{log.emailsFound}</span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="text-sm text-gray-900">{log.emailsProcessed}</span>
+                    <span className="text-sm text-gray-900 dark:text-gray-100">{log.emailsProcessed}</span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center space-x-2">
                       <Timer className="h-4 w-4 text-gray-400" />
-                      <span className="text-sm text-gray-900">{formatExecutionTime(log.executionTimeMs)}</span>
+                      <span className="text-sm text-gray-900 dark:text-gray-100">{formatExecutionTime(log.executionTimeMs)}</span>
                     </div>
                   </td>
                   <td className="px-6 py-4">
@@ -214,7 +214,7 @@ export default function EmailPollingLogsSettings({
                         }
                       </span>
                     ) : (
-                      <span className="text-sm text-gray-400">-</span>
+                      <span className="text-sm text-gray-400 dark:text-gray-500">-</span>
                     )}
                   </td>
                 </tr>
@@ -225,9 +225,9 @@ export default function EmailPollingLogsSettings({
         
         {emailPollingLogs.length === 0 && (
           <div className="text-center py-12">
-            <Clock className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No Polling Activity</h3>
-            <p className="text-gray-600 mb-4">
+            <Clock className="h-12 w-12 text-gray-400 dark:text-gray-500 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No Polling Activity</h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">
               Email polling logs will appear here once the monitoring system starts running.
             </p>
             <button
@@ -242,9 +242,9 @@ export default function EmailPollingLogsSettings({
       </div>
 
       {/* Information Panel */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h4 className="font-semibold text-blue-800 mb-2">Email Polling Information</h4>
-        <ul className="text-sm text-blue-700 space-y-1">
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
+        <h4 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">Email Polling Information</h4>
+        <ul className="text-sm text-blue-700 dark:text-blue-400 space-y-1">
           <li>• Each polling attempt is logged with timestamp and results</li>
           <li>• "Emails Found" shows how many emails matched your time filter and had attachments</li>
           <li>• "Emails Processed" shows how many were successfully extracted and uploaded</li>
@@ -255,9 +255,9 @@ export default function EmailPollingLogsSettings({
       </div>
 
       {/* Scheduling Information */}
-      <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-        <h4 className="font-semibold text-amber-800 mb-2">Setting Up Automatic Polling</h4>
-        <div className="text-sm text-amber-700 space-y-2">
+      <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg p-4">
+        <h4 className="font-semibold text-amber-800 dark:text-amber-300 mb-2">Setting Up Automatic Polling</h4>
+        <div className="text-sm text-amber-700 dark:text-amber-400 space-y-2">
           <p>
             <strong>Current Status:</strong> Email monitoring is currently manual. To enable automatic polling:
           </p>

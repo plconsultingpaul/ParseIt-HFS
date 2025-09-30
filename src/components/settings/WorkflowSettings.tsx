@@ -1,92 +1,112 @@
 import React, { useState } from 'react';
-import { GitBranch, Plus, Save } from 'lucide-react';
+import { GitBranch, Plus, Save, Copy } from 'lucide-react';
+import type { ApiConfig } from '../../types';
 import { useSupabaseData } from '../../hooks/useSupabaseData';
+import { useWorkflowManagement } from '../../hooks/useWorkflowManagement';
+import { updateWorkflowSteps } from '../../services/workflowService';
 import WorkflowList from './workflow/WorkflowList';
 import WorkflowDetail from './workflow/WorkflowDetail';
-import type { ExtractionWorkflow, WorkflowStep } from '../../types';
-import type { ApiConfig } from '../../types';
+import WorkflowSelectionModal from './workflow/WorkflowSelectionModal';
+import WorkflowCopyModal from './workflow/WorkflowCopyModal';
+import WorkflowDeleteModal from './workflow/WorkflowDeleteModal';
 
 interface WorkflowSettingsProps {
   apiConfig: ApiConfig;
+  refreshData: () => Promise<void>;
 }
 
-export default function WorkflowSettings({ apiConfig }: WorkflowSettingsProps) {
-  const { workflows, workflowSteps, updateWorkflows, updateWorkflowSteps } = useSupabaseData();
-  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
-  const [localWorkflows, setLocalWorkflows] = useState<ExtractionWorkflow[]>(workflows);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
+export default function WorkflowSettings({ apiConfig, refreshData }: WorkflowSettingsProps) {
+  const { workflows, workflowSteps } = useSupabaseData();
+  const {
+    localWorkflows,
+    isSaving,
+    saveSuccess,
+    isCopying,
+    isDeleting,
+    addWorkflow,
+    updateWorkflow,
+    deleteWorkflow,
+    copyWorkflow,
+    saveWorkflows
+  } = useWorkflowManagement(workflows, workflowSteps, refreshData);
 
-  // Update local state when workflows change
-  React.useEffect(() => {
-    setLocalWorkflows(workflows);
-  }, [workflows]);
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
+  const [showWorkflowSelectionModal, setShowWorkflowSelectionModal] = useState(false);
+  const [showCopyModal, setShowCopyModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [workflowToCopy, setWorkflowToCopy] = useState<any>(null);
+  const [workflowToDelete, setWorkflowToDelete] = useState<any>(null);
 
   const selectedWorkflow = localWorkflows.find(w => w.id === selectedWorkflowId);
-  const selectedWorkflowSteps = workflowSteps.filter(s => s.workflowId === selectedWorkflowId);
+  const selectedWorkflowSteps = workflowSteps.filter(step => step.workflowId === selectedWorkflowId);
 
   const handleAddWorkflow = () => {
-    const newWorkflow: ExtractionWorkflow = {
-      id: `temp-${Date.now()}`,
-      name: 'New Workflow',
-      description: '',
-      isActive: true
-    };
-    
-    const updatedWorkflows = [...localWorkflows, newWorkflow];
-    setLocalWorkflows(updatedWorkflows);
-    setSelectedWorkflowId(newWorkflow.id);
-  };
-
-  const handleUpdateWorkflow = (workflowId: string, updates: Partial<ExtractionWorkflow>) => {
-    setLocalWorkflows(prev => 
-      prev.map(workflow => 
-        workflow.id === workflowId 
-          ? { ...workflow, ...updates }
-          : workflow
-      )
-    );
+    const newWorkflowId = addWorkflow();
+    setSelectedWorkflowId(newWorkflowId);
   };
 
   const handleDeleteWorkflow = (workflowId: string) => {
-    setLocalWorkflows(prev => prev.filter(w => w.id !== workflowId));
-    if (selectedWorkflowId === workflowId) {
-      setSelectedWorkflowId(null);
+    const workflow = localWorkflows.find(w => w.id === workflowId);
+    if (workflow) {
+      setWorkflowToDelete(workflow);
+      setShowDeleteModal(true);
     }
   };
 
-  const handleUpdateWorkflowSteps = async (workflowId: string, steps: WorkflowStep[]) => {
+  const handleConfirmDelete = async () => {
+    if (!workflowToDelete) return;
+    
     try {
-      await updateWorkflowSteps(workflowId, steps);
+      await deleteWorkflow(workflowToDelete.id);
+      
+      // Clear selection if deleted workflow was selected
+      if (selectedWorkflowId === workflowToDelete.id) {
+        setSelectedWorkflowId(null);
+      }
     } catch (error) {
-      console.error('Failed to update workflow steps:', error);
-      alert('Failed to save workflow steps. Please try again.');
+      alert('Failed to delete workflow. Please try again.');
     }
   };
 
-  const handleSaveWorkflows = async () => {
-    setIsSaving(true);
-    setSaveSuccess(false);
-    try {
-      await updateWorkflows(localWorkflows);
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
-    } catch (error) {
-      console.error('Failed to save workflows:', error);
-      alert('Failed to save workflows. Please try again.');
-    } finally {
-      setIsSaving(false);
+  const handleCopyWorkflowClick = () => {
+    setShowWorkflowSelectionModal(true);
+  };
+
+  const handleWorkflowSelectedForCopy = (workflow: any) => {
+    setWorkflowToCopy(workflow);
+    setShowWorkflowSelectionModal(false);
+    setShowCopyModal(true);
+  };
+
+  const handleConfirmCopy = async (newName: string) => {
+    if (!workflowToCopy) return;
+
+    // Check if name already exists
+    if (localWorkflows.some(workflow => workflow.name.toLowerCase() === newName.toLowerCase())) {
+      throw new Error('Name already exists');
     }
+
+    const newWorkflowId = await copyWorkflow(workflowToCopy, newName);
+    setSelectedWorkflowId(newWorkflowId);
   };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-xl font-bold text-gray-900">Workflow Management</h3>
-          <p className="text-gray-600 mt-1">Create and manage multi-step extraction workflows</p>
+          <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">Workflow Management</h3>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">Create and manage multi-step extraction workflows</p>
         </div>
         <div className="flex items-center space-x-3">
+          {localWorkflows.length > 0 && (
+            <button
+              onClick={handleCopyWorkflowClick}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
+            >
+              <Copy className="h-4 w-4" />
+              <span>Copy Workflow</span>
+            </button>
+          )}
           <button
             onClick={handleAddWorkflow}
             className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
@@ -95,7 +115,7 @@ export default function WorkflowSettings({ apiConfig }: WorkflowSettingsProps) {
             <span>Add Workflow</span>
           </button>
           <button
-            onClick={handleSaveWorkflows}
+            onClick={saveWorkflows}
             disabled={isSaving}
             className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
           >
@@ -106,14 +126,40 @@ export default function WorkflowSettings({ apiConfig }: WorkflowSettingsProps) {
       </div>
 
       {saveSuccess && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg p-4">
           <div className="flex items-center space-x-2">
             <div className="w-4 h-4 bg-green-500 rounded-full"></div>
-            <span className="font-semibold text-green-800">Success!</span>
+            <span className="font-semibold text-green-800 dark:text-green-300">Success!</span>
           </div>
-          <p className="text-green-700 text-sm mt-1">Workflows saved successfully!</p>
+          <p className="text-green-700 dark:text-green-400 text-sm mt-1">Workflows saved successfully!</p>
         </div>
       )}
+
+      {/* Workflow Selection Modal */}
+      <WorkflowSelectionModal
+        isOpen={showWorkflowSelectionModal}
+        onClose={() => setShowWorkflowSelectionModal(false)}
+        workflows={localWorkflows}
+        onSelect={handleWorkflowSelectedForCopy}
+      />
+
+      {/* Copy Workflow Modal */}
+      <WorkflowCopyModal
+        isOpen={showCopyModal}
+        onClose={() => setShowCopyModal(false)}
+        workflowToCopy={workflowToCopy}
+        onConfirmCopy={handleConfirmCopy}
+        isCopying={isCopying}
+      />
+
+      {/* Delete Workflow Modal */}
+      <WorkflowDeleteModal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        workflowToDelete={workflowToDelete}
+        onConfirmDelete={handleConfirmDelete}
+        isDeleting={isDeleting}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Workflow List */}
@@ -122,7 +168,7 @@ export default function WorkflowSettings({ apiConfig }: WorkflowSettingsProps) {
             workflows={localWorkflows}
             selectedWorkflowId={selectedWorkflowId}
             onSelectWorkflow={setSelectedWorkflowId}
-            onUpdateWorkflow={handleUpdateWorkflow}
+            onUpdateWorkflow={updateWorkflow}
             onDeleteWorkflow={handleDeleteWorkflow}
           />
         </div>
@@ -134,22 +180,25 @@ export default function WorkflowSettings({ apiConfig }: WorkflowSettingsProps) {
               workflow={selectedWorkflow}
               steps={selectedWorkflowSteps}
               apiConfig={apiConfig}
-              onUpdateSteps={(steps) => handleUpdateWorkflowSteps(selectedWorkflow.id, steps)}
+              onUpdateSteps={async (steps) => {
+                const validSteps = steps.filter(step => step != null);
+                await updateWorkflowSteps(selectedWorkflow.id, validSteps);
+              }}
             />
           ) : (
-            <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
-              <GitBranch className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No Workflow Selected</h3>
-              <p className="text-gray-600">Select a workflow from the list to view and edit its steps.</p>
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-8 text-center">
+              <GitBranch className="h-12 w-12 text-gray-400 dark:text-gray-500 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No Workflow Selected</h3>
+              <p className="text-gray-600 dark:text-gray-400">Select a workflow from the list to view and edit its steps.</p>
             </div>
           )}
         </div>
       </div>
 
       {/* Information Panel */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h4 className="font-semibold text-blue-800 mb-2">Workflow System Information</h4>
-        <ul className="text-sm text-blue-700 space-y-1">
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
+        <h4 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">Workflow System Information</h4>
+        <ul className="text-sm text-blue-700 dark:text-blue-400 space-y-1">
           <li>• Workflows define multi-step processes for handling extracted data</li>
           <li>• Steps are executed in order and can include API calls, conditional checks, and data transformations</li>
           <li>• Each extraction type can be linked to a specific workflow</li>

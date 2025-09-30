@@ -1,16 +1,18 @@
 import React, { useState } from 'react';
 import { Plus, Trash2, Save, Mail, Filter } from 'lucide-react';
-import type { EmailProcessingRule, ExtractionType } from '../../types';
+import type { EmailProcessingRule, ExtractionType, TransformationType } from '../../types';
 
 interface EmailRulesSettingsProps {
   emailRules: EmailProcessingRule[];
   extractionTypes: ExtractionType[];
+  transformationTypes: TransformationType[];
   onUpdateEmailRules: (rules: EmailProcessingRule[]) => Promise<void>;
 }
 
 export default function EmailRulesSettings({ 
   emailRules, 
   extractionTypes, 
+  transformationTypes,
   onUpdateEmailRules 
 }: EmailRulesSettingsProps) {
   const [localRules, setLocalRules] = useState<EmailProcessingRule[]>(emailRules);
@@ -24,6 +26,8 @@ export default function EmailRulesSettings({
       senderPattern: '',
       subjectPattern: '',
       extractionTypeId: extractionTypes[0]?.id || '',
+      transformationTypeId: undefined,
+      processingMode: 'extraction',
       isEnabled: true,
       priority: localRules.length + 1
     };
@@ -78,8 +82,8 @@ export default function EmailRulesSettings({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-xl font-bold text-gray-900">Email Processing Rules</h3>
-          <p className="text-gray-600 mt-1">Define rules to automatically process incoming emails</p>
+          <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">Email Processing Rules</h3>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">Define rules to automatically process incoming emails</p>
         </div>
         <div className="flex items-center space-x-3">
           <button
@@ -101,29 +105,29 @@ export default function EmailRulesSettings({
       </div>
 
       {saveSuccess && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg p-4">
           <div className="flex items-center space-x-2">
             <div className="w-4 h-4 bg-green-500 rounded-full"></div>
-            <span className="font-semibold text-green-800">Success!</span>
+            <span className="font-semibold text-green-800 dark:text-green-300">Success!</span>
           </div>
-          <p className="text-green-700 text-sm mt-1">Email processing rules saved successfully!</p>
+          <p className="text-green-700 dark:text-green-400 text-sm mt-1">Email processing rules saved successfully!</p>
         </div>
       )}
 
       <div className="space-y-4">
         {localRules.map((rule, index) => (
-          <div key={rule.id} className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+          <div key={rule.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-3">
-                <div className="bg-purple-100 p-2 rounded-lg">
-                  <Filter className="h-5 w-5 text-purple-600" />
+                <div className="bg-purple-100 dark:bg-purple-900/50 p-2 rounded-lg">
+                  <Filter className="h-5 w-5 text-purple-600 dark:text-purple-400" />
                 </div>
                 <div>
-                  <h4 className="font-semibold text-gray-900">
+                  <h4 className="font-semibold text-gray-900 dark:text-gray-100">
                     {rule.ruleName || `Rule ${index + 1}`}
                   </h4>
-                  <p className="text-sm text-gray-500">
-                    Priority: {rule.priority} • {rule.isEnabled ? 'Enabled' : 'Disabled'}
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Priority: {rule.priority} • {rule.isEnabled ? 'Enabled' : 'Disabled'} • {rule.processingMode === 'transformation' ? 'Transform Mode' : 'Extract Mode'}
                   </p>
                 </div>
               </div>
@@ -165,64 +169,106 @@ export default function EmailRulesSettings({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Processing Mode
+                </label>
+                <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+                  <button
+                    type="button"
+                    onClick={() => updateRule(index, 'processingMode', 'extraction')}
+                    className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+                      rule.processingMode === 'extraction'
+                        ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
+                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                    }`}
+                  >
+                    Extract Data
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateRule(index, 'processingMode', 'transformation')}
+                    className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+                      rule.processingMode === 'transformation'
+                        ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
+                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                    }`}
+                  >
+                    Transform & Rename
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Rule Name
                 </label>
                 <input
                   type="text"
                   value={rule.ruleName}
                   onChange={(e) => updateRule(index, 'ruleName', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                   placeholder="e.g., Invoice Processing"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Extraction Type
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  {rule.processingMode === 'transformation' ? 'Transformation Type' : 'Extraction Type'}
                 </label>
                 <select
-                  value={rule.extractionTypeId}
-                  onChange={(e) => updateRule(index, 'extractionTypeId', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  value={rule.processingMode === 'transformation' ? (rule.transformationTypeId || '') : (rule.extractionTypeId || '')}
+                  onChange={(e) => {
+                    if (rule.processingMode === 'transformation') {
+                      updateRule(index, 'transformationTypeId', e.target.value);
+                    } else {
+                      updateRule(index, 'extractionTypeId', e.target.value);
+                    }
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 >
-                  <option value="">Select extraction type...</option>
-                  {extractionTypes.map((type) => (
-                    <option key={type.id} value={type.id}>
-                      {type.name}
-                    </option>
-                  ))}
+                  <option value="">Select {rule.processingMode === 'transformation' ? 'transformation' : 'extraction'} type...</option>
+                  {rule.processingMode === 'transformation' 
+                    ? transformationTypes.map((type) => (
+                        <option key={type.id} value={type.id}>
+                          {type.name}
+                        </option>
+                      ))
+                    : extractionTypes.map((type) => (
+                        <option key={type.id} value={type.id}>
+                          {type.name}
+                        </option>
+                      ))
+                  }
                 </select>
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Sender Pattern
                 </label>
                 <input
                   type="text"
                   value={rule.senderPattern}
                   onChange={(e) => updateRule(index, 'senderPattern', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                   placeholder="e.g., @supplier.com or John Doe"
                 />
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   Match sender email or name (partial match)
                 </p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Subject Pattern
                 </label>
                 <input
                   type="text"
                   value={rule.subjectPattern}
                   onChange={(e) => updateRule(index, 'subjectPattern', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                   placeholder="e.g., Invoice or Purchase Order"
                 />
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   Match subject line (partial match)
                 </p>
               </div>
@@ -232,9 +278,9 @@ export default function EmailRulesSettings({
 
         {localRules.length === 0 && (
           <div className="text-center py-12">
-            <Mail className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No Processing Rules</h3>
-            <p className="text-gray-600 mb-4">Create your first email processing rule to get started.</p>
+            <Mail className="h-12 w-12 text-gray-400 dark:text-gray-500 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No Processing Rules</h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">Create your first email processing rule to get started.</p>
             <button
               onClick={addRule}
               className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2 mx-auto"
@@ -247,11 +293,14 @@ export default function EmailRulesSettings({
       </div>
 
       {/* Rules Information */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h4 className="font-semibold text-blue-800 mb-2">How Email Processing Rules Work</h4>
-        <ul className="text-sm text-blue-700 space-y-1">
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
+        <h4 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">How Email Processing Rules Work</h4>
+        <ul className="text-sm text-blue-700 dark:text-blue-400 space-y-1">
           <li>• Rules are processed in priority order (top to bottom)</li>
           <li>• First matching rule will be used to process the email</li>
+          <li>• Choose processing mode: Extract Data or Transform & Rename</li>
+          <li>• Extract mode processes PDFs for data extraction and API/SFTP upload</li>
+          <li>• Transform mode analyzes PDFs to generate new filenames and rename them</li>
           <li>• Both sender and subject patterns must match (if specified)</li>
           <li>• Leave patterns empty to match all emails</li>
           <li>• Only emails with PDF attachments will be processed</li>
