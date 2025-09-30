@@ -20,7 +20,7 @@ export function useAuth() {
           // Verify the user still exists and is active in the database
           const { data, error } = await supabase
             .from('users')
-            .select('id, username, is_admin, is_active, permissions')
+            .select('id, username, is_admin, is_active, permissions, role, preferred_upload_mode, current_zone')
             .eq('id', user.id)
             .eq('is_active', true);
 
@@ -39,7 +39,10 @@ export function useAuth() {
               username: userData.username,
               isAdmin: userData.is_admin,
               isActive: userData.is_active,
-              permissions: userData.permissions ? JSON.parse(userData.permissions) : getDefaultPermissions(userData.is_admin)
+              role: userData.role || (userData.is_admin ? 'admin' : 'user'),
+              permissions: userData.permissions ? JSON.parse(userData.permissions) : getDefaultPermissions(userData.is_admin),
+              preferredUploadMode: userData.preferred_upload_mode || 'manual',
+              currentZone: userData.current_zone || ''
             };
 
             setAuthState({
@@ -67,33 +70,53 @@ export function useAuth() {
 
   const login = async (username: string, password: string): Promise<{ success: boolean; message?: string }> => {
     try {
-      const { data, error } = await supabase.rpc('verify_password', {
+      // First verify the password using the RPC function
+      const { data: rpcData, error: rpcError } = await supabase.rpc('verify_password', {
         username_input: username,
         password_input: password
       });
 
-      if (error) {
-        throw error;
+      if (rpcError) {
+        throw rpcError;
       }
 
-      if (data.success) {
+      if (rpcData.success) {
+        // Get the complete user data directly from the users table to ensure we have all fields
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('id, username, is_admin, is_active, permissions, role, preferred_upload_mode, current_zone')
+          .eq('username', username)
+          .eq('is_active', true)
+          .single();
+
+        if (userError || !userData) {
+          console.error('Failed to fetch complete user data:', userError);
+          return { success: false, message: 'Failed to load user data' };
+        }
+
+        console.log('Complete user data from database:', userData);
+
         // Parse permissions from database or use defaults
         let userPermissions: UserPermissions;
         try {
-          userPermissions = data.user.permissions ? JSON.parse(data.user.permissions) : getDefaultPermissions(data.user.is_admin);
+          userPermissions = userData.permissions ? JSON.parse(userData.permissions) : getDefaultPermissions(userData.is_admin);
         } catch (parseError) {
           console.warn('Failed to parse user permissions, using defaults:', parseError);
-          userPermissions = getDefaultPermissions(data.user.is_admin);
+          userPermissions = getDefaultPermissions(userData.is_admin);
         }
 
         const user: User = {
-          id: data.user.id,
-          username: data.user.username,
-          isAdmin: data.user.is_admin,
-          isActive: data.user.is_active,
+          id: userData.id,
+          username: userData.username,
+          isAdmin: userData.is_admin,
+          isActive: userData.is_active,
+          role: userData.role || (userData.is_admin ? 'admin' : 'user'),
           permissions: userPermissions,
-          preferredUploadMode: data.user.preferred_upload_mode || 'manual'
+          preferredUploadMode: userData.preferred_upload_mode || 'manual',
+          currentZone: userData.current_zone || ''
         };
+
+        console.log('Final user object created during login:', user);
 
         setAuthState({
           isAuthenticated: true,
@@ -105,7 +128,7 @@ export function useAuth() {
 
         return { success: true };
       } else {
-        return { success: false, message: data.message };
+        return { success: false, message: rpcData.message };
       }
     } catch (error) {
       console.error('Login error:', error);
@@ -121,21 +144,59 @@ export function useAuth() {
     localStorage.removeItem('parseit_user');
   };
 
-  const createUser = async (username: string, password: string, isAdmin: boolean = false): Promise<{ success: boolean; message: string }> => {
+  const createUser = async (username: string, password: string, isAdmin: boolean = false, role: 'admin' | 'user' | 'vendor' = 'user'): Promise<{ success: boolean; message: string }> => {
     try {
-      const { data, error } = await supabase.rpc('create_user', {
+      console.log('Creating user with role:', role);
+      
+      // First create the user with the RPC function
+      const { data: rpcData, error: rpcError } = await supabase.rpc('create_user', {
         username_input: username,
         password_input: password,
         is_admin_input: isAdmin
       });
 
-      if (error) {
-        throw error;
+      if (rpcError) {
+        throw rpcError;
+      }
+
+      if (!rpcData.success) {
+        return {
+          success: false,
+          message: rpcData.message
+        };
+      }
+
+      // Always update the role after user creation to ensure it's set correctly
+      console.log('Updating user role to:', role);
+      try {
+        const { error: updateError } = await supabase
+          .from('users')
+          .update({ 
+            role: role,
+            updated_at: new Date().toISOString()
+          })
+          .eq('username', username);
+
+        if (updateError) {
+          console.error('Failed to update user role after creation:', updateError);
+          return {
+            success: false,
+            message: `User created but failed to set role: ${updateError.message}`
+          };
+        }
+        
+        console.log('User role updated successfully to:', role);
+      } catch (roleUpdateError) {
+        console.error('Error updating user role:', roleUpdateError);
+        return {
+          success: false,
+          message: 'User created but failed to set role properly'
+        };
       }
 
       return {
-        success: data.success,
-        message: data.message
+        success: rpcData.success,
+        message: rpcData.message
       };
     } catch (error) {
       console.error('Create user error:', error);
@@ -150,7 +211,7 @@ export function useAuth() {
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('id, username, is_admin, is_active, permissions, preferred_upload_mode')
+        .select('id, username, is_admin, is_active, permissions, preferred_upload_mode, role, current_zone')
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -162,8 +223,10 @@ export function useAuth() {
         username: user.username,
         isAdmin: user.is_admin,
         isActive: user.is_active,
+        role: user.role || 'user',
         permissions: user.permissions ? JSON.parse(user.permissions) : getDefaultPermissions(user.is_admin),
-        preferredUploadMode: user.preferred_upload_mode || 'manual'
+        preferredUploadMode: user.preferred_upload_mode || 'manual',
+        currentZone: user.current_zone || ''
       }));
     } catch (error) {
       console.error('Get users error:', error);
@@ -171,13 +234,15 @@ export function useAuth() {
     }
   };
 
-  const updateUser = async (userId: string, updates: { isAdmin?: boolean; isActive?: boolean; permissions?: UserPermissions; preferredUploadMode?: 'manual' | 'auto' }): Promise<{ success: boolean; message: string }> => {
+  const updateUser = async (userId: string, updates: { isAdmin?: boolean; isActive?: boolean; permissions?: UserPermissions; preferredUploadMode?: 'manual' | 'auto'; role?: 'admin' | 'user' | 'vendor'; currentZone?: string }): Promise<{ success: boolean; message: string }> => {
     try {
       const updateData: any = {};
       if (updates.isAdmin !== undefined) updateData.is_admin = updates.isAdmin;
       if (updates.isActive !== undefined) updateData.is_active = updates.isActive;
       if (updates.permissions !== undefined) updateData.permissions = JSON.stringify(updates.permissions);
       if (updates.preferredUploadMode !== undefined) updateData.preferred_upload_mode = updates.preferredUploadMode;
+      if (updates.role !== undefined) updateData.role = updates.role;
+      if (updates.currentZone !== undefined) updateData.current_zone = updates.currentZone;
       updateData.updated_at = new Date().toISOString();
 
       const { error } = await supabase
@@ -242,6 +307,7 @@ function getDefaultPermissions(isAdmin: boolean): UserPermissions {
   if (isAdmin) {
     return {
       extractionTypes: true,
+      transformationTypes: true,
       sftp: true,
       api: true,
       emailMonitoring: true,
@@ -255,6 +321,7 @@ function getDefaultPermissions(isAdmin: boolean): UserPermissions {
   
   return {
     extractionTypes: false,
+    transformationTypes: false,
     sftp: false,
     api: false,
     emailMonitoring: false,
