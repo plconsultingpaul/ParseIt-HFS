@@ -27,8 +27,12 @@ interface UploadRequest {
   useExistingParseitId?: number
   userId?: string
   extractionTypeId?: string
+  transformationTypeId?: string
   formatType?: string
   customFilenamePart?: string
+  exactFilename?: string
+  pdfUploadStrategy?: 'all_pages_in_group' | 'specific_page_in_group'
+  specificPageToUpload?: number
 }
 
 serve(async (req: Request) => {
@@ -40,18 +44,51 @@ serve(async (req: Request) => {
   }
 
   try {
-    const { sftpConfig, xmlContent, pdfBase64, baseFilename, originalFilename, parseitIdMapping, useExistingParseitId, userId, extractionTypeId, formatType, customFilenamePart }: UploadRequest = await req.json()
+    const { sftpConfig, xmlContent, pdfBase64, baseFilename, originalFilename, parseitIdMapping, useExistingParseitId, userId, extractionTypeId, transformationTypeId, formatType, customFilenamePart, exactFilename, pdfUploadStrategy, specificPageToUpload }: UploadRequest = await req.json()
 
+    console.log('=== SFTP UPLOAD DEBUG ===')
+    console.log('Request received with fields:')
+    console.log('- sftpConfig present:', !!sftpConfig)
+    console.log('- sftpConfig.host:', sftpConfig?.host || 'MISSING')
+    console.log('- sftpConfig.username:', sftpConfig?.username ? 'SET' : 'MISSING')
+    console.log('- sftpConfig.password:', sftpConfig?.password ? 'SET' : 'MISSING')
+    console.log('- sftpConfig.xmlPath:', sftpConfig?.xmlPath || 'MISSING')
+    console.log('- sftpConfig.pdfPath:', sftpConfig?.pdfPath || 'MISSING')
+    console.log('- sftpConfig.jsonPath:', sftpConfig?.jsonPath || 'MISSING')
+    console.log('- xmlContent present:', !!xmlContent)
+    console.log('- xmlContent length:', xmlContent?.length || 0)
+    console.log('- pdfBase64 present:', !!pdfBase64)
+    console.log('- pdfBase64 length:', pdfBase64?.length || 0)
+    console.log('- baseFilename:', baseFilename || 'MISSING')
+    console.log('- originalFilename:', originalFilename || 'MISSING')
+    console.log('- exactFilename:', exactFilename || 'MISSING')
+    console.log('- customFilenamePart:', customFilenamePart || 'MISSING')
+    console.log('- formatType:', formatType || 'MISSING')
+    console.log('- extractionTypeId:', extractionTypeId || 'MISSING')
+    console.log('- transformationTypeId:', transformationTypeId || 'MISSING')
+    console.log('- pdfUploadStrategy:', pdfUploadStrategy || 'MISSING')
+    console.log('- specificPageToUpload:', specificPageToUpload || 'MISSING')
+    
     console.log('SFTP Upload Request received:')
     console.log('- useExistingParseitId:', useExistingParseitId)
     console.log('- parseitIdMapping:', parseitIdMapping)
     console.log('- userId:', userId)
     console.log('- extractionTypeId:', extractionTypeId)
+    console.log('- transformationTypeId:', transformationTypeId)
     console.log('- originalFilename:', originalFilename)
     console.log('- customFilenamePart:', customFilenamePart)
+    console.log('- exactFilename:', exactFilename)
 
     // Validate required fields
     if (!sftpConfig.host || !sftpConfig.username || !xmlContent || !pdfBase64 || !baseFilename) {
+      console.log('=== VALIDATION FAILED ===')
+      console.log('Missing required fields:')
+      console.log('- sftpConfig.host:', !sftpConfig.host ? 'MISSING' : 'OK')
+      console.log('- sftpConfig.username:', !sftpConfig.username ? 'MISSING' : 'OK')
+      console.log('- xmlContent:', !xmlContent ? 'MISSING' : 'OK')
+      console.log('- pdfBase64:', !pdfBase64 ? 'MISSING' : 'OK')
+      console.log('- baseFilename:', !baseFilename ? 'MISSING' : 'OK')
+      
       return new Response(
         JSON.stringify({ error: "Missing required fields" }),
         {
@@ -72,7 +109,12 @@ serve(async (req: Request) => {
       const pdfDoc = await PDFDocument.load(pdfBuffer)
       const pageCount = pdfDoc.getPageCount()
       
-      console.log(`PDF has ${pageCount} pages`)
+      console.log(`🔧 === SFTP PDF ANALYSIS RESULTS ===`)
+      console.log(`🔧 PDF received has ${pageCount} pages`)
+      console.log(`🔧 extractionTypeId: ${extractionTypeId || 'NONE'}`)
+      console.log(`🔧 transformationTypeId: ${transformationTypeId || 'NONE'}`)
+      console.log(`🔧 pdfUploadStrategy: ${pdfUploadStrategy || 'all_pages_in_group (default)'}`)
+      console.log(`🔧 specificPageToUpload: ${specificPageToUpload || 'N/A'}`)
       
       // Get Supabase configuration
       const supabaseUrl = Deno.env.get('SUPABASE_URL')
@@ -85,6 +127,7 @@ serve(async (req: Request) => {
       // Helper function to log extraction
       const logExtraction = async (
         extractionTypeIdParam: string | null,
+        transformationTypeIdParam: string | null,
         pdfFilename: string,
         pdfPages: number,
         status: 'success' | 'failed',
@@ -95,11 +138,13 @@ serve(async (req: Request) => {
           const logData: any = {
             user_id: userId || null,
             extraction_type_id: extractionTypeIdParam,
+            transformation_type_id: transformationTypeIdParam,
             pdf_filename: pdfFilename,
             pdf_pages: pdfPages,
             extraction_status: status,
             error_message: errorMessage || null,
             extracted_data: xmlContent || null,
+            processing_mode: transformationTypeIdParam ? 'transformation' : 'extraction',
             created_at: new Date().toISOString()
           }
           
@@ -123,7 +168,8 @@ serve(async (req: Request) => {
           // Don't throw - logging failure shouldn't break the main process
         }
       }
-      // Connect to SFTP server once
+
+      // Connect to SFTP server
       await sftp.connect({
         host: sftpConfig.host,
         port: sftpConfig.port,
@@ -138,18 +184,23 @@ serve(async (req: Request) => {
 
       const uploadResults = []
 
-      // Process each page separately
-      for (let pageIndex = 0; pageIndex < pageCount; pageIndex++) {
-        console.log(`Processing page ${pageIndex + 1} of ${pageCount}`)
+      // === CRITICAL DECISION POINT: TRANSFORMATION VS EXTRACTION LOGIC ===
+      if (transformationTypeId) {
+        console.log('🔄 === TRANSFORMATION TYPE UPLOAD PATH ===')
+        console.log('🔄 This is a transformation type upload - treating PDF as logical document')
+        console.log('🔄 PDF pages in logical document:', pageCount)
+        console.log('🔄 Upload strategy:', pdfUploadStrategy || 'all_pages_in_group (default)')
         
+        // For transformation types, the incoming PDF is already a "logical document"
+        // We should upload it as a single unit, not split it into individual pages
+        
+        // Generate a single ParseIt ID for this logical document
         let parseitId: number
         
-        // For the first page, use existing ParseIt ID if provided
-        if (pageIndex === 0 && useExistingParseitId !== undefined && useExistingParseitId !== null && typeof useExistingParseitId === 'number') {
+        if (useExistingParseitId !== undefined && useExistingParseitId !== null && typeof useExistingParseitId === 'number') {
           parseitId = useExistingParseitId
-          console.log(`Page ${pageIndex + 1} - Using existing ParseIt ID from JSON:`, parseitId)
+          console.log('🔄 Using existing ParseIt ID:', parseitId)
         } else {
-          // Get next ParseIt ID for this page
           const response = await fetch(`${supabaseUrl}/rest/v1/rpc/get_next_parseit_id`, {
             method: 'POST',
             headers: {
@@ -163,42 +214,33 @@ serve(async (req: Request) => {
           if (!response.ok) {
             const errorText = await response.text()
             console.error('Failed to get ParseIt ID:', response.status, errorText)
-            throw new Error(`Failed to get next ParseIt_ID for page ${pageIndex + 1}`)
+            throw new Error('Failed to get next ParseIt_ID for logical document')
           }
 
           parseitId = await response.json()
-          console.log(`Page ${pageIndex + 1} - Generated new ParseIt ID:`, parseitId)
-          
-          if (!parseitId || typeof parseitId !== 'number') {
-            console.error('Invalid ParseIt ID received:', parseitId)
-            throw new Error(`Invalid ParseIt ID received for page ${pageIndex + 1}`)
-          }
+          console.log('🔄 Generated new ParseIt ID:', parseitId)
         }
         
-        // Use custom filename part if provided, otherwise fall back to baseFilename
-        // Create the filename prefix: baseFilename + customFilenamePart (if available)
+        // Determine final filename prefix
         let finalFilenamePrefix: string
-        if (customFilenamePart) {
-          // Combine base filename (e.g., "BL_") with custom part (e.g., "12345") = "BL_12345"
+        
+        if (exactFilename) {
+          finalFilenamePrefix = exactFilename.replace(/\.pdf$/i, '')
+          console.log('🔄 Using exact filename from workflow:', finalFilenamePrefix)
+        } else if (customFilenamePart) {
           finalFilenamePrefix = `${baseFilename}${customFilenamePart}`
+          console.log('🔄 Using custom filename part:', finalFilenamePrefix)
         } else {
-          // If no custom filename part, use base filename and remove trailing underscore if present
           finalFilenamePrefix = baseFilename.endsWith('_') ? baseFilename.slice(0, -1) : baseFilename
+          console.log('🔄 Using base filename:', finalFilenamePrefix)
         }
         
-        console.log(`Page ${pageIndex + 1} filename construction:`)
-        console.log('- baseFilename:', baseFilename)
-        console.log('- customFilenamePart:', customFilenamePart)
-        console.log('- finalFilenamePrefix:', finalFilenamePrefix)
-        
-        // Create final filenames: finalFilenamePrefix_pageNumber.extension
+        // Handle data file (JSON/XML) upload - single file for the logical document
         let dataFilename: string
         let dataContent: string
         let dataPath: string
         
-        // Handle content based on format type
         if (formatType === 'JSON') {
-          // Handle JSON format
           try {
             let jsonObject = JSON.parse(xmlContent)
             
@@ -208,72 +250,251 @@ serve(async (req: Request) => {
             }
             
             dataContent = JSON.stringify(jsonObject, null, 2)
-            dataFilename = `${finalFilenamePrefix}_${pageIndex + 1}.json`
+            dataFilename = `${finalFilenamePrefix}.json`
             dataPath = `${sftpConfig.jsonPath}/${dataFilename}`
           } catch (error) {
             throw new Error(`Failed to process JSON content: ${error.message}`)
           }
         } else {
-          // Handle XML format (default)
           dataContent = xmlContent
-          
-          // Inject ParseIt ID if mapping is provided for XML
-          // Direct string replacement for ParseIt ID placeholder
           dataContent = dataContent.replace(/{{PARSEIT_ID_PLACEHOLDER}}/g, parseitId.toString())
-          
-          dataFilename = `${finalFilenamePrefix}_${pageIndex + 1}.xml`
+          dataFilename = `${finalFilenamePrefix}.xml`
           dataPath = `${sftpConfig.xmlPath}/${dataFilename}`
         }
         
-        await sftp.put(Buffer.from(dataContent, 'utf8'), dataPath)
+        // Upload data file (skip JSON upload for transformation context if needed)
+        if (!(transformationTypeId && formatType === 'JSON')) {
+          console.log(`🔄 Uploading data file: ${dataPath}`)
+          await sftp.put(Buffer.from(dataContent, 'utf8'), dataPath)
+        } else {
+          console.log(`🔄 Skipping JSON data file upload for transformation context: ${dataPath}`)
+        }
 
-        // Upload single page PDF file
-        const pdfFilename = `${finalFilenamePrefix}_${pageIndex + 1}.pdf`
-        const pdfPath = `${sftpConfig.pdfPath}/${pdfFilename}`
-
-        // Create a new PDF document with just this page
-        const singlePagePdf = await PDFDocument.create()
-        const [copiedPage] = await singlePagePdf.copyPages(pdfDoc, [pageIndex])
-        singlePagePdf.addPage(copiedPage)
+        // Determine PDF content to upload based on strategy
+        let pdfToUploadDoc: PDFDocument
+        let actualPdfPageCount: number
         
-        // Convert single page PDF to buffer
-        const singlePagePdfBytes = await singlePagePdf.save()
-        const singlePageBuffer = Buffer.from(singlePagePdfBytes)
-
-        await sftp.put(singlePageBuffer, pdfPath)
+        if (pdfUploadStrategy === 'specific_page_in_group' && specificPageToUpload && specificPageToUpload > 0 && specificPageToUpload <= pageCount) {
+          console.log(`🔄 Extracting specific page ${specificPageToUpload} from ${pageCount}-page logical document`)
+          
+          // Create a new PDF with only the specific page
+          pdfToUploadDoc = await PDFDocument.create()
+          const [copiedPage] = await pdfToUploadDoc.copyPages(pdfDoc, [specificPageToUpload - 1]) // Convert to 0-based index
+          pdfToUploadDoc.addPage(copiedPage)
+          actualPdfPageCount = 1
+          
+          console.log(`🔄 Created single-page PDF for upload (page ${specificPageToUpload})`)
+        } else {
+          console.log(`🔄 Using entire logical document for upload (${pageCount} pages)`)
+          pdfToUploadDoc = pdfDoc
+          actualPdfPageCount = pageCount
+        }
+        
+        // Upload the PDF as a single logical document
+        const pdfFilename = `${finalFilenamePrefix}.pdf`
+        const pdfPath = `${sftpConfig.pdfPath}/${pdfFilename}`
+        
+        console.log(`🔄 Uploading logical document PDF: ${pdfPath}`)
+        console.log(`🔄 PDF contains ${actualPdfPageCount} page(s)`)
+        
+        const pdfBytes = await pdfToUploadDoc.save()
+        const pdfBufferForUpload = Buffer.from(pdfBytes)
+        await sftp.put(pdfBufferForUpload, pdfPath)
 
         uploadResults.push({
-          page: pageIndex + 1,
+          logicalDocument: 1,
           parseitId: parseitId,
-          filename: finalFilenamePrefix,
+          actualFilename: pdfFilename,
+          dataFilename: dataFilename,
+          pagesInDocument: actualPdfPageCount,
           files: {
             data: dataPath,
             pdf: pdfPath
           }
         })
+
+        console.log('🔄 === TRANSFORMATION UPLOAD COMPLETE ===')
+        console.log('🔄 Uploaded logical document with:', actualPdfPageCount, 'pages')
+        console.log('🔄 Final filename:', pdfFilename)
+        
+        // Log successful extraction for transformation type
+        try {
+          await logExtraction(
+            null, // No extractionTypeId for transformation
+            transformationTypeId,
+            originalFilename || (baseFilename + '.pdf') || 'unknown.pdf',
+            actualPdfPageCount,
+            'success',
+            null,
+            parseitId
+          )
+        } catch (logError) {
+          console.warn('Failed to log successful transformation:', logError)
+        }
+
+      } else {
+        console.log('📄 === EXTRACTION TYPE UPLOAD PATH ===')
+        console.log('📄 This is an extraction type upload - splitting PDF into individual pages')
+        console.log('📄 Total pages to process:', pageCount)
+        
+        // For extraction types, split the PDF into individual pages (existing logic)
+        for (let pageIndex = 0; pageIndex < pageCount; pageIndex++) {
+          console.log(`📄 Processing page ${pageIndex + 1} of ${pageCount}`)
+          
+          let parseitId: number
+          
+          // For the first page, use existing ParseIt ID if provided
+          if (pageIndex === 0 && useExistingParseitId !== undefined && useExistingParseitId !== null && typeof useExistingParseitId === 'number') {
+            parseitId = useExistingParseitId
+            console.log(`📄 Page ${pageIndex + 1} - Using existing ParseIt ID from JSON:`, parseitId)
+          } else {
+            // Get next ParseIt ID for this page
+            const response = await fetch(`${supabaseUrl}/rest/v1/rpc/get_next_parseit_id`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${supabaseServiceKey}`,
+                'Content-Type': 'application/json',
+                'apikey': supabaseServiceKey
+              },
+              body: JSON.stringify({})
+            })
+
+            if (!response.ok) {
+              const errorText = await response.text()
+              console.error('Failed to get ParseIt ID:', response.status, errorText)
+              throw new Error(`Failed to get next ParseIt_ID for page ${pageIndex + 1}`)
+            }
+
+            parseitId = await response.json()
+            console.log(`📄 Page ${pageIndex + 1} - Generated new ParseIt ID:`, parseitId)
+            
+            if (!parseitId || typeof parseitId !== 'number') {
+              console.error('Invalid ParseIt ID received:', parseitId)
+              throw new Error(`Invalid ParseIt ID received for page ${pageIndex + 1}`)
+            }
+          }
+          
+          // Determine final filename prefix
+          let finalFilenamePrefix: string
+          
+          if (exactFilename) {
+            // Use exact filename from workflow (e.g., from rename_pdf step)
+            // Remove .pdf extension if present since we'll add it back with page number
+            finalFilenamePrefix = exactFilename.replace(/\.pdf$/i, '')
+            console.log(`📄 Page ${pageIndex + 1} using exact filename from workflow:`, finalFilenamePrefix)
+          } else if (customFilenamePart) {
+            // Combine base filename (e.g., "BL_") with custom part (e.g., "12345") = "BL_12345"
+            finalFilenamePrefix = `${baseFilename}${customFilenamePart}`
+            console.log(`📄 Page ${pageIndex + 1} using custom filename part:`, finalFilenamePrefix)
+          } else {
+            // If no custom filename part, use base filename and remove trailing underscore if present
+            finalFilenamePrefix = baseFilename.endsWith('_') ? baseFilename.slice(0, -1) : baseFilename
+            console.log(`📄 Page ${pageIndex + 1} using base filename:`, finalFilenamePrefix)
+          }
+          
+          console.log(`📄 Page ${pageIndex + 1} filename construction:`)
+          console.log('- exactFilename:', exactFilename)
+          console.log('- baseFilename:', baseFilename)
+          console.log('- customFilenamePart:', customFilenamePart)
+          console.log('- finalFilenamePrefix:', finalFilenamePrefix)
+          
+          // Create final filenames: finalFilenamePrefix_pageNumber.extension (unless exactFilename is used for single page)
+          let dataFilename: string
+          let dataContent: string
+          let dataPath: string
+          
+          // Handle content based on format type
+          if (formatType === 'JSON') {
+            // Handle JSON format
+            try {
+              let jsonObject = JSON.parse(xmlContent)
+              
+              // Inject ParseIt ID if mapping is provided
+              if (parseitIdMapping) {
+                jsonObject = injectParseitId(jsonObject, parseitIdMapping, parseitId)
+              }
+              
+              dataContent = JSON.stringify(jsonObject, null, 2)
+              dataFilename = exactFilename && pageCount === 1 
+                ? `${finalFilenamePrefix}.json`
+                : `${finalFilenamePrefix}_${pageIndex + 1}.json`
+              dataPath = `${sftpConfig.jsonPath}/${dataFilename}`
+            } catch (error) {
+              throw new Error(`Failed to process JSON content: ${error.message}`)
+            }
+          } else {
+            // Handle XML format (default)
+            dataContent = xmlContent
+            
+            // Inject ParseIt ID if mapping is provided for XML
+            // Direct string replacement for ParseIt ID placeholder
+            dataContent = dataContent.replace(/{{PARSEIT_ID_PLACEHOLDER}}/g, parseitId.toString())
+            
+            dataFilename = exactFilename && pageCount === 1 
+              ? `${finalFilenamePrefix}.xml`
+              : `${finalFilenamePrefix}_${pageIndex + 1}.xml`
+            dataPath = `${sftpConfig.xmlPath}/${dataFilename}`
+          }
+          
+          // Upload data file
+          console.log(`📄 Uploading data file: ${dataPath}`)
+          await sftp.put(Buffer.from(dataContent, 'utf8'), dataPath)
+
+          // Upload single page PDF file
+          const pdfFilename = exactFilename && pageCount === 1 
+            ? `${finalFilenamePrefix}.pdf`
+            : `${finalFilenamePrefix}_${pageIndex + 1}.pdf`
+          const pdfPath = `${sftpConfig.pdfPath}/${pdfFilename}`
+
+          // Create a new PDF document with just this page
+          const singlePagePdf = await PDFDocument.create()
+          const [copiedPage] = await singlePagePdf.copyPages(pdfDoc, [pageIndex])
+          singlePagePdf.addPage(copiedPage)
+          
+          // Convert single page PDF to buffer
+          const singlePagePdfBytes = await singlePagePdf.save()
+          const singlePageBuffer = Buffer.from(singlePagePdfBytes)
+
+          await sftp.put(singlePageBuffer, pdfPath)
+
+          uploadResults.push({
+            page: pageIndex + 1,
+            parseitId: parseitId,
+            actualFilename: pdfFilename, // Use the actual PDF filename that was uploaded
+            dataFilename: dataFilename, // Also include the data filename
+            files: {
+              data: dataPath,
+              pdf: pdfPath
+            }
+          })
+        }
+        
+        // Log successful extraction for extraction type
+        try {
+          await logExtraction(
+            extractionTypeId || null,
+            null, // No transformationTypeId for extraction
+            originalFilename || (baseFilename + '.pdf') || 'unknown.pdf',
+            pageCount,
+            'success',
+            null,
+            uploadResults?.parseitId // Use the first page's ParseIt ID for the log
+          )
+        } catch (logError) {
+          console.warn('Failed to log successful extraction:', logError)
+        }
       }
 
       await sftp.end()
 
-      // Log successful extraction
-      try {
-        await logExtraction(
-          extractionTypeId || null,
-          originalFilename || (baseFilename + '.pdf') || 'unknown.pdf',
-          pageCount,
-          'success',
-          null,
-          uploadResults[0]?.parseitId // Use the first page's ParseIt ID for the log
-        )
-      } catch (logError) {
-        console.warn('Failed to log successful extraction:', logError)
-      }
       return new Response(
         JSON.stringify({ 
-          success: true, 
-          message: `Successfully split PDF into ${pageCount} pages and uploaded with unique ParseIt IDs`,
-          pageCount: pageCount,
-          results: uploadResults
+          success: true,
+          message: `Successfully processed PDF and uploaded ${uploadResults.length} file(s) with unique ParseIt IDs`,
+          pageCount: uploadResults.length,
+          results: uploadResults,
+          actualFilenames: uploadResults.map(r => r.actualFilename), // Return the actual filenames used
+          actualFilename: uploadResults?.actualFilename // Return the first page's filename for single responses
         }),
         {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -287,6 +508,7 @@ serve(async (req: Request) => {
       try {
         await logExtraction(
           extractionTypeId || null,
+          transformationTypeId || null,
           originalFilename || (baseFilename + '.pdf') || 'unknown.pdf',
           0, // No page count available on failure
           'failed',
@@ -318,6 +540,7 @@ serve(async (req: Request) => {
           body: JSON.stringify({
             user_id: userId || null,
             extraction_type_id: extractionTypeId || null,
+            transformation_type_id: transformationTypeId || null,
             pdf_filename: originalFilename || (baseFilename + '.pdf') || 'unknown.pdf',
             pdf_pages: 0,
             extraction_status: 'failed',
