@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import type { ExtractionWorkflow, WorkflowStep } from '../types';
+import { v4 as uuidv4 } from 'uuid';
 
 export async function fetchWorkflows(): Promise<ExtractionWorkflow[]> {
   try {
@@ -181,7 +182,7 @@ export async function updateWorkflowSteps(workflowId: string, steps: WorkflowSte
       
       const stepsToInsert = steps.map(step => {
         const stepData = {
-          id: step.id.startsWith('temp-') ? null : step.id, // Let database generate ID for temp steps
+          id: step.id.startsWith('temp-') ? uuidv4() : step.id, // Generate UUID for temp steps
           workflow_id: workflowId,
           step_order: step.stepOrder,
           step_type: step.stepType,
