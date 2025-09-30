@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
 import { Lock, User, Eye, EyeOff, FileText } from 'lucide-react';
+import type { CompanyBranding } from '../types';
+import DarkModeToggle from './DarkModeToggle';
 
 interface LoginPageProps {
+  companyBranding?: CompanyBranding;
   onLogin: (username: string, password: string) => Promise<{ success: boolean; message?: string }>;
 }
 
-export default function LoginPage({ onLogin }: LoginPageProps) {
+export default function LoginPage({ companyBranding, onLogin }: LoginPageProps) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -43,28 +46,55 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-indigo-50 flex items-center justify-center p-4">
-      <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-2xl border border-purple-100 w-full max-w-md overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-indigo-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center p-4 transition-colors duration-300">
+      {/* Dark Mode Toggle - Top Right */}
+      <div className="absolute top-6 right-6">
+        <DarkModeToggle size="md" />
+      </div>
+      
+      <div className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm rounded-2xl shadow-2xl border border-purple-100 dark:border-gray-700 w-full max-w-md overflow-hidden">
         {/* Header */}
         <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-8 text-center">
-          <div className="bg-white/20 p-3 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-            <FileText className="h-8 w-8 text-white" />
+          <div className="flex items-center justify-center space-x-3 mb-4">
+            {companyBranding?.logoUrl && (
+              <img
+                src={companyBranding.logoUrl}
+                alt="Company Logo"
+                className="h-12 w-auto max-w-32 object-contain bg-white/20 p-2 rounded-lg"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = 'none';
+                }}
+              />
+            )}
+            <div className="bg-white/20 p-3 rounded-full w-16 h-16 flex items-center justify-center">
+              <FileText className="h-8 w-8 text-white" />
+            </div>
           </div>
-          <h1 className="text-2xl font-bold text-white mb-2">ParseIt</h1>
+          <div className="flex items-center justify-center space-x-2 mb-2">
+            <h1 className="text-2xl font-bold text-white">ParseIt</h1>
+            {companyBranding?.showCompanyName && companyBranding?.companyName && (
+              <>
+                <span className="text-purple-200">•</span>
+                <span className="text-xl font-semibold text-white">
+                  {companyBranding.companyName}
+                </span>
+              </>
+            )}
+          </div>
           <p className="text-purple-100">PDF Data Extraction Application</p>
         </div>
 
         {/* Login Form */}
         <div className="p-8">
           <div className="text-center mb-8">
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Welcome Back</h2>
-            <p className="text-gray-600">Please sign in to your account</p>
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">Welcome Back</h2>
+            <p className="text-gray-600 dark:text-gray-400">Please sign in to your account</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Username Field */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                 Username
               </label>
               <div className="relative">
@@ -76,7 +106,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   onKeyPress={handleKeyPress}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
+                  className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
                   placeholder="Enter your username"
                   disabled={isLoading}
                 />
@@ -85,7 +115,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
             {/* Password Field */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                 Password
               </label>
               <div className="relative">
@@ -97,7 +127,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   onKeyPress={handleKeyPress}
-                  className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
+                  className="w-full pl-10 pr-12 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
                   placeholder="Enter your password"
                   disabled={isLoading}
                 />
@@ -110,7 +140,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                   {showPassword ? (
                     <EyeOff className="h-5 w-5 text-gray-400 hover:text-gray-600" />
                   ) : (
-                    <Eye className="h-5 w-5 text-gray-400 hover:text-gray-600" />
+                    <Eye className="h-5 w-5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300" />
                   )}
                 </button>
               </div>
@@ -118,8 +148,8 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
             {/* Error Message */}
             {error && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                <p className="text-red-700 text-sm">{error}</p>
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
+                <p className="text-red-700 dark:text-red-400 text-sm">{error}</p>
               </div>
             )}
 
@@ -145,7 +175,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
           {/* Footer */}
           <div className="mt-8 text-center">
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-gray-500 dark:text-gray-400">
               Secure access to your PDF extraction tools
             </p>
           </div>

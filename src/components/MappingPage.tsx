@@ -206,7 +206,7 @@ export default function MappingPage({ onClose }: MappingPageProps) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-2xl max-w-7xl w-full max-h-[95vh] mx-4 shadow-2xl overflow-hidden">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-7xl w-full max-h-[95vh] mx-4 shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-6 text-white">
           <div className="flex items-center justify-between">
@@ -226,14 +226,14 @@ export default function MappingPage({ onClose }: MappingPageProps) {
         {/* Label Input Modal */}
         {showLabelInput && (
           <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-10">
-            <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4 shadow-xl">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">Label this field</h3>
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-md w-full mx-4 shadow-xl">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-4">Label this field</h3>
               <input
                 type="text"
                 value={newBoxLabel}
                 onChange={(e) => setNewBoxLabel(e.target.value)}
                 placeholder="e.g., Invoice Number, Total Amount"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 mb-4"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 mb-4"
                 autoFocus
                 onKeyPress={(e) => e.key === 'Enter' && handleSaveSelection()}
               />
@@ -247,7 +247,7 @@ export default function MappingPage({ onClose }: MappingPageProps) {
                 </button>
                 <button
                   onClick={handleCancelSelection}
-                  className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-lg transition-colors duration-200"
+                  className="flex-1 px-4 py-2 bg-gray-100 dark:bg-gray-600 hover:bg-gray-200 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 font-semibold rounded-lg transition-colors duration-200"
                 >
                   Cancel
                 </button>
@@ -258,10 +258,10 @@ export default function MappingPage({ onClose }: MappingPageProps) {
 
         <div className="flex h-[calc(95vh-120px)]">
           {/* Left Panel - Controls */}
-          <div className="w-80 border-r border-gray-200 p-6 overflow-y-auto">
+          <div className="w-80 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 overflow-y-auto">
             {/* File Upload */}
             <div className="mb-6">
-              <label className="block text-sm font-semibold text-gray-700 mb-3">
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
                 Upload PDF
               </label>
               <div
@@ -287,15 +287,15 @@ export default function MappingPage({ onClose }: MappingPageProps) {
                 
                 {uploadedFile ? (
                   <div className="space-y-2">
-                    <div className="text-green-600 font-medium">{uploadedFile.name}</div>
-                    <div className="text-sm text-green-500">
+                    <div className="text-green-600 dark:text-green-400 font-medium">{uploadedFile.name}</div>
+                    <div className="text-sm text-green-500 dark:text-green-400">
                       {(uploadedFile.size / 1024 / 1024).toFixed(2)} MB
                     </div>
                   </div>
                 ) : (
                   <div className="space-y-2">
                     <Upload className="h-8 w-8 text-gray-400 mx-auto" />
-                    <div className="text-gray-600">Click or drag PDF here</div>
+                    <div className="text-gray-600 dark:text-gray-400">Click or drag PDF here</div>
                   </div>
                 )}
               </div>
@@ -306,24 +306,24 @@ export default function MappingPage({ onClose }: MappingPageProps) {
               <div className="space-y-6">
                 {/* Page Navigation */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-3">
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
                     Page Navigation
                   </label>
                   <div className="flex items-center space-x-2">
                     <button
                       onClick={() => changePage(-1)}
                       disabled={pageNumber <= 1}
-                      className="px-3 py-2 bg-gray-100 hover:bg-gray-200 disabled:bg-gray-50 disabled:text-gray-400 rounded-lg transition-colors duration-200"
+                      className="px-3 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:bg-gray-50 dark:disabled:bg-gray-800 disabled:text-gray-400 dark:disabled:text-gray-500 text-gray-900 dark:text-gray-100 rounded-lg transition-colors duration-200"
                     >
                       Previous
                     </button>
-                    <span className="px-3 py-2 bg-purple-50 text-purple-700 rounded-lg font-medium">
+                    <span className="px-3 py-2 bg-purple-50 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 rounded-lg font-medium">
                       {pageNumber} / {numPages}
                     </span>
                     <button
                       onClick={() => changePage(1)}
                       disabled={pageNumber >= numPages}
-                      className="px-3 py-2 bg-gray-100 hover:bg-gray-200 disabled:bg-gray-50 disabled:text-gray-400 rounded-lg transition-colors duration-200"
+                      className="px-3 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:bg-gray-50 dark:disabled:bg-gray-800 disabled:text-gray-400 dark:disabled:text-gray-500 text-gray-900 dark:text-gray-100 rounded-lg transition-colors duration-200"
                     >
                       Next
                     </button>
@@ -332,13 +332,13 @@ export default function MappingPage({ onClose }: MappingPageProps) {
 
                 {/* Zoom Controls */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-3">
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
                     Zoom ({Math.round(scale * 100)}%)
                   </label>
                   <div className="flex items-center space-x-2">
                     <button
                       onClick={() => changeScale(scale - 0.1)}
-                      className="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors duration-200"
+                      className="p-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100 rounded-lg transition-colors duration-200"
                     >
                       <ZoomOut className="h-4 w-4" />
                     </button>
@@ -353,7 +353,7 @@ export default function MappingPage({ onClose }: MappingPageProps) {
                     />
                     <button
                       onClick={() => changeScale(scale + 0.1)}
-                      className="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors duration-200"
+                      className="p-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100 rounded-lg transition-colors duration-200"
                     >
                       <ZoomIn className="h-4 w-4" />
                     </button>
@@ -362,20 +362,20 @@ export default function MappingPage({ onClose }: MappingPageProps) {
 
                 {/* View Controls */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-3">
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
                     View Controls
                   </label>
                   <div className="flex items-center space-x-2">
                     <button
                       onClick={rotateDocument}
-                      className="px-3 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg transition-colors duration-200 flex items-center space-x-1"
+                      className="px-3 py-2 bg-blue-100 dark:bg-blue-900/50 hover:bg-blue-200 dark:hover:bg-blue-800/50 text-blue-700 dark:text-blue-300 rounded-lg transition-colors duration-200 flex items-center space-x-1"
                     >
                       <RotateCcw className="h-4 w-4" />
                       <span>Rotate</span>
                     </button>
                     <button
                       onClick={resetView}
-                      className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors duration-200"
+                      className="px-3 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100 rounded-lg transition-colors duration-200"
                     >
                       Reset View
                     </button>
@@ -385,13 +385,13 @@ export default function MappingPage({ onClose }: MappingPageProps) {
                 {/* Field Selections */}
                 <div>
                   <div className="flex items-center justify-between mb-3">
-                    <label className="block text-sm font-semibold text-gray-700">
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300">
                       Field Selections (Page {pageNumber})
                     </label>
                     {currentPageBoxes.length > 0 && (
                       <button
                         onClick={copyAllCoordinates}
-                        className="px-2 py-1 bg-green-100 hover:bg-green-200 text-green-700 text-xs font-medium rounded transition-colors duration-200 flex items-center space-x-1"
+                        className="px-2 py-1 bg-green-100 dark:bg-green-900/50 hover:bg-green-200 dark:hover:bg-green-800/50 text-green-700 dark:text-green-300 text-xs font-medium rounded transition-colors duration-200 flex items-center space-x-1"
                       >
                         <Copy className="h-3 w-3" />
                         <span>Copy All</span>
@@ -405,20 +405,20 @@ export default function MappingPage({ onClose }: MappingPageProps) {
                         key={box.id}
                         className={`p-3 rounded-lg border-2 transition-all duration-200 ${
                           selectedBoxId === box.id
-                            ? 'border-green-400 bg-green-50'
-                            : 'border-purple-200 bg-purple-50 hover:border-purple-300'
+                            ? 'border-green-400 dark:border-green-500 bg-green-50 dark:bg-green-900/20'
+                            : 'border-purple-200 dark:border-purple-600 bg-purple-50 dark:bg-purple-900/20 hover:border-purple-300 dark:hover:border-purple-500'
                         }`}
                       >
                         <div className="flex items-center justify-between mb-2">
-                          <span className="font-medium text-gray-900 text-sm">{box.label}</span>
+                          <span className="font-medium text-gray-900 dark:text-gray-100 text-sm">{box.label}</span>
                           <button
                             onClick={() => removeSelection(box.id)}
-                            className="p-1 text-red-500 hover:text-red-700 hover:bg-red-100 rounded transition-colors duration-200"
+                            className="p-1 text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/20 rounded transition-colors duration-200"
                           >
                             <Trash2 className="h-3 w-3" />
                           </button>
                         </div>
-                        <div className="text-xs text-gray-600 mb-2">
+                        <div className="text-xs text-gray-600 dark:text-gray-400 mb-2">
                           PDF Coords: ({Math.round(box.x / scale)}, {Math.round(box.y / scale)}, {Math.round(box.width / scale)}, {Math.round(box.height / scale)})
                         </div>
                         <button
@@ -438,17 +438,17 @@ export default function MappingPage({ onClose }: MappingPageProps) {
                   
                   {currentPageBoxes.length === 0 && (
                     <div className="text-center py-6 text-gray-500">
-                      <Square className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                      <p className="text-sm">No selections on this page</p>
-                      <p className="text-xs mt-1">Click and drag on the PDF to select fields</p>
+                      <Square className="h-8 w-8 mx-auto mb-2 opacity-50 text-gray-400 dark:text-gray-500" />
+                      <p className="text-sm text-gray-500 dark:text-gray-400">No selections on this page</p>
+                      <p className="text-xs mt-1 text-gray-500 dark:text-gray-400">Click and drag on the PDF to select fields</p>
                     </div>
                   )}
                 </div>
 
                 {/* Instructions */}
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <h4 className="font-semibold text-blue-800 mb-2">How to Use</h4>
-                  <ul className="text-sm text-blue-700 space-y-1">
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
+                  <h4 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">How to Use</h4>
+                  <ul className="text-sm text-blue-700 dark:text-blue-400 space-y-1">
                     <li>• Click and drag on the PDF to select field areas</li>
                     <li>• Label each selection for easy identification</li>
                     <li>• Copy coordinates to use in AI extraction instructions</li>
@@ -461,12 +461,12 @@ export default function MappingPage({ onClose }: MappingPageProps) {
           </div>
 
           {/* Right Panel - PDF Viewer with Selection Overlay */}
-          <div className="flex-1 bg-gray-50 overflow-auto">
+          <div className="flex-1 bg-gray-50 dark:bg-gray-900 overflow-auto">
             {uploadedFile ? (
               <div className="p-6">
                 <div 
                   ref={pdfContainerRef}
-                  className="relative bg-white rounded-lg shadow-lg inline-block cursor-crosshair"
+                  className="relative bg-white dark:bg-gray-800 rounded-lg shadow-lg inline-block cursor-crosshair"
                   onMouseDown={handleMouseDown}
                   onMouseMove={handleMouseMove}
                   onMouseUp={handleMouseUp}
@@ -478,13 +478,13 @@ export default function MappingPage({ onClose }: MappingPageProps) {
                     loading={
                       <div className="flex items-center justify-center p-8">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
-                        <span className="ml-3 text-gray-600">Loading PDF...</span>
+                        <span className="ml-3 text-gray-600 dark:text-gray-400">Loading PDF...</span>
                       </div>
                     }
                     error={
-                      <div className="bg-red-50 border border-red-200 rounded-lg p-6 m-4">
-                        <div className="text-red-800 font-semibold mb-2">Failed to load PDF</div>
-                        <div className="text-red-700 text-sm">
+                      <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-6 m-4">
+                        <div className="text-red-800 dark:text-red-300 font-semibold mb-2">Failed to load PDF</div>
+                        <div className="text-red-700 dark:text-red-400 text-sm">
                           Please make sure the file is a valid PDF document.
                         </div>
                       </div>
@@ -498,12 +498,12 @@ export default function MappingPage({ onClose }: MappingPageProps) {
                       loading={
                         <div className="flex items-center justify-center p-8">
                           <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-600"></div>
-                          <span className="ml-2 text-gray-600">Loading page...</span>
+                          <span className="ml-2 text-gray-600 dark:text-gray-400">Loading page...</span>
                         </div>
                       }
                       error={
-                        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                          <div className="text-red-800 text-sm">Failed to load page {pageNumber}</div>
+                        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-4">
+                          <div className="text-red-800 dark:text-red-300 text-sm">Failed to load page {pageNumber}</div>
                         </div>
                       }
                     />
@@ -523,7 +523,7 @@ export default function MappingPage({ onClose }: MappingPageProps) {
                           height: box.height,
                         }}
                       >
-                        <div className="absolute -top-6 left-0 bg-purple-600 text-white text-xs px-2 py-1 rounded whitespace-nowrap">
+                        <div className="absolute -top-6 left-0 bg-purple-600 dark:bg-purple-700 text-white text-xs px-2 py-1 rounded whitespace-nowrap">
                           {box.label}
                         </div>
                       </div>
@@ -547,9 +547,9 @@ export default function MappingPage({ onClose }: MappingPageProps) {
             ) : (
               <div className="flex items-center justify-center h-full">
                 <div className="text-center">
-                  <Upload className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No PDF Loaded</h3>
-                  <p className="text-gray-600">Upload a PDF file to start mapping fields</p>
+                  <Upload className="h-16 w-16 text-gray-400 dark:text-gray-500 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No PDF Loaded</h3>
+                  <p className="text-gray-600 dark:text-gray-400">Upload a PDF file to start mapping fields</p>
                 </div>
               </div>
             )}
@@ -558,8 +558,8 @@ export default function MappingPage({ onClose }: MappingPageProps) {
 
         {/* Bottom Status Bar */}
         {uploadedFile && (
-          <div className="bg-gray-50 border-t border-gray-200 px-6 py-3">
-            <div className="flex items-center justify-between text-sm text-gray-600">
+          <div className="bg-gray-50 dark:bg-gray-700 border-t border-gray-200 dark:border-gray-600 px-6 py-3">
+            <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-300">
               <div>
                 Total selections: {selectionBoxes.length} | Current page: {currentPageBoxes.length}
               </div>

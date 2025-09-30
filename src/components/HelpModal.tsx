@@ -341,7 +341,7 @@ export default function HelpModal({ isOpen, onClose }: HelpModalProps) {
                 <p className="text-teal-700 mb-4">
                   Workflows allow you to create multi-step processes that execute after data extraction. Perfect for complex business logic.
                 </p>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="bg-white border border-teal-300 rounded-lg p-4">
                     <h4 className="font-semibold text-teal-800 mb-2">API Call Steps</h4>
                     <p className="text-teal-700 text-sm">
@@ -358,6 +358,12 @@ export default function HelpModal({ isOpen, onClose }: HelpModalProps) {
                     <h4 className="font-semibold text-teal-800 mb-2">Data Transforms</h4>
                     <p className="text-teal-700 text-sm">
                       Modify, copy, or restructure extracted data before sending to subsequent steps.
+                    </p>
+                  </div>
+                  <div className="bg-white border border-teal-300 rounded-lg p-4">
+                    <h4 className="font-semibold text-teal-800 mb-2">Email Actions</h4>
+                    <p className="text-teal-700 text-sm">
+                      Send automated emails with extracted data and PDF attachments to customers or stakeholders.
                     </p>
                   </div>
                 </div>
@@ -586,6 +592,84 @@ export default function HelpModal({ isOpen, onClose }: HelpModalProps) {
                       <li>• Keep extraction instructions concise but detailed</li>
                       <li>• Regularly backup your extraction type configurations</li>
                     </ul>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* Email Actions in Workflows */}
+            <section>
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="bg-pink-100 p-2 rounded-lg">
+                  <Mail className="h-6 w-6 text-pink-600" />
+                </div>
+                <h3 className="text-xl font-bold text-gray-900">Email Actions in Workflows</h3>
+              </div>
+              <div className="space-y-4">
+                <div className="bg-pink-50 border border-pink-200 rounded-lg p-6">
+                  <h4 className="font-semibold text-pink-800 mb-3">What are Email Actions?</h4>
+                  <p className="text-pink-700 mb-4 text-sm">
+                    Email Actions are workflow steps that automatically send emails with extracted data and PDF attachments. 
+                    They're perfect for notifying customers, suppliers, or internal teams when documents are processed.
+                  </p>
+                  
+                  <h5 className="font-semibold text-pink-800 mb-2">Common Use Cases:</h5>
+                  <ul className="text-pink-700 space-y-1 text-sm">
+                    <li>• <strong>Customer Notifications:</strong> Send invoices or receipts to customers automatically</li>
+                    <li>• <strong>Supplier Communications:</strong> Forward purchase orders or delivery confirmations</li>
+                    <li>• <strong>Internal Alerts:</strong> Notify accounting teams when new invoices are processed</li>
+                    <li>• <strong>Document Delivery:</strong> Send renamed PDFs with proper filenames to recipients</li>
+                  </ul>
+                </div>
+                
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h4 className="font-semibold text-blue-800 mb-2">Setting Up Email Actions</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <h5 className="font-medium text-blue-800 mb-2">Prerequisites:</h5>
+                      <ol className="text-blue-700 space-y-1 list-decimal list-inside">
+                        <li>Configure Email Monitoring in Settings (Office 365 or Gmail)</li>
+                        <li>Create a workflow in Settings → Type Setup → Workflows</li>
+                        <li>Add an Email Action step to your workflow</li>
+                        <li>Assign the workflow to an extraction type</li>
+                      </ol>
+                    </div>
+                    <div>
+                      <h5 className="font-medium text-blue-800 mb-2">Configuration Options:</h5>
+                      <ul className="text-blue-700 space-y-1">
+                        <li>• <strong>To/From:</strong> Email addresses (supports dynamic data)</li>
+                        <li>• <strong>Subject/Body:</strong> Email content with placeholders</li>
+                        <li>• <strong>Attachments:</strong> Include original or renamed PDF</li>
+                        <li>• <strong>Templates:</strong> Use {`{{fieldName}}`} for extracted data</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <h4 className="font-semibold text-green-800 mb-2">Template Variables</h4>
+                  <p className="text-green-700 text-sm mb-2">
+                    Use template variables to insert extracted data into your emails. Simply wrap field names in double curly braces.
+                  </p>
+                  <div className="bg-white border border-green-300 rounded-lg p-3">
+                    <p className="text-xs text-green-800 mb-1"><strong>Example:</strong></p>
+                    <p className="text-xs text-green-800">Subject: Invoice {`{{invoiceNumber}}`} - Payment Due</p>
+                    <p className="text-xs text-green-800">To: {`{{customerEmail}}`}</p>
+                    <p className="text-xs text-green-800">Body: Dear {`{{customerName}}`}, your invoice for ${`{{totalAmount}}`} is ready.</p>
+                  </div>
+                </div>
+                
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                  <h4 className="font-semibold text-amber-800 mb-2">Workflow Examples</h4>
+                  <div className="space-y-3 text-sm">
+                    <div className="bg-white border border-amber-300 rounded-lg p-3">
+                      <h5 className="font-medium text-amber-800 mb-1">Invoice Processing:</h5>
+                      <p className="text-amber-700 text-xs">Extract → API Call → Rename PDF → Email Customer</p>
+                    </div>
+                    <div className="bg-white border border-amber-300 rounded-lg p-3">
+                      <h5 className="font-medium text-amber-800 mb-1">Purchase Order:</h5>
+                      <p className="text-amber-700 text-xs">Extract → Conditional Check → Email Manager/Supplier</p>
+                    </div>
                   </div>
                 </div>
               </div>
