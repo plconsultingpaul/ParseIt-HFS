@@ -1,549 +1,815 @@
-import React, { useState } from 'react';
-import { Save, X } from 'lucide-react';
-import type { WorkflowStep, ApiCallConfig, ConditionalCheckConfig, DataTransformConfig, ApiConfig } from '../../../types';
+import React, { useState, useEffect } from 'react';
+import { X, Plus, Trash2 } from 'lucide-react';
 
 interface StepConfigFormProps {
-  step: WorkflowStep;
-  allSteps: WorkflowStep[];
-  apiConfig: ApiConfig;
-  onSave: (step: WorkflowStep) => void;
+  step: any;
+  allSteps: any[];
+  apiConfig: any;
+  onSave: (stepData: any) => void;
   onCancel: () => void;
 }
 
-export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCancel }: StepConfigFormProps) {
-  const [localStep, setLocalStep] = useState<WorkflowStep>(step);
+interface TransformationRule {
+  field_name: string;
+  transformation: string;
+}
 
-  // Auto-populate Authorization header for API call steps
-  React.useEffect(() => {
-    if (localStep.stepType === 'api_call' && apiConfig.password) {
-      const config = localStep.configJson as ApiCallConfig;
-      const currentHeaders = config.headers || {};
-      
-      // Only set Authorization header if it's not already set
-      if (!currentHeaders.Authorization) {
-        const updatedHeaders = {
-          ...currentHeaders,
-          'Content-Type': 'application/json'
-          // Note: Authorization header should be manually configured for each API endpoint
-        };
-        
-        setLocalStep(prev => ({
-          ...prev,
-          configJson: {
-            ...config,
-            headers: updatedHeaders
-          }
-        }));
-      }
-    }
+export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCancel }: StepConfigFormProps) {
+  const [stepName, setStepName] = useState(step?.stepName || step?.step_name || 'New Step');
+  const [stepType, setStepType] = useState(step?.stepType || step?.step_type || 'api_call');
+  const [method, setMethod] = useState('POST');
+  const [url, setUrl] = useState('https://api.example.com/endpoint');
+  const [headers, setHeaders] = useState('{\n  "Content-Type": "application/json",\n  "Authorization": "Bearer YOUR_TOKEN_HERE"\n}');
+  const [requestBody, setRequestBody] = useState('');
+  const [transformations, setTransformations] = useState<TransformationRule[]>([
+    { field_name: '', transformation: '' }
+  ]);
+  const [sftpPath, setSftpPath] = useState('/uploads/xml/');
+  const [conditionalField, setConditionalField] = useState('');
+  const [conditionalOperator, setConditionalOperator] = useState('equals');
+  const [conditionalValue, setConditionalValue] = useState('');
+  const [emailActionType, setEmailActionType] = useState('send_email');
+  const [emailTo, setEmailTo] = useState('');
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailBody, setEmailBody] = useState('');
+  const [includeAttachment, setIncludeAttachment] = useState(true);
+  const [attachmentSource, setAttachmentSource] = useState('original_pdf');
+  const [emailFrom, setEmailFrom] = useState('');
+  const [nextStepOnSuccess, setNextStepOnSuccess] = useState('');
+  const [nextStepOnFailure, setNextStepOnFailure] = useState('');
+  const [responseDataPath, setResponseDataPath] = useState('');
+  const [updateJsonPath, setUpdateJsonPath] = useState('');
+  const [useApiResponseForFilename, setUseApiResponseForFilename] = useState(false);
+  const [filenameSourcePath, setFilenameSourcePath] = useState('');
+  const [fallbackFilename, setFallbackFilename] = useState('');
+  const [sftpPathOverride, setSftpPathOverride] = useState('');
+  const [renamePdfTemplate, setRenamePdfTemplate] = useState('');
+  const [useExtractedDataForRename, setUseExtractedDataForRename] = useState(true);
+  const [renameFallbackFilename, setRenameFallbackFilename] = useState('');
+  const [pdfUploadStrategy, setPdfUploadStrategy] = useState<'all_pages_in_group' | 'specific_page_in_group'>('all_pages_in_group');
+  const [specificPageToUpload, setSpecificPageToUpload] = useState(1);
+
+  useEffect(() => {
+    console.log('StepConfigForm useEffect - step data:', step);
     
-    // Initialize conditional check config with default conditionType
-    if (localStep.stepType === 'conditional_check') {
-      const config = localStep.configJson as ConditionalCheckConfig;
-      if (!config.conditionType) {
-        setLocalStep(prev => ({
-          ...prev,
-          configJson: {
-            ...config,
-            conditionType: 'equals'
-          }
-        }));
+    // Set basic step properties
+    if (step) {
+      setStepName(step.stepName || step.step_name || 'New Step');
+      setStepType(step.stepType || step.step_type || 'api_call');
+      setNextStepOnSuccess(step.nextStepOnSuccessId || step.next_step_on_success_id || '');
+      setNextStepOnFailure(step.nextStepOnFailureId || step.next_step_on_failure_id || '');
+      
+      // Load configuration from step.configJson or step.config_json
+      const config = step.configJson || step.config_json;
+      console.log('Loading config from step:', config);
+      
+      if (config) {
+        // API Call configuration
+        setMethod(config.method || 'POST');
+        setUrl(config.url || 'https://api.example.com/endpoint');
+        
+        // Pre-fill headers with API config token if available
+        if (config.headers) {
+          setHeaders(JSON.stringify(config.headers, null, 2));
+        } else {
+          // Create default headers with actual API token if available
+          const defaultHeaders = {
+            "Content-Type": "application/json",
+            "Authorization": apiConfig?.password ? `Bearer ${apiConfig.password}` : "Bearer YOUR_TOKEN_HERE"
+          };
+          setHeaders(JSON.stringify(defaultHeaders, null, 2));
+        }
+        
+        setRequestBody(config.requestBody || config.request_body || '');
+        
+        // API Call response handling configuration
+        setResponseDataPath(config.responseDataPath || '');
+        setUpdateJsonPath(config.updateJsonPath || '');
+        
+        // SFTP Upload configuration
+        setUseApiResponseForFilename(config.useApiResponseForFilename || false);
+        setFilenameSourcePath(config.filenameSourcePath || '');
+        setFallbackFilename(config.fallbackFilename || '');
+        setSftpPathOverride(config.sftpPathOverride || '');
+        setPdfUploadStrategy(config.pdfUploadStrategy || 'all_pages_in_group');
+        setSpecificPageToUpload(config.specificPageToUpload || 1);
+        
+        // Rename PDF configuration
+        setRenamePdfTemplate(config.filenameTemplate || '');
+        setUseExtractedDataForRename(config.useExtractedData !== false);
+        setRenameFallbackFilename(config.fallbackFilename || '');
+        
+        // Data Transform configuration
+        setTransformations(config.transformations || [{ field_name: '', transformation: '' }]);
+        
+        // SFTP Upload configuration
+        setSftpPath(config.sftpPath || config.sftp_path || '/uploads/xml/');
+        
+        // Conditional Check configuration
+        setConditionalField(config.jsonPath || config.conditional_field || '');
+        setConditionalOperator(config.conditionType || config.conditional_operator || 'equals');
+        setConditionalValue(config.expectedValue || config.conditional_value || '');
+        
+        // Email Action configuration
+        setEmailActionType(config.actionType || 'send_email');
+        setEmailTo(config.to || '');
+        setEmailSubject(config.subject || '');
+        setEmailBody(config.body || '');
+        setIncludeAttachment(config.includeAttachment !== false);
+        setAttachmentSource(config.attachmentSource || 'original_pdf');
+        setEmailFrom(config.from || '');
+      } else {
+        console.log('No configJson found in step, using defaults');
+        
+        // Set default headers for new API call steps
+        if (step?.stepType === 'api_call' || step?.step_type === 'api_call') {
+          const defaultHeaders = {
+            "Content-Type": "application/json",
+            "Authorization": apiConfig?.password ? `Bearer ${apiConfig.password}` : "Bearer YOUR_TOKEN_HERE"
+          };
+          setHeaders(JSON.stringify(defaultHeaders, null, 2));
+        }
       }
     }
-  }, [localStep.stepType, apiConfig.password]);
+  }, [step, apiConfig?.password]);
+
+  const addTransformation = () => {
+    setTransformations([...transformations, { field_name: '', transformation: '' }]);
+  };
+
+  const removeTransformation = (index: number) => {
+    setTransformations(transformations.filter((_, i) => i !== index));
+  };
+
+  const updateTransformation = (index: number, field: keyof TransformationRule, value: string) => {
+    const updated = [...transformations];
+    updated[index][field] = value;
+    setTransformations(updated);
+  };
 
   const handleSave = () => {
-    // Ensure configJson is never undefined
-    if (!localStep.configJson) {
-      localStep.configJson = {};
+    let config: any = {};
+
+    switch (stepType) {
+      case 'api_call':
+        let parsedHeaders = {};
+        try {
+          parsedHeaders = JSON.parse(headers);
+        } catch (e) {
+          console.error('Invalid JSON in headers:', e);
+          parsedHeaders = {};
+        }
+        config = {
+          method,
+          url,
+          headers: parsedHeaders,
+          requestBody: method === 'GET' ? '' : requestBody,
+          responseDataPath: responseDataPath.trim() || undefined,
+          updateJsonPath: updateJsonPath.trim() || undefined
+        };
+        console.log('Saving API call config:', config);
+        break;
+      case 'data_transform':
+        config = {
+          transformations: transformations.filter(t => t.field_name && t.transformation)
+        };
+        break;
+      case 'sftp_upload':
+        config = {
+          useApiResponseForFilename: useApiResponseForFilename,
+          filenameSourcePath: filenameSourcePath.trim() || undefined,
+          fallbackFilename: fallbackFilename.trim() || undefined,
+          sftpPathOverride: sftpPathOverride.trim() || undefined,
+          pdfUploadStrategy: pdfUploadStrategy,
+          specificPageToUpload: pdfUploadStrategy === 'specific_page_in_group' ? specificPageToUpload : undefined
+        };
+        break;
+      case 'conditional_check':
+        config = {
+          jsonPath: conditionalField,
+          conditionType: conditionalOperator,
+          expectedValue: conditionalValue
+        };
+        break;
+      case 'rename_pdf':
+        config = {
+          filenameTemplate: renamePdfTemplate,
+          useExtractedData: useExtractedDataForRename,
+          fallbackFilename: renameFallbackFilename.trim() || undefined
+        };
+        break;
+      case 'email_action':
+        config = {
+          actionType: emailActionType,
+          to: emailTo,
+          subject: emailSubject,
+          body: emailBody,
+          includeAttachment: includeAttachment,
+          attachmentSource: attachmentSource,
+          from: emailFrom
+        };
+        break;
     }
-    
-    // For conditional checks with is_null or is_not_null, clear the expectedValue
-    if (localStep.stepType === 'conditional_check') {
-      const config = localStep.configJson as ConditionalCheckConfig;
-      if (config.conditionType === 'is_null' || config.conditionType === 'is_not_null') {
-        config.expectedValue = undefined;
-      }
-    }
-    
-    console.log('Saving step with config:', localStep);
-    onSave(localStep);
-  };
 
-  const updateStep = (field: keyof WorkflowStep, value: any) => {
-    setLocalStep(prev => ({ ...prev, [field]: value }));
-  };
-
-  const updateConfig = (config: any) => {
-    setLocalStep(prev => ({ ...prev, configJson: config }));
-  };
-
-  const renderApiCallConfig = () => {
-    const config: ApiCallConfig = localStep.configJson as ApiCallConfig;
-    
-    return (
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            URL
-          </label>
-          <textarea
-            value={config.url || ''}
-            onChange={(e) => updateConfig({ ...config, url: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono text-sm"
-            rows={3}
-            placeholder="https://api.example.com/endpoint"
-          />
-        </div>
-        
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Headers (JSON format)
-          </label>
-          <textarea
-            value={config.headers ? JSON.stringify(config.headers, null, 2) : JSON.stringify({
-              "Content-Type": "application/json",
-              "Authorization": "Bearer YOUR_TRUCKMATE_TOKEN_HERE"
-            }, null, 2)}
-            onChange={(e) => {
-              try {
-                const headers = JSON.parse(e.target.value);
-                updateConfig({ ...config, headers });
-              } catch (error) {
-                // Invalid JSON, keep the text as is for user to fix
-              }
-            }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono text-sm"
-            rows={3}
-            placeholder='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_TRUCKMATE_TOKEN_HERE"}'
-          />
-        </div>
-        
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Request Body Template
-          </label>
-          <textarea
-            value={config.requestBody || ''}
-            onChange={(e) => updateConfig({ ...config, requestBody: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono text-sm"
-            rows={4}
-            placeholder="Use {{field_name}} to reference extracted data"
-          />
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Response Data Path
-            </label>
-            <input
-              type="text"
-              value={config.responseDataPath || ''}
-              onChange={(e) => updateConfig({ ...config, responseDataPath: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-              placeholder="response.data.id"
-            />
-            <p className="text-xs text-gray-500 mt-1">JSON path to extract data from API response</p>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Update JSON Path
-            </label>
-            <input
-              type="text"
-              value={config.updateJsonPath || ''}
-              onChange={(e) => updateConfig({ ...config, updateJsonPath: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-              placeholder="orders.0.apiId"
-            />
-            <p className="text-xs text-gray-500 mt-1">Where to store the response data in extracted JSON</p>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderConditionalCheckConfig = () => {
-    const config: ConditionalCheckConfig = localStep.configJson as ConditionalCheckConfig;
-    
-    return (
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            JSON Path to Check
-          </label>
-          <input
-            type="text"
-            value={config.jsonPath || ''}
-            onChange={(e) => updateConfig({ ...config, jsonPath: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-            placeholder="orders.0.status"
-          />
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Condition Type
-            </label>
-            <select
-              value={config.conditionType || 'equals'}
-              onChange={(e) => updateConfig({ ...config, conditionType: e.target.value as ConditionalCheckConfig['conditionType'] })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-            >
-              <option value="is_null">Is Null</option>
-              <option value="is_not_null">Is Not Null</option>
-              <option value="equals">Equals</option>
-              <option value="contains">Contains</option>
-              <option value="greater_than">Greater Than</option>
-              <option value="less_than">Less Than</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Expected Value
-            </label>
-            <input
-              type="text"
-              value={config.expectedValue || ''}
-              onChange={(e) => updateConfig({ ...config, expectedValue: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-              placeholder="active"
-              disabled={config.conditionType === 'is_null' || config.conditionType === 'is_not_null'}
-            />
-          </div>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Next Step on Success
-            </label>
-            <select
-              value={localStep.nextStepOnSuccessId || ''}
-              onChange={(e) => updateStep('nextStepOnSuccessId', e.target.value || undefined)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-            >
-              <option value="">Continue to next step</option>
-              {allSteps
-                .filter(s => s.id !== localStep.id)
-                .map(s => (
-                  <option key={s.id} value={s.id}>
-                    Step {s.stepOrder}: {s.stepName}
-                  </option>
-                ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Next Step on Failure
-            </label>
-            <select
-              value={localStep.nextStepOnFailureId || ''}
-              onChange={(e) => updateStep('nextStepOnFailureId', e.target.value || undefined)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-            >
-              <option value="">Stop workflow</option>
-              {allSteps
-                .filter(s => s.id !== localStep.id)
-                .map(s => (
-                  <option key={s.id} value={s.id}>
-                    Step {s.stepOrder}: {s.stepName}
-                  </option>
-                ))}
-            </select>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderDataTransformConfig = () => {
-    const config: DataTransformConfig = localStep.configJson as DataTransformConfig;
-    const transformations = config.transformations || [];
-    
-    const addTransformation = () => {
-      const newTransformations = [...transformations, {
-        jsonPath: '',
-        operation: 'set_value' as const,
-        value: ''
-      }];
-      updateConfig({ ...config, transformations: newTransformations });
+    const stepData = {
+      id: step?.id || `temp-${Date.now()}`, // Preserve existing ID or create new one
+      workflowId: step?.workflowId || '',
+      stepOrder: step?.stepOrder || 1,
+      stepName: stepName,
+      stepType: stepType,
+      configJson: config,
+      nextStepOnSuccessId: nextStepOnSuccess || undefined,
+      nextStepOnFailureId: nextStepOnFailure || undefined
     };
-    
-    const updateTransformation = (index: number, field: string, value: any) => {
-      const newTransformations = [...transformations];
-      newTransformations[index] = { ...newTransformations[index], [field]: value };
-      updateConfig({ ...config, transformations: newTransformations });
-    };
-    
-    const removeTransformation = (index: number) => {
-      const newTransformations = transformations.filter((_, i) => i !== index);
-      updateConfig({ ...config, transformations: newTransformations });
-    };
-    
-    return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <label className="block text-sm font-medium text-gray-700">
-            Data Transformations
-          </label>
-          <button
-            type="button"
-            onClick={addTransformation}
-            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded transition-colors duration-200"
-          >
-            Add Transformation
-          </button>
-        </div>
-        
-        <div className="space-y-3">
-          {transformations.map((transformation, index) => (
-            <div key={index} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    JSON Path
-                  </label>
-                  <input
-                    type="text"
-                    value={transformation.jsonPath}
-                    onChange={(e) => updateTransformation(index, 'jsonPath', e.target.value)}
-                    className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
-                    placeholder="orders.0.status"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    Operation
-                  </label>
-                  <select
-                    value={transformation.operation}
-                    onChange={(e) => updateTransformation(index, 'operation', e.target.value)}
-                    className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
-                  >
-                    <option value="set_value">Set Value</option>
-                    <option value="copy_from">Copy From</option>
-                    <option value="append">Append</option>
-                    <option value="remove">Remove</option>
-                    <option value="format_phone_us">Format US Phone Number</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    {transformation.operation === 'copy_from' ? 'Source Path' : 'Value'}
-                  </label>
-                  <input
-                    type="text"
-                    value={transformation.operation === 'copy_from' ? transformation.sourceJsonPath || '' : transformation.value || ''}
-                    onChange={(e) => {
-                      if (transformation.operation === 'copy_from') {
-                        updateTransformation(index, 'sourceJsonPath', e.target.value);
-                      } else {
-                        updateTransformation(index, 'value', e.target.value);
-                      }
-                    }}
-                    className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
-                    placeholder={transformation.operation === 'copy_from' ? 'source.field' : 'new value'}
-                    disabled={transformation.operation === 'remove' || transformation.operation === 'format_phone_us'}
-                  />
-                </div>
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => removeTransformation(index)}
-                    className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors duration-200"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-        
-        {transformations.length === 0 && (
-          <div className="text-center py-4 text-gray-500 text-sm">
-            No transformations defined. Click "Add Transformation" to get started.
-          </div>
-        )}
-      </div>
-    );
+
+    onSave(stepData);
   };
 
-  const renderSftpUploadConfig = () => {
-    const config = localStep.configJson as any;
-    
-    return (
-      <div className="space-y-4">
-        <div className="flex items-center space-x-3">
-          <input
-            type="checkbox"
-            id="useApiResponseForFilename"
-            checked={config.useApiResponseForFilename || false}
-            onChange={(e) => updateConfig({ ...config, useApiResponseForFilename: e.target.checked })}
-            className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-          />
-          <label htmlFor="useApiResponseForFilename" className="text-sm font-medium text-gray-700">
-            Use API response for filename
-          </label>
-        </div>
-        
-        {config.useApiResponseForFilename && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Filename Source Path
-            </label>
-            <input
-              type="text"
-              value={config.filenameSourcePath || ''}
-              onChange={(e) => updateConfig({ ...config, filenameSourcePath: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-              placeholder="billNumber or orders.0.billNumber"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              JSON path to extract filename from API response or extracted data
-            </p>
-          </div>
-        )}
-        
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Fallback Filename
-          </label>
-          <input
-            type="text"
-            value={config.fallbackFilename || ''}
-            onChange={(e) => updateConfig({ ...config, fallbackFilename: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-            placeholder="document"
-          />
-          <p className="text-xs text-gray-500 mt-1">
-            Default filename to use if custom filename cannot be determined
-          </p>
-        </div>
-      </div>
-    );
-  };
+  const availableSteps = allSteps.filter(s => s.id !== step?.id);
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-purple-600 to-indigo-600 rounded-t-2xl">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
+        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
           <div>
-            <h3 className="text-lg font-semibold text-white">
-              {step.id.startsWith('temp-') ? 'Add New Step' : 'Edit Step'}
-            </h3>
-            <p className="text-sm text-purple-100 mt-1">Configure step behavior and parameters</p>
+            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Add New Step</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Configure step behavior and parameters</p>
           </div>
           <button
             onClick={onCancel}
-            className="text-white/70 hover:text-white transition-colors duration-200 p-1 rounded-lg hover:bg-white/10"
+            className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
           >
-            <X className="h-6 w-6" />
+            <X className="w-6 h-6" />
           </button>
         </div>
-        
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="space-y-6">
-            {/* Basic Step Info */}
+
+        <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <div>
-              <div className="grid grid-cols-8 gap-4">
-                <div className="col-span-5">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Step Name
-                  </label>
-                  <input
-                    type="text"
-                    value={localStep.stepName}
-                    onChange={(e) => updateStep('stepName', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-                    placeholder="Descriptive step name"
-                  />
-                </div>
-                <div className="col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Step Type
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Step Name
+              </label>
+              <input
+                type="text"
+                value={stepName}
+                onChange={(e) => setStepName(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                placeholder="New Step"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Step Type
+              </label>
+              <select
+                value={stepType}
+                onChange={(e) => setStepType(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+              >
+                <option value="api_call">API Call</option>
+                <option value="conditional_check">Conditional Check</option>
+                <option value="data_transform">Data Transform</option>
+                <option value="email_action">Email Action</option>
+                <option value="rename_pdf">Rename PDF</option>
+                <option value="sftp_upload">SFTP Upload</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Method field for API calls - shown in top row */}
+          {stepType === 'api_call' && (
+            <div className="grid grid-cols-1 md:grid-cols-1 gap-6 mb-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Method
+                </label>
+                <select
+                  value={method}
+                  onChange={(e) => setMethod(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                >
+                  <option value="POST">POST</option>
+                  <option value="PUT">PUT</option>
+                  <option value="PATCH">PATCH</option>
+                  <option value="GET">GET</option>
+                </select>
+              </div>
+            </div>
+          )}
+
+          {/* PDF Upload Strategy - Show for SFTP Upload steps */}
+          {stepType === 'sftp_upload' && (
+            <div className="mb-6">
+              <h6 className="font-medium text-gray-700 dark:text-gray-300 mb-4">PDF Upload Strategy</h6>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Upload Strategy
                   </label>
                   <select
-                    value={localStep.stepType}
-                    onChange={(e) => {
-                     const newStepType = e.target.value;
-                     updateStep('stepType', newStepType);
-                     
-                     // Initialize config with appropriate defaults for each step type
-                     let defaultConfig = {};
-                     if (newStepType === 'conditional_check') {
-                       defaultConfig = { conditionType: 'equals' };
-                     } else if (newStepType === 'api_call') {
-                       defaultConfig = { method: 'POST' };
-                     } else if (newStepType === 'data_transform') {
-                       defaultConfig = { transformations: [] };
-                     } else if (newStepType === 'sftp_upload') {
-                       defaultConfig = { useApiResponseForFilename: false };
-                     }
-                     
-                     updateConfig(defaultConfig);
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    value={pdfUploadStrategy}
+                    onChange={(e) => setPdfUploadStrategy(e.target.value as 'all_pages_in_group' | 'specific_page_in_group')}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
                   >
-                    <option value="api_call">API Call</option>
-                    <option value="conditional_check">Conditional Check</option>
-                    <option value="data_transform">Data Transform</option>
-                    <option value="sftp_upload">SFTP Upload</option>
+                    <option value="all_pages_in_group">Upload All Pages in Group</option>
+                    <option value="specific_page_in_group">Upload Specific Page Only</option>
                   </select>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Choose whether to upload the entire grouped PDF or just a specific page from the group
+                  </p>
                 </div>
-                {localStep.stepType === 'api_call' ? (
-                  <div className="md:col-span-1">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Method
+
+                {pdfUploadStrategy === 'specific_page_in_group' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Specific Page to Upload
                     </label>
-                    <select
-                      value={(localStep.configJson as ApiCallConfig).method || 'POST'}
-                      onChange={(e) => updateConfig({ ...(localStep.configJson as ApiCallConfig), method: e.target.value as 'GET' | 'POST' | 'PUT' | 'DELETE' })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-                    >
-                      <option value="GET">GET</option>
-                      <option value="POST">POST</option>
-                      <option value="PUT">PUT</option>
-                      <option value="DELETE">DELETE</option>
-                    </select>
+                    <input
+                      type="number"
+                      min="1"
+                      value={specificPageToUpload}
+                      onChange={(e) => setSpecificPageToUpload(parseInt(e.target.value) || 1)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                      placeholder="2"
+                    />
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Page number within the group to upload (e.g., 2 for the second page in a 2-page group)
+                    </p>
                   </div>
-                ) : (
-                  <div className="md:col-span-1"></div>
                 )}
               </div>
             </div>
+          )}
 
-            {/* Step-specific Configuration */}
+          <div className="mb-6">
+            <h4 className="text-md font-medium text-gray-900 dark:text-gray-100 mb-4">Step Configuration</h4>
+            
+            {stepType === 'api_call' && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    URL
+                  </label>
+                  <textarea
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    rows={2}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 font-mono text-sm dark:bg-gray-700 dark:text-gray-100"
+                    placeholder="https://api.example.com/endpoint"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Headers (JSON format)
+                  </label>
+                  <textarea
+                    value={headers}
+                    onChange={(e) => setHeaders(e.target.value)}
+                    rows={4}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 font-mono text-sm dark:bg-gray-700 dark:text-gray-100"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Request Body Template
+                  </label>
+                  <textarea
+                    value={requestBody}
+                    onChange={(e) => setRequestBody(e.target.value)}
+                    rows={4}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 font-mono text-sm dark:bg-gray-700 dark:text-gray-100"
+                    placeholder="Leave empty for GET requests, or enter JSON for POST/PUT requests"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Use {`{{field_name}}`} to reference extracted data. Leave empty for GET requests.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Response Data Path
+                    </label>
+                    <input
+                      type="text"
+                      value={responseDataPath}
+                      onChange={(e) => setResponseDataPath(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 font-mono text-sm dark:bg-gray-700 dark:text-gray-100"
+                      placeholder="e.g., clients[0].clientId or data.result"
+                    />
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      JSON path to extract data from API response
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Update JSON Path
+                    </label>
+                    <input
+                      type="text"
+                      value={updateJsonPath}
+                      onChange={(e) => setUpdateJsonPath(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 font-mono text-sm dark:bg-gray-700 dark:text-gray-100"
+                      placeholder="e.g., orders.0.consignee.clientId"
+                    />
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Where to store the response data in extracted JSON
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {stepType === 'data_transform' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Data Transformations
+                  </label>
+                  <button
+                    onClick={addTransformation}
+                    className="flex items-center px-3 py-1 text-sm bg-purple-600 text-white rounded-md hover:bg-purple-700"
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    Add Rule
+                  </button>
+                </div>
+                
+                {transformations.map((transformation, index) => (
+                  <div key={index} className="flex items-center space-x-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-md">
+                    <input
+                      type="text"
+                      value={transformation.field_name}
+                      onChange={(e) => updateTransformation(index, 'field_name', e.target.value)}
+                      placeholder="Field name"
+                      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-600 dark:text-gray-100"
+                    />
+                    <input
+                      type="text"
+                      value={transformation.transformation}
+                      onChange={(e) => updateTransformation(index, 'transformation', e.target.value)}
+                      placeholder="Transformation rule"
+                      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-600 dark:text-gray-100"
+                    />
+                    {transformations.length > 1 && (
+                      <button
+                        onClick={() => removeTransformation(index)}
+                        className="p-2 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-md"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {stepType === 'sftp_upload' && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    SFTP Path Override (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={sftpPathOverride}
+                    onChange={(e) => setSftpPathOverride(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                    placeholder="e.g., /custom/upload/path/ or leave empty for default"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Override the default SFTP upload path from settings. Leave empty to use default SFTP configuration.
+                  </p>
+                </div>
+
+                <div className="flex items-center space-x-3">
+                  <input
+                    type="checkbox"
+                    id="useApiResponseForFilename"
+                    checked={useApiResponseForFilename}
+                    onChange={(e) => setUseApiResponseForFilename(e.target.checked)}
+                    className="w-4 h-4 text-purple-600 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded focus:ring-purple-500"
+                  />
+                  <label htmlFor="useApiResponseForFilename" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Use API response for filename
+                  </label>
+                </div>
+
+                {useApiResponseForFilename && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Filename Source Path
+                    </label>
+                    <input
+                      type="text"
+                      value={filenameSourcePath}
+                      onChange={(e) => setFilenameSourcePath(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 font-mono text-sm dark:bg-gray-700 dark:text-gray-100"
+                      placeholder="e.g., billNumber or orders.0.billNumber"
+                    />
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      JSON path to extract filename from API response or extracted data
+                    </p>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Fallback Filename
+                  </label>
+                  <input
+                    type="text"
+                    value={fallbackFilename}
+                    onChange={(e) => setFallbackFilename(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                    placeholder="e.g., BL_ or document"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Default filename to use if custom filename cannot be determined
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {stepType === 'conditional_check' && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    JSON Path to Check
+                  </label>
+                  <input
+                    type="text"
+                    value={conditionalField}
+                    onChange={(e) => setConditionalField(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                    placeholder="orders.0.status"
+                  />
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Condition Type
+                    </label>
+                    <select
+                      value={conditionalOperator}
+                      onChange={(e) => setConditionalOperator(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                    >
+                      <option value="equals">Equals</option>
+                      <option value="is_null">Is Null</option>
+                      <option value="is_not_null">Is Not Null</option>
+                      <option value="contains">Contains</option>
+                      <option value="greater_than">Greater Than</option>
+                      <option value="less_than">Less Than</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Expected Value
+                    </label>
+                    <input
+                      type="text"
+                      value={conditionalValue}
+                      onChange={(e) => setConditionalValue(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                      placeholder="active"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {stepType === 'rename_pdf' && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Filename Template
+                  </label>
+                  <input
+                    type="text"
+                    value={renamePdfTemplate}
+                    onChange={(e) => setRenamePdfTemplate(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                    placeholder="e.g., {{invoiceNumber}}_{{customerName}} or BL_{{billNumber}}"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Use {`{{fieldName}}`} to reference extracted data. The .pdf extension will be added automatically.
+                  </p>
+                </div>
+
+                <div className="flex items-center space-x-3">
+                  <input
+                    type="checkbox"
+                    id="useExtractedDataForRename"
+                    checked={useExtractedDataForRename}
+                    onChange={(e) => setUseExtractedDataForRename(e.target.checked)}
+                    className="w-4 h-4 text-purple-600 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded focus:ring-purple-500"
+                  />
+                  <label htmlFor="useExtractedDataForRename" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Use extracted data for filename
+                  </label>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Fallback Filename
+                  </label>
+                  <input
+                    type="text"
+                    value={renameFallbackFilename}
+                    onChange={(e) => setRenameFallbackFilename(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                    placeholder="e.g., document or processed_file"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Default filename to use if template cannot be processed or extracted data is missing
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {stepType === 'email_action' && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Email Action Type
+                  </label>
+                  <select
+                    value={emailActionType}
+                    onChange={(e) => setEmailActionType(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                  >
+                    <option value="send_email">Send Email</option>
+                    <option value="archive_email">Archive Email</option>
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      To (Email Address)
+                    </label>
+                    <input
+                      type="email"
+                      value={emailTo}
+                      onChange={(e) => setEmailTo(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                      placeholder="recipient@example.com or {{customerEmail}}"
+                    />
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Use {`{{fieldName}}`} to reference extracted data
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      From (Optional)
+                    </label>
+                    <input
+                      type="email"
+                      value={emailFrom}
+                      onChange={(e) => setEmailFrom(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                      placeholder="sender@example.com"
+                    />
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Leave empty to use default sender
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Subject
+                  </label>
+                  <input
+                    type="text"
+                    value={emailSubject}
+                    onChange={(e) => setEmailSubject(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                    placeholder="Your document has been processed - {{invoiceNumber}}"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Use {`{{fieldName}}`} to reference extracted data
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Email Body
+                  </label>
+                  <textarea
+                    value={emailBody}
+                    onChange={(e) => setEmailBody(e.target.value)}
+                    rows={6}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                    placeholder="Dear {{customerName}},&#10;&#10;Your document {{invoiceNumber}} has been processed successfully.&#10;&#10;Please find the attached PDF for your records.&#10;&#10;Best regards,&#10;ParseIt System"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Use {`{{fieldName}}`} to reference extracted data. Use &#10; for line breaks.
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-3">
+                    <input
+                      type="checkbox"
+                      id="includeAttachment"
+                      checked={includeAttachment}
+                      onChange={(e) => setIncludeAttachment(e.target.checked)}
+                      className="w-4 h-4 text-purple-600 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded focus:ring-purple-500"
+                    />
+                    <label htmlFor="includeAttachment" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Include PDF attachment
+                    </label>
+                  </div>
+
+                  {includeAttachment && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Attachment Source
+                      </label>
+                      <select
+                        value={attachmentSource}
+                        onChange={(e) => setAttachmentSource(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                      >
+                        <option value="original_pdf">Original PDF</option>
+                        <option value="renamed_pdf">Renamed PDF (from previous step)</option>
+                      </select>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        Choose whether to attach the original PDF or a renamed version from a previous workflow step
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <h4 className="text-lg font-medium text-gray-900 mb-4">Step Configuration</h4>
-              {localStep.stepType === 'api_call' && renderApiCallConfig()}
-              {localStep.stepType === 'conditional_check' && renderConditionalCheckConfig()}
-              {localStep.stepType === 'data_transform' && renderDataTransformConfig()}
-              {localStep.stepType === 'sftp_upload' && renderSftpUploadConfig()}
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Next Step on Success
+              </label>
+              <select
+                value={nextStepOnSuccess}
+                onChange={(e) => setNextStepOnSuccess(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+              >
+                <option value="">End workflow</option>
+                {availableSteps.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.stepName || s.step_name}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Step to execute if this step succeeds
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Next Step on Failure
+              </label>
+              <select
+                value={nextStepOnFailure}
+                onChange={(e) => setNextStepOnFailure(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+              >
+                <option value="">End workflow</option>
+                {availableSteps.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.stepName || s.step_name}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Step to execute if this step fails
+              </p>
             </div>
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="flex justify-end space-x-3 p-6 border-t border-gray-200 bg-gray-50 rounded-b-2xl">
-          <button
-            onClick={onCancel}
-            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg transition-colors duration-200"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2"
-          >
-            <Save className="h-4 w-4" />
-            <span>Save Step</span>
-          </button>
+        <div className="flex items-center justify-end px-6 py-4 bg-gray-50 dark:bg-gray-700 border-t border-gray-200 dark:border-gray-700">
+          <div className="flex space-x-3">
+            <button
+              onClick={onCancel}
+              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded-md shadow-sm hover:bg-gray-50 dark:hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              className="px-4 py-2 text-sm font-medium text-white bg-purple-600 border border-transparent rounded-md shadow-sm hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
+            >
+              Save Step
+            </button>
+          </div>
         </div>
       </div>
     </div>
