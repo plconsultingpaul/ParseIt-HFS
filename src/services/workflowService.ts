@@ -181,7 +181,7 @@ export async function updateWorkflowSteps(workflowId: string, steps: WorkflowSte
       
       const stepsToInsert = steps.map(step => {
         const stepData = {
-          id: step.id.startsWith('temp-') ? undefined : step.id, // Let database generate ID for temp steps
+          id: step.id.startsWith('temp-') ? null : step.id, // Let database generate ID for temp steps
           workflow_id: workflowId,
           step_order: step.stepOrder,
           step_type: step.stepType,
