@@ -9,6 +9,7 @@ export interface SftpUploadOptions {
   useExistingParseitId?: number;
   userId?: string;
   extractionTypeId?: string;
+  transformationTypeId?: string;
   formatType?: string;
 }
 
@@ -51,6 +52,7 @@ export async function uploadToSftp({
         useExistingParseitId,
         userId,
         extractionTypeId,
+        transformationTypeId,
         formatType,
         customFilenamePart
       })

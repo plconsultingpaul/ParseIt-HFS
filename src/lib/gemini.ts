@@ -1,6 +1,61 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { PDFDocument } from 'pdf-lib';
 
+// Helper function to truncate a string based on its JSON-escaped length
+function truncateJsonEscaped(str: string, maxLength: number): string {
+  if (!str || maxLength <= 0) {
+    return '';
+  }
+  
+  // Helper to calculate JSON-escaped length (excluding surrounding quotes)
+  const getJsonEscapedLength = (s: string): number => {
+    return JSON.stringify(s).length - 2;
+  };
+  
+  // If the string is already within the limit, return as-is
+  if (getJsonEscapedLength(str) <= maxLength) {
+    return str;
+  }
+  
+  // Use binary search to find the longest prefix that fits within maxLength
+  let left = 0;
+  let right = str.length;
+  let result = '';
+  
+  while (left <= right) {
+    const mid = Math.floor((left + right) / 2);
+    const prefix = str.substring(0, mid);
+    const escapedLength = getJsonEscapedLength(prefix);
+    
+    if (escapedLength <= maxLength) {
+      result = prefix;
+      left = mid + 1;
+    } else {
+      right = mid - 1;
+    }
+  }
+  
+  return result;
+}
+
+// Helper function to format phone numbers
+function formatPhoneNumber(phone: string): string | null {
+  // Remove all non-digit characters
+  const digits = phone.replace(/\D/g, '');
+  
+  // Only format if we have exactly 10 digits or 11 digits starting with '1'
+  if (digits.length === 10) {
+    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+  } else if (digits.length === 11 && digits.startsWith('1')) {
+    // Remove leading '1' and format the remaining 10 digits
+    const tenDigits = digits.slice(1);
+    return `${tenDigits.slice(0, 3)}-${tenDigits.slice(3, 6)}-${tenDigits.slice(6)}`;
+  }
+  
+  // Return empty string for invalid phone numbers to prevent API validation errors
+  return "";
+}
+
 export interface ExtractionRequest {
   pdfFile: File;
   defaultInstructions: string;
@@ -12,86 +67,6 @@ export interface ExtractionRequest {
   traceTypeMapping?: string;
   traceTypeValue?: string;
   apiKey: string;
-}
-
-/**
- * Truncates a string so that its JSON-escaped representation does not exceed maxLength
- * @param str The string to truncate
- * @param maxLength The maximum length for the JSON-escaped string (excluding quotes)
- * @returns The truncated string
- */
-function truncateJsonEscaped(str: string, maxLength: number): string {
-  if (!str || maxLength <= 0) return '';
-  
-  // Helper function to get the JSON-escaped length (excluding surrounding quotes)
-  const getEscapedLength = (s: string): number => {
-    const jsonString = JSON.stringify(s);
-    // Subtract 2 for the surrounding quotes
-    return jsonString.length - 2;
-  };
-  
-  // If the string is already within the limit, return as-is
-  if (getEscapedLength(str) <= maxLength) {
-    return str;
-  }
-  
-  // Binary search approach for efficiency with very long strings
-  let left = 0;
-  let right = str.length;
-  let result = '';
-  
-  while (left <= right) {
-    const mid = Math.floor((left + right) / 2);
-    const candidate = str.substring(0, mid);
-    const escapedLength = getEscapedLength(candidate);
-    
-    if (escapedLength <= maxLength) {
-      result = candidate;
-      left = mid + 1;
-    } else {
-      right = mid - 1;
-    }
-  }
-  
-  return result;
-}
-
-/**
- * Formats a phone number to ensure it follows the nnn-nnn-nnnn format
- * If the phone number doesn't have enough digits, adds a default area code (111)
- * @param phoneNumber The phone number string to format
- * @returns Formatted phone number in nnn-nnn-nnnn format
- */
-function formatPhoneNumber(phoneNumber: string): string {
-  if (!phoneNumber || typeof phoneNumber !== 'string') {
-    return '';
-  }
-  
-  // Remove all non-digit characters
-  const digits = phoneNumber.replace(/\D/g, '');
-  
-  // Handle different digit lengths
-  if (digits.length === 0) {
-    return '';
-  } else if (digits.length === 7) {
-    // Format: nnn-nnnn -> 111-nnn-nnnn (add default area code)
-    return `111-${digits.slice(0, 3)}-${digits.slice(3)}`;
-  } else if (digits.length === 10) {
-    // Format: nnnnnnnnnn -> nnn-nnn-nnnn
-    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
-  } else if (digits.length === 11 && digits.startsWith('1')) {
-    // Format: 1nnnnnnnnnn -> nnn-nnn-nnnn (remove leading 1)
-    const tenDigits = digits.slice(1);
-    return `${tenDigits.slice(0, 3)}-${tenDigits.slice(3, 6)}-${tenDigits.slice(6)}`;
-  } else if (digits.length < 7) {
-    // Too few digits - pad with default area code and exchange
-    const paddedDigits = digits.padStart(7, '0');
-    return `111-${paddedDigits.slice(0, 3)}-${paddedDigits.slice(3)}`;
-  } else {
-    // Too many digits - take the last 10 digits
-    const lastTenDigits = digits.slice(-10);
-    return `${lastTenDigits.slice(0, 3)}-${lastTenDigits.slice(3, 6)}-${lastTenDigits.slice(6)}`;
-  }
 }
 
 export async function extractDataFromPDF({
@@ -144,20 +119,23 @@ POSTAL CODE FORMATTING RULES:
           const dataTypeNote = mapping.dataType === 'string' ? ' (as string with exact case)' : 
                               mapping.dataType === 'number' ? ' (format as number)' : 
                               mapping.dataType === 'integer' ? ' (format as integer)' :
-                              mapping.dataType === 'datetime' ? ' (as datetime string in yyyy-MM-ddThh:mm:ss format)' : '';
+                              mapping.dataType === 'datetime' ? ' (as datetime string in yyyy-MM-ddThh:mm:ss format)' :
+                              mapping.dataType === 'phone' ? ' (as formatted phone number XXX-XXX-XXXX)' : '';
           fieldMappingInstructions += `- "${mapping.fieldName}": Always use the EXACT hardcoded value "${mapping.value}" with precise case preservation${dataTypeNote}\n`;
         } else if (mapping.type === 'mapped') {
           const dataTypeNote = mapping.dataType === 'string' ? ' (format as string)' : 
                               mapping.dataType === 'number' ? ' (format as number)' : 
                               mapping.dataType === 'integer' ? ' (format as integer)' :
-                              mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' : '';
+                              mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' :
+                              mapping.dataType === 'phone' ? ' (format as phone number XXX-XXX-XXXX)' : '';
           fieldMappingInstructions += `- "${mapping.fieldName}": Extract data from PDF coordinates ${mapping.value}${dataTypeNote}\n`;
         } else {
           // AI type - use default instructions behavior
           const dataTypeNote = mapping.dataType === 'string' ? ' (format as string)' : 
                               mapping.dataType === 'number' ? ' (format as number)' : 
                               mapping.dataType === 'integer' ? ' (format as integer)' :
-                              mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' : '';
+                              mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' :
+                              mapping.dataType === 'phone' ? ' (format as phone number XXX-XXX-XXXX)' : '';
           fieldMappingInstructions += `- "${mapping.fieldName}": ${mapping.value || 'Extract from PDF document'}${dataTypeNote}\n`;
         }
       });
@@ -272,6 +250,25 @@ Please provide only the ${outputFormat} output without any additional explanatio
                     current[finalField] = currentDateTime;
                   }
                 }
+              } else if (mapping.dataType === 'phone') {
+                const fieldPath = mapping.fieldName.split('.');
+                let current = obj;
+                
+                // Navigate to the field location
+                for (let i = 0; i < fieldPath.length - 1; i++) {
+                  if (current[fieldPath[i]] === undefined) {
+                    current[fieldPath[i]] = {};
+                  }
+                  current = current[fieldPath[i]];
+                }
+                
+                const finalField = fieldPath[fieldPath.length - 1];
+                
+                // Format phone number if field has a value
+                if (current[finalField] && typeof current[finalField] === 'string') {
+                  const formattedPhone = formatPhoneNumber(current[finalField]);
+                  current[finalField] = formattedPhone || "";
+                }
               } else if (mapping.dataType === 'string' || !mapping.dataType) {
                 const fieldPath = mapping.fieldName.split('.');
                 let current = obj;
@@ -293,36 +290,13 @@ Please provide only the ${outputFormat} output without any additional explanatio
                 
                 // Apply max length truncation for string fields
                 if (mapping.maxLength && typeof mapping.maxLength === 'number' && mapping.maxLength > 0) {
-                  if (typeof current[finalField] === 'string' && (JSON.stringify(current[finalField]).length - 2) > mapping.maxLength) {
-                    console.log('=== MAX LENGTH TRUNCATION DEBUG ===');
-                    console.log('Field Name:', mapping.fieldName);
-                    console.log('Original Value:', JSON.stringify(current[finalField]));
-                    console.log('Original Length:', current[finalField].length);
-                    console.log('Original JSON-Escaped Length:', JSON.stringify(current[finalField]).length - 2);
-                    console.log('Max Length Setting:', mapping.maxLength);
-                    console.log('Should Truncate (JSON-escaped):', (JSON.stringify(current[finalField]).length - 2) > mapping.maxLength);
-                    current[finalField] = truncateJsonEscaped(current[finalField], mapping.maxLength);
-                    console.log('Truncated Value:', JSON.stringify(current[finalField]));
-                    console.log('Truncated Raw Length:', current[finalField].length);
-                    console.log('Truncated JSON-Escaped Length:', JSON.stringify(current[finalField]).length - 2);
-                    console.log('=== END TRUNCATION DEBUG ===');
-                  } else {
-                    console.log('=== MAX LENGTH CHECK (NO TRUNCATION) ===');
-                    console.log('Field Name:', mapping.fieldName);
-                    console.log('Value:', JSON.stringify(current[finalField]));
-                    console.log('Value Length:', typeof current[finalField] === 'string' ? current[finalField].length : 'N/A (not string)');
-                    console.log('JSON-Escaped Length:', typeof current[finalField] === 'string' ? JSON.stringify(current[finalField]).length - 2 : 'N/A');
-                    console.log('Max Length Setting:', mapping.maxLength);
-                    console.log('Reason: JSON-escaped length <= max length or not a string');
-                    console.log('=== END MAX LENGTH CHECK ===');
+                  if (typeof current[finalField] === 'string') {
+                    // Check if the JSON-escaped length exceeds the max length
+                    const jsonEscapedLength = JSON.stringify(current[finalField]).length - 2;
+                    if (jsonEscapedLength > mapping.maxLength) {
+                      current[finalField] = truncateJsonEscaped(current[finalField], mapping.maxLength);
+                    }
                   }
-                }
-                
-                // Apply phone number formatting for fields that contain "phone" in their name
-                if (typeof current[finalField] === 'string' && 
-                    mapping.fieldName.toLowerCase().includes('phone') && 
-                    current[finalField].trim() !== '') {
-                  current[finalField] = formatPhoneNumber(current[finalField]);
                 }
               }
             });
@@ -426,15 +400,14 @@ Please provide only the ${outputFormat} output without any additional explanatio
             processObject(order, fieldMappings);
             cleanupNullStrings(order);
             formatPostalCodes(order);
-          });
-          
-          // Filter out traceNumbers entries with null or empty traceNumber values
-          jsonData.orders.forEach((order: any) => {
+            
+            // Filter out traceNumbers entries with null or empty traceNumber values
             if (order.traceNumbers && Array.isArray(order.traceNumbers)) {
               order.traceNumbers = order.traceNumbers.filter((trace: any) => {
-                return trace.traceNumber && 
-                       trace.traceNumber !== "" && 
-                       trace.traceNumber !== null && 
+                // Keep the trace entry only if traceNumber is not null, not an empty string, and not the string "null"
+                return trace.traceNumber &&
+                       trace.traceNumber !== "" &&
+                       trace.traceNumber !== null &&
                        trace.traceNumber !== "null";
               });
             }
@@ -497,18 +470,6 @@ Please provide only the ${outputFormat} output without any additional explanatio
           // Format postal codes even without field mappings
           jsonData.orders.forEach((order: any) => {
             formatPostalCodes(order);
-          });
-          
-          // Filter out traceNumbers entries with null or empty traceNumber values (even without field mappings)
-          jsonData.orders.forEach((order: any) => {
-            if (order.traceNumbers && Array.isArray(order.traceNumbers)) {
-              order.traceNumbers = order.traceNumbers.filter((trace: any) => {
-                return trace.traceNumber && 
-                       trace.traceNumber !== "" && 
-                       trace.traceNumber !== null && 
-                       trace.traceNumber !== "null";
-              });
-            }
           });
         }
         
