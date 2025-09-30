@@ -1,3 +1,238 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* CSS Variables for Dark Mode */
+:root {
+  /* Light mode colors */
+  --color-bg-primary: 255 255 255;
+  --color-bg-secondary: 249 250 251;
+  --color-bg-tertiary: 243 244 246;
+  --color-bg-accent: 248 250 252;
+  --color-bg-purple: 147 51 234;
+  --color-bg-indigo: 99 102 241;
+  
+  --color-text-primary: 17 24 39;
+  --color-text-secondary: 75 85 99;
+  --color-text-tertiary: 107 114 128;
+  --color-text-accent: 147 51 234;
+  --color-text-inverse: 255 255 255;
+  
+  --color-border-primary: 229 231 235;
+  --color-border-secondary: 209 213 219;
+  --color-border-accent: 196 181 253;
+  
+  --color-surface-primary: 255 255 255;
+  --color-surface-secondary: 249 250 251;
+  --color-surface-elevated: 255 255 255;
+  
+  /* Status colors */
+  --color-success: 34 197 94;
+  --color-success-bg: 240 253 244;
+  --color-success-border: 187 247 208;
+  
+  --color-error: 239 68 68;
+  --color-error-bg: 254 242 242;
+  --color-error-border: 252 165 165;
+  
+  --color-warning: 245 158 11;
+  --color-warning-bg: 255 251 235;
+  --color-warning-border: 253 230 138;
+  
+  --color-info: 59 130 246;
+  --color-info-bg: 239 246 255;
+  --color-info-border: 147 197 253;
+}
+
+.dark {
+  /* Dark mode colors */
+  --color-bg-primary: 17 24 39;
+  --color-bg-secondary: 31 41 55;
+  --color-bg-tertiary: 55 65 81;
+  --color-bg-accent: 30 41 59;
+  --color-bg-purple: 147 51 234;
+  --color-bg-indigo: 99 102 241;
+  
+  --color-text-primary: 243 244 246;
+  --color-text-secondary: 209 213 219;
+  --color-text-tertiary: 156 163 175;
+  --color-text-accent: 196 181 253;
+  --color-text-inverse: 17 24 39;
+  
+  --color-border-primary: 55 65 81;
+  --color-border-secondary: 75 85 99;
+  --color-border-accent: 139 92 246;
+  
+  --color-surface-primary: 31 41 55;
+  --color-surface-secondary: 17 24 39;
+  --color-surface-elevated: 55 65 81;
+  
+  /* Status colors - adjusted for dark mode */
+  --color-success: 34 197 94;
+  --color-success-bg: 20 83 45;
+  --color-success-border: 34 197 94;
+  
+  --color-error: 248 113 113;
+  --color-error-bg: 127 29 29;
+  --color-error-border: 239 68 68;
+  
+  --color-warning: 251 191 36;
+  --color-warning-bg: 120 53 15;
+  --color-warning-border: 245 158 11;
+  
+  --color-info: 96 165 250;
+  --color-info-bg: 30 58 138;
+  --color-info-border: 59 130 246;
+}
+
+/* Base styles with smooth transitions */
+* {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}
+
+/* Custom utility classes using CSS variables */
+.bg-theme-primary {
+  background-color: rgb(var(--color-bg-primary));
+}
+
+.bg-theme-secondary {
+  background-color: rgb(var(--color-bg-secondary));
+}
+
+.bg-theme-tertiary {
+  background-color: rgb(var(--color-bg-tertiary));
+}
+
+.bg-theme-surface {
+  background-color: rgb(var(--color-surface-primary));
+}
+
+.bg-theme-surface-elevated {
+  background-color: rgb(var(--color-surface-elevated));
+}
+
+.text-theme-primary {
+  color: rgb(var(--color-text-primary));
+}
+
+.text-theme-secondary {
+  color: rgb(var(--color-text-secondary));
+}
+
+.text-theme-tertiary {
+  color: rgb(var(--color-text-tertiary));
+}
+
+.text-theme-accent {
+  color: rgb(var(--color-text-accent));
+}
+
+.border-theme-primary {
+  border-color: rgb(var(--color-border-primary));
+}
+
+.border-theme-secondary {
+  border-color: rgb(var(--color-border-secondary));
+}
+
+.border-theme-accent {
+  border-color: rgb(var(--color-border-accent));
+}
+
+/* Status colors */
+.bg-theme-success {
+  background-color: rgb(var(--color-success-bg));
+}
+
+.text-theme-success {
+  color: rgb(var(--color-success));
+}
+
+.border-theme-success {
+  border-color: rgb(var(--color-success-border));
+}
+
+.bg-theme-error {
+  background-color: rgb(var(--color-error-bg));
+}
+
+.text-theme-error {
+  color: rgb(var(--color-error));
+}
+
+.border-theme-error {
+  border-color: rgb(var(--color-error-border));
+}
+
+.bg-theme-warning {
+  background-color: rgb(var(--color-warning-bg));
+}
+
+.text-theme-warning {
+  color: rgb(var(--color-warning));
+}
+
+.border-theme-warning {
+  border-color: rgb(var(--color-warning-border));
+}
+
+.bg-theme-info {
+  background-color: rgb(var(--color-info-bg));
+}
+
+.text-theme-info {
+  color: rgb(var(--color-info));
+}
+
+.border-theme-info {
+  border-color: rgb(var(--color-info-border));
+}
+
+/* Ensure proper contrast for form elements */
+input, textarea, select {
+  @apply bg-theme-surface text-theme-primary border-theme-primary;
+}
+
+input:focus, textarea:focus, select:focus {
+  @apply border-theme-accent ring-purple-500;
+}
+
+/* Dark mode specific adjustments */
+.dark input, .dark textarea, .dark select {
+  background-color: rgb(var(--color-surface-elevated));
+}
+
+/* Fix dropdown options in dark mode */
+.dark select option {
+  background-color: rgb(var(--color-surface-elevated));
+  color: rgb(var(--color-text-primary));
+}
+
+/* Ensure dropdown options have proper contrast */
+select option {
+  background-color: white;
+  color: rgb(var(--color-text-primary));
+}
+
+/* Ensure backdrop blur works in dark mode */
+.backdrop-blur-sm {
+  backdrop-filter: blur(4px);
+}
+
+/* Custom scrollbar for dark mode */
+.dark ::-webkit-scrollbar {
+  width: 8px;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: rgb(var(--color-bg-secondary));
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgb(var(--color-border-secondary));
+  border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--color-text-tertiary));
+}

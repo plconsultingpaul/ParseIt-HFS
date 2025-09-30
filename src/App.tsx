@@ -3,10 +3,16 @@ import { useAuth } from './hooks/useAuth';
 import LoginPage from './components/LoginPage';
 import Layout from './components/Layout';
 import ExtractPage from './components/ExtractPage';
+import TransformPage from './components/TransformPage';
 import SettingsPage from './components/SettingsPage';
+import LogsPage from './components/LogsPage';
+import TypeSetupPage from './components/TypeSetupPage';
+import HelpPage from './components/HelpPage';
+import VendorUploadPage from './components/VendorUploadPage';
+import OrdersPage from './components/OrdersPage';
 import { useSupabaseData } from './hooks/useSupabaseData';
 import { Loader2 } from 'lucide-react';
-import type { ExtractionType, SftpConfig, SettingsConfig, ApiConfig, EmailMonitoringConfig, EmailProcessingRule, User, SecuritySettings, EmailPollingLog } from './types';
+import type { ExtractionType, TransformationType, SftpConfig, SettingsConfig, ApiConfig, EmailMonitoringConfig, EmailProcessingRule, User, SecuritySettings, CompanyBranding } from './types';
 
 export default function App() {
   const { 
@@ -20,9 +26,10 @@ export default function App() {
     updateUser,
     deleteUser
   } = useAuth();
-  const [currentPage, setCurrentPage] = useState<'extract' | 'settings'>('extract');
+  const [currentPage, setCurrentPage] = useState<'extract' | 'vendor' | 'orders' | 'transform' | 'types' | 'settings' | 'logs'>('extract');
   const {
     extractionTypes,
+    transformationTypes,
     sftpConfig,
     settingsConfig,
     apiConfig,
@@ -35,12 +42,16 @@ export default function App() {
     workflowSteps,
     emailPollingLogs,
     workflowExecutionLogs,
+    sftpPollingLogs,
     loading,
     refreshData,
+    companyBranding,
     refreshLogs,
     refreshLogsWithFilters,
     refreshProcessedEmails,
     refreshWorkflowExecutionLogs,
+    refreshSftpPollingLogs,
+    updateSftpPollingConfigs,
     updateExtractionTypes,
     updateSftpConfig,
     updateSettingsConfig,
@@ -49,13 +60,21 @@ export default function App() {
     updateEmailRules,
     refreshPollingLogs,
     logExtraction,
-    deleteExtractionType
+    updateCompanyBranding,
+    deleteExtractionType,
+    updateTransformationTypes,
+    deleteTransformationType
   } = useSupabaseData();
 
   // Always navigate to extract page when user logs in
   useEffect(() => {
     if (isAuthenticated && user) {
-      setCurrentPage('extract');
+      // Navigate vendors to their dedicated upload page
+      if (user.role === 'vendor') {
+        setCurrentPage('orders');
+      } else {
+        setCurrentPage('extract');
+      }
     }
   }, [isAuthenticated, user]);
 
@@ -74,12 +93,24 @@ export default function App() {
 
   // Show login page if not authenticated
   if (!isAuthenticated || !user) {
-    return <LoginPage onLogin={login} />;
+    return <LoginPage companyBranding={companyBranding} onLogin={login} />;
   }
 
-  const handleNavigate = (page: 'extract' | 'settings') => {
+  const handleNavigate = (page: 'extract' | 'vendor' | 'orders' | 'transform' | 'types' | 'settings' | 'logs') => {
     if (page === 'settings' && !user.isAdmin) {
       alert('You do not have permission to access settings.');
+      return;
+    }
+    if ((page === 'types' || page === 'logs' || page === 'settings' || page === 'transform' || page === 'extract') && user.role === 'vendor') {
+      alert('You do not have permission to access this section.');
+      return;
+    }
+    if (page === 'orders' && user.role !== 'vendor') {
+      alert('This page is only available for vendor accounts.');
+      return;
+    }
+    if (page === 'vendor' && user.role !== 'vendor') {
+      alert('This page is only available for vendor accounts.');
       return;
     }
     setCurrentPage(page);
@@ -150,20 +181,108 @@ export default function App() {
     }
   };
 
+  const handleUpdateTransformationTypes = async (types: TransformationType[]) => {
+    try {
+      await updateTransformationTypes(types);
+    } catch (error) {
+      console.error('Failed to update transformation types:', error);
+      alert('Failed to save transformation types. Please try again.');
+    }
+  };
+
+  const handleDeleteTransformationType = async (id: string) => {
+    try {
+      await deleteTransformationType(id);
+    } catch (error) {
+      console.error('Failed to delete transformation type:', error);
+      alert('Failed to delete transformation type. Please try again.');
+    }
+  };
+
+  const handleUpdateCompanyBranding = async (branding: CompanyBranding) => {
+    try {
+      await updateCompanyBranding(branding);
+    } catch (error) {
+      console.error('Failed to update company branding:', error);
+      alert('Failed to save company branding. Please try again.');
+    }
+  };
+
   return (
     <Layout 
       currentPage={currentPage} 
       onNavigate={handleNavigate}
       user={user}
+      companyBranding={companyBranding}
       onLogout={logout}
     >
       {currentPage === 'extract' && (
         <ExtractPage
           extractionTypes={extractionTypes}
+          transformationTypes={transformationTypes}
           sftpConfig={sftpConfig}
           settingsConfig={settingsConfig}
           apiConfig={apiConfig}
           onNavigateToSettings={() => setCurrentPage('settings')}
+        />
+      )}
+      {currentPage === 'vendor' && (
+        <VendorUploadPage
+          transformationTypes={transformationTypes}
+          sftpConfig={sftpConfig}
+          settingsConfig={settingsConfig}
+          apiConfig={apiConfig}
+          workflowSteps={workflowSteps}
+        />
+      )}
+      {currentPage === 'orders' && (
+        <OrdersPage
+          user={user}
+          apiConfig={apiConfig}
+        />
+      )}
+      {currentPage === 'transform' && (
+        <TransformPage
+          transformationTypes={transformationTypes}
+          sftpConfig={sftpConfig}
+          settingsConfig={settingsConfig}
+          apiConfig={apiConfig}
+          onNavigateToSettings={() => setCurrentPage('settings')}
+        />
+      )}
+      {currentPage === 'logs' && (
+        <LogsPage
+          extractionLogs={extractionLogs}
+          extractionTypes={extractionTypes}
+          transformationTypes={transformationTypes}
+          users={users}
+          emailPollingLogs={emailPollingLogs}
+          workflowExecutionLogs={workflowExecutionLogs}
+          workflows={workflows}
+          workflowSteps={workflowSteps}
+          sftpPollingLogs={sftpPollingLogs}
+          processedEmails={processedEmails}
+          onRefreshLogs={refreshLogs}
+          onRefreshLogsWithFilters={refreshLogsWithFilters}
+          onRefreshPollingLogs={refreshPollingLogs}
+          onRefreshWorkflowLogs={refreshWorkflowExecutionLogs}
+          onRefreshSftpPollingLogs={refreshSftpPollingLogs}
+          onRefreshProcessedEmails={refreshProcessedEmails}
+        />
+      )}
+      {currentPage === 'types' && (
+        <TypeSetupPage
+          extractionTypes={extractionTypes}
+          transformationTypes={transformationTypes}
+          workflows={workflows}
+          workflowSteps={workflowSteps}
+          apiConfig={apiConfig}
+          currentUser={user}
+          refreshData={refreshData}
+          onUpdateExtractionTypes={handleUpdateExtractionTypes}
+          onDeleteExtractionType={handleDeleteExtractionType}
+          onUpdateTransformationTypes={handleUpdateTransformationTypes}
+          onDeleteTransformationType={handleDeleteTransformationType}
         />
       )}
       {currentPage === 'settings' && (
@@ -174,32 +293,28 @@ export default function App() {
           apiConfig={apiConfig}
           emailConfig={emailConfig}
           emailRules={emailRules}
-          processedEmails={processedEmails}
-          extractionLogs={extractionLogs}
           users={users}
           currentUser={user}
-          emailPollingLogs={emailPollingLogs}
-          workflowExecutionLogs={workflowExecutionLogs}
           workflows={workflows}
           workflowSteps={workflowSteps}
-          workflows={workflows}
-          workflowSteps={workflowSteps}
+          companyBranding={companyBranding}
+          processedEmails={processedEmails}
           getAllUsers={getAllUsers}
           createUser={createUser}
           updateUser={updateUser}
           deleteUser={deleteUser}
           onUpdateExtractionTypes={handleUpdateExtractionTypes}
           onDeleteExtractionType={handleDeleteExtractionType}
+          onUpdateTransformationTypes={handleUpdateTransformationTypes}
+          onDeleteTransformationType={handleDeleteTransformationType}
           onUpdateSftpConfig={handleUpdateSftpConfig}
           onUpdateSettingsConfig={handleUpdateSettingsConfig}
           onUpdateApiConfig={handleUpdateApiConfig}
           onUpdateEmailConfig={handleUpdateEmailConfig}
           onUpdateEmailRules={handleUpdateEmailRules}
-          onRefreshLogs={refreshLogs}
-          onRefreshLogsWithFilters={refreshLogsWithFilters}
-          onRefreshPollingLogs={refreshPollingLogs}
-          onRefreshWorkflowLogs={refreshWorkflowExecutionLogs}
-          onRefreshProcessedEmails={refreshProcessedEmails}
+          onUpdateSftpPollingConfigs={updateSftpPollingConfigs}
+          onUpdateCompanyBranding={handleUpdateCompanyBranding}
+          transformationTypes={transformationTypes}
         />
       )}
     </Layout>
