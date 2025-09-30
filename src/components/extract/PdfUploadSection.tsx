@@ -80,7 +80,7 @@ export default function PdfUploadSection({ onPdfUpload }: PdfUploadSectionProps)
   return (
     <div>
       <label className="block text-sm font-semibold text-gray-700 mb-3">
-        PDF Document
+        <span className="text-gray-700 dark:text-gray-200">PDF Document</span>
       </label>
       <div
         onDragOver={handleDragOver}
@@ -91,8 +91,8 @@ export default function PdfUploadSection({ onPdfUpload }: PdfUploadSectionProps)
           isDragOver
             ? 'border-purple-400 bg-purple-50'
             : uploadedFile
-            ? 'border-green-400 bg-green-50'
-            : 'border-purple-200 bg-purple-25 hover:border-purple-400 hover:bg-purple-50'
+            ? 'border-blue-400 bg-blue-50 dark:border-blue-500 dark:bg-blue-900/20'
+            : 'border-purple-200 bg-purple-25 hover:border-purple-400 hover:bg-purple-50 dark:border-purple-600 dark:bg-purple-900/20 dark:hover:border-purple-500 dark:hover:bg-purple-800/30'
         }`}
       >
         <input
@@ -105,8 +105,8 @@ export default function PdfUploadSection({ onPdfUpload }: PdfUploadSectionProps)
         
         {uploadedFile ? (
           <div className="space-y-2">
-            <FileText className="h-8 w-8 text-green-600 mx-auto" />
-            <p className="text-green-700 font-medium text-sm">{uploadedFile.name}</p>
+            <FileText className="h-8 w-8 text-blue-600 dark:text-blue-400 mx-auto" />
+            <p className="text-blue-700 dark:text-blue-300 font-medium text-sm">{uploadedFile.name}</p>
             <p className="text-xs text-green-600">
               {(uploadedFile.size / 1024 / 1024).toFixed(2)} MB
               {pdfPages.length > 0 && ` • ${pdfPages.length} page${pdfPages.length !== 1 ? 's' : ''}`}

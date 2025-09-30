@@ -200,10 +200,10 @@ export default function PageProcessorCard({
       setModalContent(
         <div className="space-y-4">
           <div className="flex items-center space-x-3">
-            <CheckCircle className="h-8 w-8 text-green-600" />
+            <CheckCircle className="h-8 w-8 text-green-600 dark:text-green-400" />
             <div>
-              <h4 className="text-lg font-semibold text-green-800">Processing Successful!</h4>
-              <p className="text-green-700">
+              <h4 className="text-lg font-semibold text-green-800 dark:text-green-300">Processing Successful!</h4>
+              <p className="text-green-700 dark:text-green-400">
                 Data extracted and {isJsonType ? 'sent to API' : 'uploaded via SFTP'} successfully!
               </p>
             </div>
@@ -215,28 +215,28 @@ export default function PageProcessorCard({
       setModalContent(
         <div className="space-y-4">
           <div className="flex items-center space-x-3 mb-4">
-            <XCircle className="h-8 w-8 text-red-600" />
+            <XCircle className="h-8 w-8 text-red-600 dark:text-red-400" />
             <div>
-              <h4 className="text-lg font-semibold text-red-800">Processing Failed</h4>
-              <p className="text-red-700">An error occurred during processing</p>
+              <h4 className="text-lg font-semibold text-red-800 dark:text-red-300">Processing Failed</h4>
+              <p className="text-red-700 dark:text-red-400">An error occurred during processing</p>
             </div>
           </div>
           
           {pageState.extractionError && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <h5 className="font-medium text-red-800 mb-2">Extraction Error:</h5>
-              <p className="text-red-700 text-sm">{pageState.extractionError}</p>
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-4">
+              <h5 className="font-medium text-red-800 dark:text-red-300 mb-2">Extraction Error:</h5>
+              <p className="text-red-700 dark:text-red-400 text-sm">{pageState.extractionError}</p>
             </div>
           )}
           
           {pageState.apiError && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <h5 className="font-medium text-red-800 mb-3">API Error Details:</h5>
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-4">
+              <h5 className="font-medium text-red-800 dark:text-red-300 mb-3">API Error Details:</h5>
               <div className="space-y-3">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                   <div>
-                    <span className="font-medium text-red-800">Status:</span>
-                    <p className="text-red-700">
+                    <span className="font-medium text-red-800 dark:text-red-300">Status:</span>
+                    <p className="text-red-700 dark:text-red-400">
                       {pageState.apiError.statusCode > 0 
                         ? `${pageState.apiError.statusCode} ${pageState.apiError.statusText}`
                         : pageState.apiError.statusText
@@ -245,17 +245,17 @@ export default function PageProcessorCard({
                   </div>
                   {pageState.apiError.url && (
                     <div>
-                      <span className="font-medium text-red-800">URL:</span>
-                      <p className="text-red-700 break-all">{pageState.apiError.url}</p>
+                      <span className="font-medium text-red-800 dark:text-red-300">URL:</span>
+                      <p className="text-red-700 dark:text-red-400 break-all">{pageState.apiError.url}</p>
                     </div>
                   )}
                 </div>
                 
                 {pageState.apiError.details && (
                   <div>
-                    <span className="font-medium text-red-800 block mb-2">Response Details:</span>
-                    <div className="bg-white rounded-lg p-3 border border-red-300 max-h-48 overflow-y-auto">
-                      <pre className="text-xs text-red-800 whitespace-pre-wrap font-mono">
+                    <span className="font-medium text-red-800 dark:text-red-300 block mb-2">Response Details:</span>
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-red-300 dark:border-red-600 max-h-48 overflow-y-auto">
+                      <pre className="text-xs text-red-800 dark:text-red-300 whitespace-pre-wrap font-mono">
                         {typeof pageState.apiError.details === 'string' 
                           ? pageState.apiError.details 
                           : JSON.stringify(pageState.apiError.details, null, 2)
@@ -278,18 +278,18 @@ export default function PageProcessorCard({
     setModalContent(
       <div className="space-y-4">
         <div className="flex items-center space-x-3 mb-4">
-          <Database className="h-6 w-6 text-blue-600" />
-          <h4 className="text-lg font-semibold text-blue-800">API Response Data</h4>
+          <Database className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+          <h4 className="text-lg font-semibold text-blue-800 dark:text-blue-300">API Response Data</h4>
         </div>
-        <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-          <pre className="text-sm text-gray-800 whitespace-pre-wrap font-mono max-h-96 overflow-y-auto">
+        <div className="bg-blue-50 dark:bg-gray-900 rounded-lg p-4 border border-blue-200 dark:border-gray-600">
+          <pre className="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap font-mono max-h-96 overflow-y-auto">
             {pageState.apiResponse}
           </pre>
         </div>
         <div className="flex justify-end">
           <button
             onClick={() => navigator.clipboard.writeText(pageState.apiResponse)}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2"
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2"
           >
             <Copy className="h-4 w-4" />
             <span>Copy Response</span>
@@ -318,18 +318,18 @@ export default function PageProcessorCard({
     setModalContent(
       <div className="space-y-4">
         <div className="flex items-center space-x-3 mb-4">
-          <FileText className="h-6 w-6 text-purple-600" />
-          <h4 className="text-lg font-semibold text-purple-800">Extracted {dataLabel} Data</h4>
+          <FileText className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+          <h4 className="text-lg font-semibold text-purple-800 dark:text-purple-300">Extracted {dataLabel} Data</h4>
         </div>
-        <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-          <pre className="text-sm text-gray-800 whitespace-pre-wrap font-mono max-h-96 overflow-y-auto leading-relaxed">
+        <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
+          <pre className="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap font-mono max-h-96 overflow-y-auto leading-relaxed">
             {displayData}
           </pre>
         </div>
         <div className="flex justify-end">
           <button
             onClick={() => navigator.clipboard.writeText(displayData)}
-            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2"
+            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 dark:bg-purple-700 dark:hover:bg-purple-600 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2"
           >
             <Copy className="h-4 w-4" />
             <span>Copy {dataLabel}</span>
@@ -402,19 +402,19 @@ export default function PageProcessorCard({
 
   return (
     <>
-      <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 shadow-sm hover:bg-gray-50 dark:hover:bg-purple-900/20 transition-colors duration-200">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-3">
-            <div className="bg-purple-100 p-2 rounded-lg">
-              <FileText className="h-5 w-5 text-purple-600" />
+            <div className="bg-purple-100 dark:bg-purple-900/50 p-2 rounded-lg">
+              <FileText className="h-5 w-5 text-purple-600 dark:text-purple-400" />
             </div>
             <div>
-              <h4 className="font-semibold text-gray-900">PAGE {pageIndex + 1}</h4>
-              <p className="text-sm text-gray-600">
+              <h4 className="font-semibold text-gray-900 dark:text-gray-100">PAGE {pageIndex + 1}</h4>
+              <p className="text-sm text-gray-600 dark:text-gray-300">
                 {(pageFile.size / 1024).toFixed(1)} KB
               </p>
               {billNumber && (
-                <p className="text-sm font-medium text-blue-600 mt-1">
+                <p className="text-sm font-medium text-blue-600 dark:text-blue-400 mt-1">
                   Bill #: {billNumber}
                 </p>
               )}
@@ -462,9 +462,9 @@ export default function PageProcessorCard({
 
         {/* Result Action Buttons */}
         {(hasStatus || pageState.extractedData || (isJsonType && pageState.apiResponse)) && (
-          <div className="border-t border-gray-200 pt-4 mt-4">
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
             <div className="flex items-center space-x-3">
-              <span className="text-sm font-medium text-gray-700">Results:</span>
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Results:</span>
               
               {/* Status Button */}
               {hasStatus && (
@@ -518,7 +518,7 @@ export default function PageProcessorCard({
         {currentExtractionType.workflowId && currentWorkflowSteps.length > 0 && (
           <div className="border-t border-gray-200 pt-4 mt-4">
             <div className="flex items-center justify-between mb-3">
-              <span className="text-sm font-medium text-gray-700">Workflow Progress:</span>
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Workflow Progress:</span>
               <span className="text-xs text-gray-500">
                 {currentWorkflowSteps.length} step{currentWorkflowSteps.length !== 1 ? 's' : ''}
               </span>
@@ -549,14 +549,14 @@ export default function PageProcessorCard({
             {/* Workflow Status Text */}
             {pageState.workflowExecutionLog && (
               <div className="mt-2">
-                <p className="text-xs text-gray-600">
+                <p className="text-xs text-gray-600 dark:text-gray-300">
                   Status: <span className="font-medium">{pageState.workflowExecutionLog.status}</span>
                   {pageState.workflowExecutionLog.currentStepName && (
                     <span> • Current: {pageState.workflowExecutionLog.currentStepName}</span>
                   )}
                 </p>
                 {pageState.workflowExecutionLog.errorMessage && (
-                  <p className="text-xs text-red-600 mt-1">
+                  <p className="text-xs text-red-600 dark:text-red-400 mt-1">
                     Error: {pageState.workflowExecutionLog.errorMessage}
                   </p>
                 )}

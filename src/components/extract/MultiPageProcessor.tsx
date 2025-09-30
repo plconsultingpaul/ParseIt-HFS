@@ -103,6 +103,10 @@ export default function MultiPageProcessor({
     const pageFile = pdfPages[pageIndex];
     if (!pageFile || !currentExtractionType) return;
 
+    // Define Supabase variables at the beginning of the function
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
     // Reset state for this page
     updatePageState(pageIndex, {
       isExtracting: actionType === 'preview',
@@ -193,9 +197,6 @@ export default function MultiPageProcessor({
           let parseitId: number | undefined;
           try {
             // Get a fresh ParseIt ID for each submission
-            const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-            const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-            
             const response = await fetch(`${supabaseUrl}/rest/v1/rpc/get_next_parseit_id`, {
               method: 'POST',
               headers: {
@@ -441,7 +442,7 @@ export default function MultiPageProcessor({
   return (
     <div className="mb-8">
       <div className="flex items-center justify-between mb-3">
-        <label className="block text-sm font-semibold text-gray-700">
+        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200">
           PDF Pages ({pdfPages.length} page{pdfPages.length !== 1 ? 's' : ''})
         </label>
         <button
