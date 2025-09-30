@@ -78,8 +78,8 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
     console.log('Updated steps array:', updatedSteps);
     setLocalSteps(updatedSteps);
     
-    // Immediately save to database
-    handleSaveStepsToDatabase(updatedSteps);
+    // Don't automatically save individual steps - let user save all at once
+    console.log('Step added to local state, waiting for user to save all steps');
     
     setShowStepForm(false);
     setEditingStep(null);
