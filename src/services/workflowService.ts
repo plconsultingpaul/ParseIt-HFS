@@ -29,15 +29,27 @@ export async function updateWorkflows(workflows: ExtractionWorkflow[]): Promise<
   console.log('=== updateWorkflows START ===');
   console.log('Input workflows count:', workflows.length);
   console.log('Input workflows:', workflows.map(w => ({ id: w.id, name: w.name, isTemp: w.id.startsWith('temp-') })));
+  
+  // Validate input workflows
+  const invalidWorkflows = workflows.filter(w => !w.name || !w.name.trim());
+  if (invalidWorkflows.length > 0) {
+    console.error('❌ Invalid workflows found (missing name):', invalidWorkflows);
+    throw new Error(`${invalidWorkflows.length} workflow(s) have invalid or missing names`);
+  }
 
   const tempToPermIdMap = new Map<string, string>();
 
   try {
     // Get existing workflows to determine which to update vs insert
+    console.log('📋 Fetching existing workflows from database...');
     const { data: existingWorkflows } = await supabase
       .from('extraction_workflows')
       .select('id');
 
+    if (!existingWorkflows) {
+      console.warn('⚠️ No existing workflows data returned from database');
+    }
+    
     const existingIds = new Set((existingWorkflows || []).map(w => w.id));
     console.log('Existing workflow IDs:', Array.from(existingIds));
 
@@ -46,41 +58,89 @@ export async function updateWorkflows(workflows: ExtractionWorkflow[]): Promise<
 
     console.log('Workflows to update:', workflowsToUpdate.length);
     console.log('Workflows to insert:', workflowsToInsert.length);
+    
+    if (workflowsToUpdate.length > 0) {
+      console.log('Update candidates:', workflowsToUpdate.map(w => ({ id: w.id, name: w.name })));
+    }
+    if (workflowsToInsert.length > 0) {
+      console.log('Insert candidates:', workflowsToInsert.map(w => ({ id: w.id, name: w.name, isTemp: w.id.startsWith('temp-') })));
+    }
 
     // Update existing workflows
     for (const workflow of workflowsToUpdate) {
       console.log('Updating workflow:', workflow.id, workflow.name);
-      const { error } = await supabase
+      
+      const updateData = {
+        name: workflow.name,
+        description: workflow.description,
+        is_active: workflow.isActive,
+        updated_at: new Date().toISOString()
+      };
+      
+      console.log('Update data for workflow', workflow.id, ':', updateData);
+      
+      const { data: updateResult, error } = await supabase
         .from('extraction_workflows')
-        .update({
-          name: workflow.name,
-          description: workflow.description,
-          is_active: workflow.isActive,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', workflow.id);
+        .update(updateData)
+        .eq('id', workflow.id)
+        .select('id, name');
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Update failed for workflow', workflow.id, ':', error);
+        console.error('❌ Update error details:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
+        throw error;
+      }
+      
+      console.log('✅ Update result for workflow', workflow.id, ':', updateResult);
       console.log('✅ Updated workflow:', workflow.id);
     }
 
     // Insert new workflows
     if (workflowsToInsert.length > 0) {
       console.log('Inserting new workflows...');
+      
+      const insertData = workflowsToInsert.map(workflow => {
+        const data = {
+          name: workflow.name,
+          description: workflow.description,
+          is_active: workflow.isActive
+        };
+        console.log('Insert data for workflow', workflow.name, ':', data);
+        return data;
+      });
+      
+      console.log('📝 Executing database insert with data:', insertData);
+      
       const { data: insertedWorkflows, error } = await supabase
         .from('extraction_workflows')
-        .insert(
-          workflowsToInsert.map(workflow => ({
-            name: workflow.name,
-            description: workflow.description,
-            is_active: workflow.isActive
-          }))
-        )
+        .insert(insertData)
         .select('id, name');
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Insert failed:', error);
+        console.error('❌ Insert error details:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
+        console.error('❌ Failed insert data was:', insertData);
+        throw error;
+      }
 
       console.log('✅ Inserted workflows:', insertedWorkflows);
+      
+      if (!insertedWorkflows || insertedWorkflows.length !== workflowsToInsert.length) {
+        console.error('❌ Mismatch in inserted workflows count');
+        console.error('Expected:', workflowsToInsert.length);
+        console.error('Received:', insertedWorkflows?.length || 0);
+        throw new Error('Workflow insertion count mismatch');
+      }
 
       // Create mapping from temp IDs to permanent IDs
       workflowsToInsert.forEach((tempWorkflow, index) => {
@@ -88,6 +148,9 @@ export async function updateWorkflows(workflows: ExtractionWorkflow[]): Promise<
         if (insertedWorkflow) {
           tempToPermIdMap.set(tempWorkflow.id, insertedWorkflow.id);
           console.log(`Mapped ${tempWorkflow.id} -> ${insertedWorkflow.id}`);
+        } else {
+          console.error('❌ No inserted workflow found for index', index);
+          console.error('❌ Expected workflow:', tempWorkflow);
         }
       });
     }
@@ -99,13 +162,29 @@ export async function updateWorkflows(workflows: ExtractionWorkflow[]): Promise<
     
     if (currentIds.length > 0) {
       console.log('Current workflow IDs (including new ones):', currentIds);
-      const { error } = await supabase
+      
+      console.log('🗑️ Cleaning up workflows not in current list...');
+      const { data: deletedWorkflows, error } = await supabase
         .from('extraction_workflows')
         .delete()
-        .filter('id', 'not.in', `(${currentIds.map(id => `"${id}"`).join(',')})`);
+        .filter('id', 'not.in', `(${currentIds.map(id => `"${id}"`).join(',')})`)
+        .select('id, name');
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Cleanup failed:', error);
+        console.error('❌ Cleanup error details:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
+        throw error;
+      }
+      
+      console.log('✅ Cleaned up workflows:', deletedWorkflows);
       console.log('✅ Cleaned up old workflows');
+    } else {
+      console.log('⚠️ No current workflow IDs to preserve, skipping cleanup');
     }
 
     console.log('=== updateWorkflows COMPLETE ===');
@@ -114,6 +193,11 @@ export async function updateWorkflows(workflows: ExtractionWorkflow[]): Promise<
 
   } catch (error) {
     console.error('❌ Error updating workflows:', error);
+    console.error('❌ Error type:', error?.constructor?.name);
+    console.error('❌ Error message:', error?.message);
+    console.error('❌ Error details:', error?.details);
+    console.error('❌ Error code:', error?.code);
+    console.error('❌ Error stack:', error?.stack);
     throw error;
   }
 }

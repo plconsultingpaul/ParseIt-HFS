@@ -198,17 +198,34 @@ export function useWorkflowManagement(
   }, [localWorkflows, workflowSteps]);
 
   const saveWorkflows = useCallback(async (): Promise<void> => {
+    console.log('=== SAVE WORKFLOWS HOOK START ===');
+    console.log('Local workflows to save:', localWorkflows.length);
+    console.log('Workflows details:', localWorkflows.map(w => ({ 
+      id: w.id, 
+      name: w.name, 
+      isTemp: w.id.startsWith('temp-'),
+      isActive: w.isActive,
+      description: w.description 
+    })));
+    
     setIsSaving(true);
     setSaveSuccess(false);
     try {
+      console.log('Calling updateWorkflows service...');
       await updateWorkflows(localWorkflows);
+      console.log('✅ updateWorkflows service completed successfully');
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
+      console.log('✅ Save success state set');
     } catch (error) {
       console.error('Failed to save workflows:', error);
+      console.error('Error type:', error?.constructor?.name);
+      console.error('Error message:', error?.message);
+      console.error('Error stack:', error?.stack);
       throw error;
     } finally {
       setIsSaving(false);
+      console.log('=== SAVE WORKFLOWS HOOK COMPLETE ===');
     }
   }, [localWorkflows]);
 
