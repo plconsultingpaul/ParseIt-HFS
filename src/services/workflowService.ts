@@ -157,34 +157,57 @@ export async function updateWorkflows(workflows: ExtractionWorkflow[]): Promise<
 
     // Delete workflows that are no longer in the list
     const currentIds = workflows.filter(workflow => !workflow.id.startsWith('temp-')).map(workflow => workflow.id);
-    // Add newly inserted permanent IDs to the list of current IDs
-    tempToPermIdMap.forEach(permId => currentIds.push(permId));
+    
+    // Add newly inserted permanent IDs to the list of current IDs to protect them from deletion
+    tempToPermIdMap.forEach(permId => {
+      currentIds.push(permId);
+      console.log('✅ Protected newly inserted workflow from cleanup:', permId);
+    });
+    
+    console.log('🛡️ Final protected workflow IDs:', currentIds);
     
     if (currentIds.length > 0) {
-      console.log('Current workflow IDs (including new ones):', currentIds);
-      
       console.log('🗑️ Cleaning up workflows not in current list...');
-      const { data: deletedWorkflows, error } = await supabase
-        .from('extraction_workflows')
-        .delete()
-        .filter('id', 'not.in', `(${currentIds.map(id => `"${id}"`).join(',')})`)
-        .select('id, name');
-
-      if (error) {
-        console.error('❌ Cleanup failed:', error);
-        console.error('❌ Cleanup error details:', {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code
-        });
-        throw error;
-      }
       
-      console.log('✅ Cleaned up workflows:', deletedWorkflows);
-      console.log('✅ Cleaned up old workflows');
+      // First, check what would be deleted
+      const { data: workflowsToDelete, error: checkError } = await supabase
+        .from('extraction_workflows')
+        .select('id, name')
+        .not('id', 'in', `(${currentIds.map(id => `"${id}"`).join(',')})`);
+      
+      if (checkError) {
+        console.error('❌ Failed to check workflows for deletion:', checkError);
+      } else {
+        console.log('🗑️ Workflows that would be deleted:', workflowsToDelete);
+        
+        // Only proceed with deletion if there are actually workflows to delete
+        if (workflowsToDelete && workflowsToDelete.length > 0) {
+          console.log(`🗑️ Proceeding to delete ${workflowsToDelete.length} workflows`);
+          
+          const { data: deletedWorkflows, error } = await supabase
+            .from('extraction_workflows')
+            .delete()
+            .not('id', 'in', `(${currentIds.map(id => `"${id}"`).join(',')})`)
+            .select('id, name');
+
+          if (error) {
+            console.error('❌ Cleanup failed:', error);
+            console.error('❌ Cleanup error details:', {
+              message: error.message,
+              details: error.details,
+              hint: error.hint,
+              code: error.code
+            });
+            throw error;
+          }
+          
+          console.log('✅ Successfully deleted workflows:', deletedWorkflows);
+        } else {
+          console.log('✅ No workflows need to be deleted');
+        }
+      }
     } else {
-      console.log('⚠️ No current workflow IDs to preserve, skipping cleanup');
+      console.log('⚠️ No current workflow IDs to preserve, skipping cleanup entirely');
     }
 
     console.log('=== updateWorkflows COMPLETE ===');
