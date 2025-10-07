@@ -393,33 +393,6 @@ serve(async (req: Request) => {
           const config = step.config_json || {}
           console.log('🔧 API call config:', JSON.stringify(config, null, 2))
 
-          // Fetch API settings to get base URL
-          console.log('🔍 Fetching API settings for base URL...')
-          let baseApiUrl = ''
-          try {
-            const apiSettingsResponse = await fetch(`${supabaseUrl}/rest/v1/api_settings?order=updated_at.desc&limit=1`, {
-              headers: {
-                'Authorization': `Bearer ${supabaseServiceKey}`,
-                'Content-Type': 'application/json',
-                'apikey': supabaseServiceKey
-              }
-            })
-            
-            if (apiSettingsResponse.ok) {
-              const apiSettings = await apiSettingsResponse.json()
-              if (apiSettings && apiSettings.length > 0) {
-                baseApiUrl = apiSettings[0].path || ''
-                console.log('✅ Base API URL loaded:', baseApiUrl)
-              } else {
-                console.log('⚠️ No API settings found')
-              }
-            } else {
-              console.log('⚠️ Failed to fetch API settings:', apiSettingsResponse.status)
-            }
-          } catch (apiSettingsError) {
-            console.error('❌ Error fetching API settings:', apiSettingsError)
-          }
-
           // Helper function to safely get nested values from an object using dot notation
           const getValueByPath = (obj: any, path: string): any => {
             try {
@@ -487,23 +460,7 @@ serve(async (req: Request) => {
             }
           }
           
-          console.log('🔗 Final URL:', url)
-
-          // Check if URL is relative and prepend base API URL if needed
-          if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
-            if (baseApiUrl) {
-              // Ensure baseApiUrl ends with / and url doesn't start with /
-              const cleanBaseUrl = baseApiUrl.endsWith('/') ? baseApiUrl.slice(0, -1) : baseApiUrl
-              const cleanPath = url.startsWith('/') ? url : `/${url}`
-              url = `${cleanBaseUrl}${cleanPath}`
-              console.log('🔗 Converted relative URL to absolute:', url)
-            } else {
-              console.error('❌ Relative URL provided but no base API URL configured')
-              throw new Error('Relative URL provided but no base API URL configured in API settings')
-            }
-          }
-          
-          console.log('🔗 Final absolute URL:', url)
+          console.log('🔗 Final URL (as configured in workflow):', url)
 
           // Replace placeholders in request body
           let requestBody = config.requestBody || ''
