@@ -436,9 +436,15 @@ serve(async (req: Request) => {
           }
           
           for (const replacement of bodyReplacements) {
-            const replacementValue = String(replacement.value || '')
-            requestBody = requestBody.replace(new RegExp(replacement.placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), replacementValue)
-            console.log(`🔄 Replaced ${replacement.placeholder} with: ${replacementValue}`)
+            const rawValue = String(replacement.value || '')
+            const escapedValue = rawValue
+              .replace(/\\/g, '\\\\')
+              .replace(/"/g, '\\"')
+              .replace(/\n/g, '\\n')
+              .replace(/\r/g, '\\r')
+              .replace(/\t/g, '\\t')
+            requestBody = requestBody.replace(new RegExp(replacement.placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), escapedValue)
+            console.log(`🔄 Replaced ${replacement.placeholder} with: ${rawValue} (escaped: ${escapedValue})`)
           }
           
           if (requestBody.includes('{{extractedData}}')) {
