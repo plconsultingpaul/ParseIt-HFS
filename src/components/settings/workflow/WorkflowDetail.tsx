@@ -338,7 +338,6 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
             </button>
             <button
               onClick={handleSaveSteps}
-              disabled={isSaving}
               disabled={isSaving || isTemporaryWorkflow}
               className="px-3 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2"
             >

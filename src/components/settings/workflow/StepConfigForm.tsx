@@ -367,9 +367,18 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                   <textarea
                     value={url}
                     onChange={(e) => setUrl(e.target.value)}
+                    onClick={(e) => {
+                      console.log('URL textarea clicked');
+                      e.stopPropagation();
+                    }}
+                    onFocus={(e) => {
+                      console.log('URL textarea focused');
+                      e.target.select();
+                    }}
                     rows={2}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 font-mono text-sm dark:bg-gray-700 dark:text-gray-100"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 font-mono text-sm dark:bg-gray-700 dark:text-gray-100 cursor-text"
                     placeholder={apiConfig?.path || "Enter your API endpoint URL"}
+                    spellCheck={false}
                   />
                 </div>
 
