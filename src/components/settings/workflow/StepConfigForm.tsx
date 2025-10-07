@@ -144,7 +144,7 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
       // For new API call steps, use the configured API path
       setUrl(apiConfig.path);
     }
-  }, [step, apiConfig?.password, apiConfig?.path, stepType, url]);
+  }, [step, apiConfig?.password, apiConfig?.path, stepType]);
 
   const addTransformation = () => {
     setTransformations([...transformations, { field_name: '', transformation: '' }]);
@@ -367,25 +367,10 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                   <textarea
                     value={url}
                     onChange={(e) => setUrl(e.target.value)}
-                    onInput={(e) => setUrl((e.target as HTMLTextAreaElement).value)}
-                    onClick={(e) => {
-                      console.log('URL textarea clicked');
-                      e.stopPropagation();
-                      e.preventDefault();
-                      (e.target as HTMLTextAreaElement).focus();
-                    }}
-                    onFocus={(e) => {
-                      console.log('URL textarea focused');
-                    }}
-                    onMouseDown={(e) => {
-                      e.stopPropagation();
-                    }}
                     rows={2}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 font-mono text-sm dark:bg-gray-700 dark:text-gray-100 cursor-text"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 font-mono text-sm dark:bg-gray-700 dark:text-gray-100"
                     placeholder={apiConfig?.path || "Enter your API endpoint URL"}
                     spellCheck={false}
-                    readOnly={false}
-                    disabled={false}
                   />
                 </div>
 
