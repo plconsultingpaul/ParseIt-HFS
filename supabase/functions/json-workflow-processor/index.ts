@@ -398,22 +398,26 @@ serve(async (req: Request) => {
             try {
               const parts = path.split('.')
               let current = obj
-              
+
               for (const part of parts) {
                 if (part.includes('[') && part.includes(']')) {
                   // Handle array notation like orders[0]
                   const arrayName = part.substring(0, part.indexOf('['))
                   const arrayIndex = parseInt(part.substring(part.indexOf('[') + 1, part.indexOf(']')))
                   current = current[arrayName]?.[arrayIndex]
+                } else if (!isNaN(Number(part))) {
+                  // Handle numeric parts as array indices (e.g., orders.0.name)
+                  const arrayIndex = parseInt(part)
+                  current = current?.[arrayIndex]
                 } else {
-                  current = current[part]
+                  current = current?.[part]
                 }
-                
+
                 if (current === undefined || current === null) {
                   return null
                 }
               }
-              
+
               return current
             } catch (error) {
               console.error(`Error getting value by path "${path}":`, error)
@@ -443,11 +447,13 @@ serve(async (req: Request) => {
             console.log(`🔍 Path "${path}" resolved to:`, value)
           }
           
-          // Apply all replacements
+          // Apply all replacements with URL encoding
           for (const replacement of replacements) {
-            const replacementValue = String(replacement.value || '')
+            const rawValue = String(replacement.value || '')
+            // URL encode the value to handle special characters
+            const replacementValue = encodeURIComponent(rawValue)
             url = url.replace(new RegExp(replacement.placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), replacementValue)
-            console.log(`🔄 Replaced ${replacement.placeholder} with: ${replacementValue}`)
+            console.log(`🔄 Replaced ${replacement.placeholder} with: ${rawValue} (encoded: ${replacementValue})`)
           }
           
           // Also handle simple top-level replacements for backward compatibility
