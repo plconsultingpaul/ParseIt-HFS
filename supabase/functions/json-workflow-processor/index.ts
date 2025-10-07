@@ -396,9 +396,8 @@ serve(async (req: Request) => {
           
           for (const replacement of replacements) {
             const rawValue = String(replacement.value || '')
-            const replacementValue = encodeURIComponent(rawValue)
-            url = url.replace(new RegExp(replacement.placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), replacementValue)
-            console.log(`🔄 Replaced ${replacement.placeholder} with: ${rawValue} (encoded: ${replacementValue})`)
+            url = url.replace(new RegExp(replacement.placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), rawValue)
+            console.log(`🔄 Replaced ${replacement.placeholder} with: ${rawValue}`)
           }
           
           for (const [key, value] of Object.entries(contextData)) {
