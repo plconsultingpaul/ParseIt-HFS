@@ -396,7 +396,7 @@ serve(async (req: Request) => {
           
           for (const replacement of replacements) {
             const rawValue = String(replacement.value || '')
-            const encodedValue = encodeURIComponent(rawValue)
+            const encodedValue = rawValue.replace(/ /g, '%20')
             url = url.replace(new RegExp(replacement.placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), encodedValue)
             console.log(`🔄 Replaced ${replacement.placeholder} with: ${rawValue} (encoded: ${encodedValue})`)
           }
@@ -405,7 +405,7 @@ serve(async (req: Request) => {
             const placeholder = `{{${key}}}`
             if (url.includes(placeholder) && !key.includes('.')) {
               const replacementValue = String(value || '')
-              const encodedValue = encodeURIComponent(replacementValue)
+              const encodedValue = replacementValue.replace(/ /g, '%20')
               url = url.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), encodedValue)
               console.log(`🔄 Replaced simple ${placeholder} with: ${replacementValue} (encoded: ${encodedValue})`)
             }
