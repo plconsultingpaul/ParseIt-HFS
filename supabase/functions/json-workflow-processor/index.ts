@@ -396,18 +396,25 @@ serve(async (req: Request) => {
           
           for (const replacement of replacements) {
             const rawValue = String(replacement.value || '')
-            const encodedValue = rawValue.replace(/ /g, '%20')
-            url = url.replace(new RegExp(replacement.placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), encodedValue)
-            console.log(`🔄 Replaced ${replacement.placeholder} with: ${rawValue} (encoded: ${encodedValue})`)
+
+            //Don't encode spaces - they should remain as-is in the URL
+            const encodedValue = rawValue
+
+            const placeholderEscaped = replacement.placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+            url = url.replace(new RegExp(placeholderEscaped, 'g'), encodedValue)
+            console.log(`🔄 Replaced ${replacement.placeholder} with: ${rawValue}`)
           }
 
           for (const [key, value] of Object.entries(contextData)) {
             const placeholder = `{{${key}}}`
             if (url.includes(placeholder) && !key.includes('.')) {
               const replacementValue = String(value || '')
-              const encodedValue = replacementValue.replace(/ /g, '%20')
+
+              // Don't encode spaces - they should remain as-is in the URL
+              const encodedValue = replacementValue
+
               url = url.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), encodedValue)
-              console.log(`🔄 Replaced simple ${placeholder} with: ${replacementValue} (encoded: ${encodedValue})`)
+              console.log(`🔄 Replaced simple ${placeholder} with: ${replacementValue}`)
             }
           }
           
