@@ -396,16 +396,18 @@ serve(async (req: Request) => {
           
           for (const replacement of replacements) {
             const rawValue = String(replacement.value || '')
-            url = url.replace(new RegExp(replacement.placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), rawValue)
-            console.log(`🔄 Replaced ${replacement.placeholder} with: ${rawValue}`)
+            const encodedValue = encodeURIComponent(rawValue)
+            url = url.replace(new RegExp(replacement.placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), encodedValue)
+            console.log(`🔄 Replaced ${replacement.placeholder} with: ${rawValue} (encoded: ${encodedValue})`)
           }
-          
+
           for (const [key, value] of Object.entries(contextData)) {
             const placeholder = `{{${key}}}`
             if (url.includes(placeholder) && !key.includes('.')) {
               const replacementValue = String(value || '')
-              url = url.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), replacementValue)
-              console.log(`🔄 Replaced simple ${placeholder} with: ${replacementValue}`)
+              const encodedValue = encodeURIComponent(replacementValue)
+              url = url.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), encodedValue)
+              console.log(`🔄 Replaced simple ${placeholder} with: ${replacementValue} (encoded: ${encodedValue})`)
             }
           }
           
