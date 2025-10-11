@@ -326,13 +326,14 @@ serve(async (req: Request) => {
       console.log('🔧 Step type:', step.step_type)
 
       try {
+        const { pdfBase64: _, ...contextDataForLog } = contextData
         await fetch(`${supabaseUrl}/rest/v1/workflow_execution_logs?id=eq.${workflowExecutionLogId}`, {
           method: 'PATCH',
           headers: { 'Authorization': `Bearer ${supabaseServiceKey}`, 'Content-Type': 'application/json', 'apikey': supabaseServiceKey },
           body: JSON.stringify({
             current_step_id: step.id,
             current_step_name: step.step_name,
-            context_data: contextData,
+            context_data: contextDataForLog,
             updated_at: new Date().toISOString()
           })
         })
@@ -490,6 +491,8 @@ serve(async (req: Request) => {
           console.log('🔍 Final Request Body:', requestBody)
           console.log('🔍 Request Body Length:', requestBody?.length || 0)
           console.log('🔍 Context Data Keys:', Object.keys(contextData))
+          console.log('🔍 pdfBase64 present:', !!contextData.pdfBase64)
+          console.log('🔍 pdfBase64 length:', contextData.pdfBase64?.length || 0)
           console.log('🔍 === END DETAILED DEBUG ===')
           console.log('📡 Making API call...')
           
@@ -614,7 +617,8 @@ serve(async (req: Request) => {
               
               console.log('📊 Updated context data structure:')
               console.log('📊 Context data keys after update:', Object.keys(contextData))
-              console.log('📊 Full context data:', JSON.stringify(contextData, null, 2))
+              const { pdfBase64: _, ...contextDataForLog } = contextData
+              console.log('📊 Full context data:', JSON.stringify(contextDataForLog, null, 2))
               console.log('✅ Updated context data with API response')
             } catch (extractError) {
               console.error('❌ Failed to extract data from API response:', extractError)
@@ -632,10 +636,11 @@ serve(async (req: Request) => {
         
         if (workflowExecutionLogId) {
           try {
+            const { pdfBase64: _, ...contextDataForLog } = contextData
             await fetch(`${supabaseUrl}/rest/v1/workflow_execution_logs?id=eq.${workflowExecutionLogId}`, {
               method: 'PATCH',
               headers: { 'Authorization': `Bearer ${supabaseServiceKey}`, 'Content-Type': 'application/json', 'apikey': supabaseServiceKey },
-              body: JSON.stringify({ status: 'failed', error_message: stepError.message, context_data: contextData, updated_at: new Date().toISOString() })
+              body: JSON.stringify({ status: 'failed', error_message: stepError.message, context_data: contextDataForLog, updated_at: new Date().toISOString() })
             })
           } catch (updateError) {
             console.error('❌ Failed to update workflow log:', updateError)
@@ -652,10 +657,11 @@ serve(async (req: Request) => {
     console.log('✅ === WORKFLOW EXECUTION COMPLETED ===')
     if (workflowExecutionLogId) {
       try {
+        const { pdfBase64: _, ...contextDataForLog } = contextData
         await fetch(`${supabaseUrl}/rest/v1/workflow_execution_logs?id=eq.${workflowExecutionLogId}`, {
           method: 'PATCH',
           headers: { 'Authorization': `Bearer ${supabaseServiceKey}`, 'Content-Type': 'application/json', 'apikey': supabaseServiceKey },
-          body: JSON.stringify({ status: 'completed', context_data: contextData, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+          body: JSON.stringify({ status: 'completed', context_data: contextDataForLog, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
         })
       } catch (updateError) {
         console.error('❌ Failed to update workflow completion:', updateError)
