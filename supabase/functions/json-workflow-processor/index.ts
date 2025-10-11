@@ -396,25 +396,21 @@ serve(async (req: Request) => {
           
           for (const replacement of replacements) {
             const rawValue = String(replacement.value || '')
-
-            //Don't encode spaces - they should remain as-is in the URL
-            const encodedValue = rawValue
+            const encodedValue = encodeURIComponent(rawValue)
 
             const placeholderEscaped = replacement.placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
             url = url.replace(new RegExp(placeholderEscaped, 'g'), encodedValue)
-            console.log(`🔄 Replaced ${replacement.placeholder} with: ${rawValue}`)
+            console.log(`🔄 Replaced ${replacement.placeholder} with: ${rawValue} (encoded: ${encodedValue})`)
           }
 
           for (const [key, value] of Object.entries(contextData)) {
             const placeholder = `{{${key}}}`
             if (url.includes(placeholder) && !key.includes('.')) {
               const replacementValue = String(value || '')
-
-              // Don't encode spaces - they should remain as-is in the URL
-              const encodedValue = replacementValue
+              const encodedValue = encodeURIComponent(replacementValue)
 
               url = url.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), encodedValue)
-              console.log(`🔄 Replaced simple ${placeholder} with: ${replacementValue}`)
+              console.log(`🔄 Replaced simple ${placeholder} with: ${replacementValue} (encoded: ${encodedValue})`)
             }
           }
           
