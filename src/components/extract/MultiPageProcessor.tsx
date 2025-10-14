@@ -16,6 +16,7 @@ interface MultiPageProcessorProps {
   apiConfig: ApiConfig;
   user: User | null;
   workflowSteps: any[];
+  onRemovePage: (pageIndex: number) => void;
 }
 
 export default function MultiPageProcessor({
@@ -26,7 +27,8 @@ export default function MultiPageProcessor({
   settingsConfig,
   apiConfig,
   user,
-  workflowSteps
+  workflowSteps,
+  onRemovePage
 }: MultiPageProcessorProps) {
   const [isExtractingAll, setIsExtractingAll] = useState(false);
   const [currentProcessingPage, setCurrentProcessingPage] = useState<number | null>(null);
@@ -486,6 +488,7 @@ export default function MultiPageProcessor({
             currentExtractionType={currentExtractionType}
             onPreview={handlePreviewPage}
             onProcess={handleProcessPage}
+            onRemove={onRemovePage}
           />
         ))}
       </div>

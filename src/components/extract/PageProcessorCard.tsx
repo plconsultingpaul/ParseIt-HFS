@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
-import { FileText, Send, Loader2, Copy, CheckCircle, XCircle, Eye, Database, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { FileText, Send, Loader2, Copy, CheckCircle, XCircle, Eye, Database, AlertCircle, Trash2, FileImage, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import * as pdfjsLib from 'pdfjs-dist';
 import type { PageProcessingState, ApiError, WorkflowStep, ExtractionType, WorkflowExecutionLog } from '../../types';
+import { fetchWorkflowStepLogsByExecutionId, type WorkflowStepLog } from '../../services/logService';
 import Modal from '../common/Modal';
 
 interface PageProcessorCardProps {
@@ -13,6 +15,7 @@ interface PageProcessorCardProps {
   currentExtractionType: ExtractionType;
   onPreview: (pageIndex: number) => void;
   onProcess: (pageIndex: number) => void;
+  onRemove: (pageIndex: number) => void;
 }
 
 export default function PageProcessorCard({
@@ -24,9 +27,33 @@ export default function PageProcessorCard({
   workflowSteps,
   currentExtractionType,
   onPreview,
-  onProcess
+  onProcess,
+  onRemove
 }: PageProcessorCardProps) {
   const dataLabel = isJsonType ? 'JSON' : 'XML';
+
+  // State to store fetched workflow step logs
+  const [workflowStepLogs, setWorkflowStepLogs] = useState<WorkflowStepLog[]>([]);
+  const [isLoadingStepLogs, setIsLoadingStepLogs] = useState(false);
+
+  // Fetch workflow step logs when workflowExecutionLog becomes available
+  useEffect(() => {
+    const loadStepLogs = async () => {
+      if (pageState.workflowExecutionLog?.id && !isLoadingStepLogs) {
+        setIsLoadingStepLogs(true);
+        try {
+          const logs = await fetchWorkflowStepLogsByExecutionId(pageState.workflowExecutionLog.id);
+          setWorkflowStepLogs(logs);
+        } catch (error) {
+          console.error('Failed to load workflow step logs:', error);
+        } finally {
+          setIsLoadingStepLogs(false);
+        }
+      }
+    };
+
+    loadStepLogs();
+  }, [pageState.workflowExecutionLog?.id]);
 
   // Extract billNumber from API response for quick display
   const getBillNumber = (): string | null => {
@@ -155,41 +182,11 @@ export default function PageProcessorCard({
   const [showModal, setShowModal] = useState(false);
   const [modalTitle, setModalTitle] = useState('');
   const [modalContent, setModalContent] = useState<React.ReactNode>(null);
-  const [executedStepIds, setExecutedStepIds] = useState<Set<string>>(new Set());
-
-  // Fetch executed step IDs when workflow execution log is available
-  React.useEffect(() => {
-    const fetchExecutedSteps = async () => {
-      if (!pageState.workflowExecutionLog?.extractionLogId) return;
-      
-      try {
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-        const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-        
-        const response = await fetch(`${supabaseUrl}/rest/v1/workflow_execution_logs?extraction_log_id=eq.${pageState.workflowExecutionLog.extractionLogId}`, {
-          headers: {
-            'Authorization': `Bearer ${supabaseAnonKey}`,
-            'Content-Type': 'application/json',
-            'apikey': supabaseAnonKey
-          }
-        });
-        
-        if (response.ok) {
-          const logs = await response.json();
-          const stepIds = new Set(
-            logs
-              .filter((log: any) => log.status === 'completed' && log.current_step_id)
-              .map((log: any) => log.current_step_id)
-          );
-          setExecutedStepIds(stepIds);
-        }
-      } catch (error) {
-        console.error('Error fetching executed steps:', error);
-      }
-    };
-    
-    fetchExecutedSteps();
-  }, [pageState.workflowExecutionLog?.extractionLogId]);
+  const [isLoadingPdfPreview, setIsLoadingPdfPreview] = useState(false);
+  const [pdfZoomLevel, setPdfZoomLevel] = useState(1.5);
+  const [cachedPdfPage, setCachedPdfPage] = useState<any>(null);
+  const [pdfPreviewImage, setPdfPreviewImage] = useState<string>('');
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
 
   const handlePreviewData = () => onPreview(pageIndex);
   const handleExtractAndSend = () => onProcess(pageIndex);
@@ -344,6 +341,166 @@ export default function PageProcessorCard({
     setShowModal(false);
     setModalTitle('');
     setModalContent(null);
+    setCachedPdfPage(null);
+    setPdfZoomLevel(1.5);
+    setPdfPreviewImage('');
+    setShowPdfPreview(false);
+  };
+
+  const handleZoomChange = async (newZoom: number) => {
+    if (!cachedPdfPage) return;
+
+    const minZoom = 0.5;
+    const maxZoom = 4.0;
+    const clampedZoom = Math.max(minZoom, Math.min(maxZoom, newZoom));
+
+    setPdfZoomLevel(clampedZoom);
+    setIsLoadingPdfPreview(true);
+
+    try {
+      const imageDataUrl = await renderPdfAtScale(cachedPdfPage, clampedZoom);
+      setPdfPreviewImage(imageDataUrl);
+    } catch (error) {
+      console.error('Error re-rendering PDF at new zoom:', error);
+    } finally {
+      setIsLoadingPdfPreview(false);
+    }
+  };
+
+  const renderPdfPreviewContent = () => (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center space-x-3">
+          <FileImage className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+          <h4 className="text-lg font-semibold text-purple-800 dark:text-purple-300">PDF Page Preview</h4>
+        </div>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => handleZoomChange(pdfZoomLevel - 0.25)}
+            disabled={pdfZoomLevel <= 0.5 || isLoadingPdfPreview}
+            className="px-3 py-2 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-300 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2 disabled:cursor-not-allowed"
+            title="Zoom out"
+          >
+            <ZoomOut className="h-4 w-4" />
+          </button>
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300 min-w-[60px] text-center">
+            {Math.round(pdfZoomLevel * 100)}%
+          </span>
+          <button
+            onClick={() => handleZoomChange(pdfZoomLevel + 0.25)}
+            disabled={pdfZoomLevel >= 4.0 || isLoadingPdfPreview}
+            className="px-3 py-2 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-300 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2 disabled:cursor-not-allowed"
+            title="Zoom in"
+          >
+            <ZoomIn className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => handleZoomChange(1.5)}
+            disabled={isLoadingPdfPreview}
+            className="px-3 py-2 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-300 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2 disabled:cursor-not-allowed"
+            title="Reset zoom"
+          >
+            <Maximize2 className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+      <div className="bg-gray-100 dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-600 overflow-auto" style={{ maxHeight: '75vh' }}>
+        <div className="flex justify-center">
+          {isLoadingPdfPreview ? (
+            <div className="flex items-center justify-center p-8">
+              <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+            </div>
+          ) : (
+            <img
+              src={pdfPreviewImage}
+              alt={`PDF Page ${pageIndex + 1}`}
+              className="rounded shadow-lg"
+              style={{ width: 'auto', height: 'auto' }}
+            />
+          )}
+        </div>
+      </div>
+      <div className="flex justify-between items-center">
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          File: {pageFile.name} • Size: {(pageFile.size / 1024).toFixed(1)} KB
+        </p>
+        <a
+          href={pdfPreviewImage}
+          download={`page_${pageIndex + 1}_preview.png`}
+          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 dark:bg-purple-700 dark:hover:bg-purple-600 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2"
+        >
+          <Copy className="h-4 w-4" />
+          <span>Download Image</span>
+        </a>
+      </div>
+    </div>
+  );
+
+  const renderPdfAtScale = async (page: any, scale: number) => {
+    const viewport = page.getViewport({ scale });
+
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+
+    if (!context) {
+      throw new Error('Could not get canvas context');
+    }
+
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+
+    await page.render({
+      canvasContext: context,
+      viewport: viewport
+    }).promise;
+
+    return canvas.toDataURL('image/png');
+  };
+
+  const handleShowPdfPreview = async () => {
+    setIsLoadingPdfPreview(true);
+
+    try {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+
+      const arrayBuffer = await pageFile.arrayBuffer();
+      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+      const pdf = await loadingTask.promise;
+      const page = await pdf.getPage(1);
+
+      setCachedPdfPage(page);
+      setPdfZoomLevel(1.5);
+
+      const imageDataUrl = await renderPdfAtScale(page, 1.5);
+      setPdfPreviewImage(imageDataUrl);
+
+      setModalTitle(`Page ${pageIndex + 1} - PDF Preview`);
+      setShowPdfPreview(true);
+      setShowModal(true);
+
+    } catch (error) {
+      console.error('Error rendering PDF preview:', error);
+      setModalTitle(`Page ${pageIndex + 1} - Preview Error`);
+      setModalContent(
+        <div className="space-y-4">
+          <div className="flex items-center space-x-3 mb-4">
+            <AlertCircle className="h-8 w-8 text-red-600 dark:text-red-400" />
+            <div>
+              <h4 className="text-lg font-semibold text-red-800 dark:text-red-300">Preview Failed</h4>
+              <p className="text-red-700 dark:text-red-400">Could not render PDF preview</p>
+            </div>
+          </div>
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-4">
+            <p className="text-red-700 dark:text-red-400 text-sm">
+              {error instanceof Error ? error.message : 'Unknown error occurred'}
+            </p>
+          </div>
+        </div>
+      );
+      setShowModal(true);
+    } finally {
+      setIsLoadingPdfPreview(false);
+    }
   };
 
   // Get workflow steps for the current extraction type
@@ -352,21 +509,51 @@ export default function PageProcessorCard({
     .sort((a, b) => a.stepOrder - b.stepOrder);
 
   const getStepStatus = (step: WorkflowStep) => {
-    // Check if this step was actually executed by looking at the executed step IDs
-    if (executedStepIds.has(step.id)) {
+    if (!pageState.workflowExecutionLog) return 'pending';
+
+    // First check if we have actual step logs for this step
+    const stepLog = workflowStepLogs.find(log => log.stepId === step.id);
+    if (stepLog) {
+      // Use the actual logged status
+      if (stepLog.status === 'completed') return 'completed';
+      if (stepLog.status === 'failed') return 'failed';
+      if (stepLog.status === 'running') return 'running';
+      if (stepLog.status === 'skipped') return 'skipped';
+    }
+
+    // Fallback to old logic if step logs aren't loaded yet
+    const currentStepId = pageState.workflowExecutionLog.currentStepId;
+    const isCurrentStep = step.id === currentStepId;
+    const status = pageState.workflowExecutionLog.status;
+
+    // If workflow is completed but we don't have a step log, check if step was executed
+    if (status === 'completed') {
+      // If there's no step log for this step when workflow is completed, it was skipped
+      if (workflowStepLogs.length > 0) {
+        return 'skipped';
+      }
+      // If step logs haven't loaded yet, assume completed (old behavior)
       return 'completed';
     }
-    
-    // Check if this step is currently running
-    if (pageState.workflowExecutionLog?.currentStepId === step.id && pageState.workflowExecutionLog?.status === 'running') {
-      return 'running';
+
+    // If this is the current step
+    if (isCurrentStep) {
+      if (status === 'failed') {
+        return 'failed';
+      }
+      if (status === 'running') {
+        return 'running';
+      }
     }
-    
-    // Check if this step failed
-    if (pageState.workflowExecutionLog?.currentStepId === step.id && pageState.workflowExecutionLog?.status === 'failed') {
-      return 'failed';
+
+    // If there's a current step, check if this step was already passed
+    if (currentStepId) {
+      const currentStep = workflowSteps.find(s => s.id === currentStepId);
+      if (currentStep && currentStep.stepOrder > step.stepOrder) {
+        return 'completed';
+      }
     }
-    
+
     return 'pending';
   };
 
@@ -378,6 +565,8 @@ export default function PageProcessorCard({
         return 'bg-blue-500 text-white animate-pulse';
       case 'failed':
         return 'bg-red-500 text-white';
+      case 'skipped':
+        return 'bg-gray-400 dark:bg-gray-600 text-gray-100';
       default:
         return 'bg-gray-300 text-gray-600';
     }
@@ -391,6 +580,8 @@ export default function PageProcessorCard({
         return '⟳';
       case 'failed':
         return '✗';
+      case 'skipped':
+        return '⊘';
       default:
         return stepOrder.toString();
     }
@@ -419,9 +610,36 @@ export default function PageProcessorCard({
                 </p>
               )}
             </div>
+            <button
+              onClick={() => onRemove(pageIndex)}
+              disabled={pageState.isProcessing || pageState.isExtracting || isExtractingAll}
+              className="ml-2 p-2 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20 rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Remove this page"
+            >
+              <Trash2 className="h-5 w-5" />
+            </button>
           </div>
           
           <div className="flex items-center space-x-2">
+            <button
+              onClick={handleShowPdfPreview}
+              disabled={isLoadingPdfPreview || isExtractingAll}
+              className="px-4 py-2 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-300 text-white font-medium rounded-lg transition-all duration-200 flex items-center space-x-2 disabled:cursor-not-allowed"
+              title="View PDF page"
+            >
+              {isLoadingPdfPreview ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Loading...</span>
+                </>
+              ) : (
+                <>
+                  <FileImage className="h-4 w-4" />
+                  <span>View PDF</span>
+                </>
+              )}
+            </button>
+
             <button
               onClick={handlePreviewData}
               disabled={pageState.isExtracting || isExtractingAll}
@@ -439,7 +657,7 @@ export default function PageProcessorCard({
                 </>
               )}
             </button>
-            
+
             <button
               onClick={handleExtractAndSend}
               disabled={pageState.isProcessing || isExtractingAll}
@@ -572,7 +790,7 @@ export default function PageProcessorCard({
         onClose={handleCloseModal}
         title={modalTitle}
       >
-        {modalContent}
+        {showPdfPreview ? renderPdfPreviewContent() : modalContent}
       </Modal>
     </>
   );
