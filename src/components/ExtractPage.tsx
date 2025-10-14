@@ -77,6 +77,10 @@ export default function ExtractPage({
     setPdfProcessorKey(prev => prev + 1);
   };
 
+  const handleRemovePage = (pageIndex: number) => {
+    setPdfPages(prev => prev.filter((_, index) => index !== pageIndex));
+  };
+
   const handleAutoDetectionComplete = (
     file: File, 
     pages: File[], 
@@ -248,6 +252,7 @@ export default function ExtractPage({
           apiConfig={apiConfig}
           user={user}
           workflowSteps={workflowSteps}
+          onRemovePage={handleRemovePage}
         />
       )}
 
