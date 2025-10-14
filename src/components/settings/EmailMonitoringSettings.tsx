@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Save, Mail, TestTube, Play, Pause, Cloud, Globe } from 'lucide-react';
+import { Save, Mail, TestTube, Play, Pause, Cloud, Globe, Send } from 'lucide-react';
 import type { EmailMonitoringConfig } from '../../types';
 
 interface EmailMonitoringSettingsProps {
@@ -7,9 +7,9 @@ interface EmailMonitoringSettingsProps {
   onUpdateEmailConfig: (config: EmailMonitoringConfig) => Promise<void>;
 }
 
-export default function EmailMonitoringSettings({ 
-  emailConfig, 
-  onUpdateEmailConfig 
+export default function EmailMonitoringSettings({
+  emailConfig,
+  onUpdateEmailConfig
 }: EmailMonitoringSettingsProps) {
   const [localConfig, setLocalConfig] = useState<EmailMonitoringConfig>(emailConfig);
   const [isSaving, setIsSaving] = useState(false);
@@ -18,6 +18,14 @@ export default function EmailMonitoringSettings({
   const [isTesting, setIsTesting] = useState(false);
   const [gmailTestResult, setGmailTestResult] = useState<{ success: boolean; message: string; emailCount?: number } | null>(null);
   const [isTestingGmail, setIsTestingGmail] = useState(false);
+  const [showSendTestModal, setShowSendTestModal] = useState(false);
+  const [testEmailData, setTestEmailData] = useState({
+    testToEmail: '',
+    testSubject: 'Test Email from ParseIt',
+    testBody: 'This is a test email to verify your email sending configuration is working correctly.'
+  });
+  const [sendTestResult, setSendTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [isSendingTest, setIsSendingTest] = useState(false);
 
   const updateConfig = (field: keyof EmailMonitoringConfig, value: string | number | boolean) => {
     setLocalConfig(prev => ({ ...prev, [field]: value }));
@@ -136,7 +144,7 @@ export default function EmailMonitoringSettings({
     try {
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      
+
       const response = await fetch(`${supabaseUrl}/functions/v1/email-monitor`, {
         method: 'POST',
         headers: {
@@ -146,7 +154,7 @@ export default function EmailMonitoringSettings({
       });
 
       const result = await response.json();
-      
+
       if (response.ok) {
         alert(`Email monitoring completed successfully!\n\nEmails checked: ${result.emailsChecked || 0}\nEmails processed: ${result.emailsProcessed || 0}\n\nCheck the "Polling Logs" tab to see detailed activity.`);
       } else {
@@ -154,6 +162,75 @@ export default function EmailMonitoringSettings({
       }
     } catch (error) {
       alert('Failed to run email monitoring. Please try again.');
+    }
+  };
+
+  const handleSendTestEmail = async () => {
+    if (!testEmailData.testToEmail) {
+      alert('Please enter a recipient email address');
+      return;
+    }
+
+    if (!localConfig.defaultSendFromEmail) {
+      alert('Please configure the "Default Send From Email" field before sending a test email');
+      return;
+    }
+
+    setIsSendingTest(true);
+    setSendTestResult(null);
+
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+      const payload = {
+        provider: localConfig.provider,
+        testToEmail: testEmailData.testToEmail,
+        testSubject: testEmailData.testSubject,
+        testBody: testEmailData.testBody,
+        defaultSendFromEmail: localConfig.defaultSendFromEmail,
+        ...(localConfig.provider === 'office365'
+          ? {
+              tenantId: localConfig.tenantId,
+              clientId: localConfig.clientId,
+              clientSecret: localConfig.clientSecret,
+            }
+          : {
+              gmailClientId: localConfig.gmailClientId,
+              gmailClientSecret: localConfig.gmailClientSecret,
+              gmailRefreshToken: localConfig.gmailRefreshToken,
+            }),
+      };
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/test-email-send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseAnonKey}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        setSendTestResult({
+          success: true,
+          message: result.message || 'Test email sent successfully!',
+        });
+      } else {
+        setSendTestResult({
+          success: false,
+          message: result.details || result.error || 'Failed to send test email',
+        });
+      }
+    } catch (error) {
+      setSendTestResult({
+        success: false,
+        message: 'Failed to send test email. Please check your settings.',
+      });
+    } finally {
+      setIsSendingTest(false);
     }
   };
 
@@ -186,8 +263,15 @@ export default function EmailMonitoringSettings({
             </button>
           )}
           <button
+            onClick={() => setShowSendTestModal(true)}
+            className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
+          >
+            <Send className="h-4 w-4" />
+            <span>Send Test Email</span>
+          </button>
+          <button
             onClick={handleRunMonitoring}
-            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
           >
             <Play className="h-4 w-4" />
             <span>Run Now</span>
@@ -481,6 +565,21 @@ export default function EmailMonitoringSettings({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Default Send From Email
+            </label>
+            <input
+              type="email"
+              value={localConfig.defaultSendFromEmail || ''}
+              onChange={(e) => updateConfig('defaultSendFromEmail', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              placeholder="sender@company.com"
+            />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Email address to use when sending outbound emails
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Polling Interval (minutes)
             </label>
             <input
@@ -492,6 +591,9 @@ export default function EmailMonitoringSettings({
               max="60"
             />
           </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 mb-4">
           <div className="flex items-end">
             <div className="text-sm text-gray-500 dark:text-gray-400">
               {localConfig.lastCheck && (
@@ -508,9 +610,10 @@ export default function EmailMonitoringSettings({
           <h4 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">Office 365 Setup Instructions</h4>
           <ol className="text-sm text-blue-700 dark:text-blue-400 space-y-1 list-decimal list-inside">
             <li>Register an application in Azure AD</li>
-            <li>Grant Mail.Read permissions for the target mailbox</li>
+            <li>Grant Mail.Read and Mail.Send permissions for the target mailbox</li>
             <li>Create a client secret</li>
             <li>Copy the Tenant ID, Client ID, and Client Secret here</li>
+            <li>Configure the Default Send From Email address</li>
             <li>Test the connection before enabling monitoring</li>
           </ol>
         </div>
@@ -520,15 +623,144 @@ export default function EmailMonitoringSettings({
           <ol className="text-sm text-green-700 dark:text-green-400 space-y-1 list-decimal list-inside">
             <li>Create a project in <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer" className="underline hover:text-green-900">Google Cloud Console</a></li>
             <li>Enable the Gmail API for your project</li>
-            <li>Configure OAuth consent screen with gmail.readonly scope</li>
+            <li>Configure OAuth consent screen with gmail.readonly and gmail.send scopes</li>
             <li>Create OAuth 2.0 credentials (Desktop or Web application)</li>
             <li>Use <a href="https://developers.google.com/oauthplayground/" target="_blank" rel="noopener noreferrer" className="underline hover:text-green-900">OAuth 2.0 Playground</a> to get refresh token</li>
+            <li>Configure the Default Send From Email address</li>
             <li>Enter your credentials here and test the connection</li>
           </ol>
           <div className="mt-3 p-3 bg-green-100 dark:bg-green-800/50 rounded-lg">
             <p className="text-xs text-green-800 dark:text-green-300">
-              <strong>Required OAuth Scope:</strong> <code className="bg-green-200 dark:bg-green-700 px-1 rounded">https://www.googleapis.com/auth/gmail.readonly</code>
+              <strong>Required OAuth Scopes:</strong> <code className="bg-green-200 dark:bg-green-700 px-1 rounded">https://www.googleapis.com/auth/gmail.readonly</code> and <code className="bg-green-200 dark:bg-green-700 px-1 rounded">https://www.googleapis.com/auth/gmail.send</code>
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Send Test Email Modal */}
+      {showSendTestModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center space-x-3">
+                  <div className="bg-orange-100 dark:bg-orange-900/50 p-2 rounded-lg">
+                    <Send className="h-6 w-6 text-orange-600 dark:text-orange-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">Send Test Email</h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Test your email sending configuration</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowSendTestModal(false);
+                    setSendTestResult(null);
+                  }}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                >
+                  <span className="text-2xl">&times;</span>
+                </button>
+              </div>
+
+              {sendTestResult && (
+                <div className={`mb-6 border rounded-lg p-4 ${
+                  sendTestResult.success
+                    ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700'
+                    : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700'
+                }`}>
+                  <div className="flex items-center space-x-2">
+                    <div className={`w-4 h-4 rounded-full ${
+                      sendTestResult.success ? 'bg-green-500' : 'bg-red-500'
+                    }`}></div>
+                    <span className={`font-semibold ${
+                      sendTestResult.success ? 'text-green-800 dark:text-green-300' : 'text-red-800 dark:text-red-300'
+                    }`}>
+                      {sendTestResult.success ? 'Email Sent Successfully' : 'Send Failed'}
+                    </span>
+                  </div>
+                  <p className={`text-sm mt-1 ${
+                    sendTestResult.success ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'
+                  }`}>
+                    {sendTestResult.message}
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-4 mb-6">
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
+                  <p className="text-sm text-blue-700 dark:text-blue-300">
+                    <strong>Sender:</strong> {localConfig.defaultSendFromEmail || 'Not configured'}
+                  </p>
+                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                    Configure the "Default Send From Email" field above to change the sender address
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Recipient Email *
+                  </label>
+                  <input
+                    type="email"
+                    value={testEmailData.testToEmail}
+                    onChange={(e) => setTestEmailData({ ...testEmailData, testToEmail: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    placeholder="recipient@example.com"
+                    disabled={isSendingTest}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Subject
+                  </label>
+                  <input
+                    type="text"
+                    value={testEmailData.testSubject}
+                    onChange={(e) => setTestEmailData({ ...testEmailData, testSubject: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    placeholder="Test Email Subject"
+                    disabled={isSendingTest}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Message Body
+                  </label>
+                  <textarea
+                    value={testEmailData.testBody}
+                    onChange={(e) => setTestEmailData({ ...testEmailData, testBody: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    rows={6}
+                    placeholder="Enter your test email message..."
+                    disabled={isSendingTest}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end space-x-3">
+                <button
+                  onClick={() => {
+                    setShowSendTestModal(false);
+                    setSendTestResult(null);
+                  }}
+                  disabled={isSendingTest}
+                  className="px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-semibold rounded-lg transition-colors duration-200 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSendTestEmail}
+                  disabled={isSendingTest || !testEmailData.testToEmail}
+                  className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
+                >
+                  <Send className="h-4 w-4" />
+                  <span>{isSendingTest ? 'Sending...' : 'Send Test Email'}</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
