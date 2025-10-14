@@ -90,19 +90,6 @@ export default function WorkflowSettings({ apiConfig, refreshData }: WorkflowSet
     setSelectedWorkflowId(newWorkflowId);
   };
 
-  const handleSaveWorkflowsAndSteps = async () => {
-    try {
-      // First save all workflows
-      await saveWorkflows();
-      
-      // Then trigger a data refresh to get the latest workflow and step data
-      await refreshData();
-    } catch (error) {
-      console.error('Failed to save workflows and steps:', error);
-      throw error;
-    }
-  };
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -128,7 +115,7 @@ export default function WorkflowSettings({ apiConfig, refreshData }: WorkflowSet
             <span>Add Workflow</span>
           </button>
           <button
-            onClick={handleSaveWorkflowsAndSteps}
+            onClick={saveWorkflows}
             disabled={isSaving}
             className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
           >

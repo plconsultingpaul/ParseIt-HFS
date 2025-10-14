@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { GitBranch, CheckCircle, XCircle, Clock, AlertCircle, RefreshCw, Eye, Calendar, Timer, Play, X, Copy, Database, Check } from 'lucide-react';
-import { fetchWorkflowExecutionLogById } from '../../services/logService';
+import { GitBranch, CheckCircle, XCircle, Clock, AlertCircle, RefreshCw, Eye, Calendar, Timer, Play, X, Copy, Database, Check, ChevronDown, ChevronRight } from 'lucide-react';
+import { fetchWorkflowExecutionLogById, fetchWorkflowStepLogsByExecutionId, type WorkflowStepLog } from '../../services/logService';
 import type { WorkflowExecutionLog, ExtractionWorkflow, WorkflowStep } from '../../types';
 
 interface WorkflowExecutionLogsSettingsProps {
@@ -21,6 +21,8 @@ export default function WorkflowExecutionLogsSettings({
   const [copySuccess, setCopySuccess] = useState(false);
   const [loadingContextData, setLoadingContextData] = useState(false);
   const [expandedLogData, setExpandedLogData] = useState<WorkflowExecutionLog | null>(null);
+  const [stepLogs, setStepLogs] = useState<WorkflowStepLog[]>([]);
+  const [expandedStepIds, setExpandedStepIds] = useState<Set<string>>(new Set());
 
   // Debug logging
   React.useEffect(() => {
@@ -89,14 +91,20 @@ export default function WorkflowExecutionLogsSettings({
       // Collapsing
       setExpandedLogId(null);
       setExpandedLogData(null);
+      setStepLogs([]);
+      setExpandedStepIds(new Set());
     } else {
       // Expanding
       setExpandedLogId(logId);
       setLoadingContextData(true);
-      
+
       try {
-        const fullLogData = await fetchWorkflowExecutionLogById(logId);
+        const [fullLogData, stepLogsData] = await Promise.all([
+          fetchWorkflowExecutionLogById(logId),
+          fetchWorkflowStepLogsByExecutionId(logId)
+        ]);
         setExpandedLogData(fullLogData);
+        setStepLogs(stepLogsData);
       } catch (error) {
         console.error('Error fetching log details:', error);
         alert('Failed to load log details. Please try again.');
@@ -105,6 +113,18 @@ export default function WorkflowExecutionLogsSettings({
       }
     }
     setCopySuccess(false);
+  };
+
+  const toggleStepExpansion = (stepLogId: string) => {
+    setExpandedStepIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(stepLogId)) {
+        newSet.delete(stepLogId);
+      } else {
+        newSet.add(stepLogId);
+      }
+      return newSet;
+    });
   };
 
   const getExecutionTime = (log: WorkflowExecutionLog) => {
@@ -370,6 +390,121 @@ export default function WorkflowExecutionLogsSettings({
                                 </div>
                               )}
 
+                              {/* Workflow Steps Progress */}
+                              <div>
+                                <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-3 flex items-center space-x-2">
+                                  <GitBranch className="h-5 w-5 text-teal-600" />
+                                  <span>Workflow Steps Execution</span>
+                                  <span className="text-sm text-gray-600 dark:text-gray-400">({stepLogs.length} step{stepLogs.length !== 1 ? 's' : ''})</span>
+                                </h4>
+                                <div className="space-y-2">
+                                  {stepLogs.length > 0 ? (
+                                    stepLogs.map((stepLog) => {
+                                      const isExpanded = expandedStepIds.has(stepLog.id);
+                                      const statusColor =
+                                        stepLog.status === 'completed' ? 'border-green-300 bg-green-50 dark:bg-green-900/20 dark:border-green-700' :
+                                        stepLog.status === 'failed' ? 'border-red-300 bg-red-50 dark:bg-red-900/20 dark:border-red-700' :
+                                        stepLog.status === 'running' ? 'border-blue-300 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-700' :
+                                        stepLog.status === 'skipped' ? 'border-yellow-300 bg-yellow-50 dark:bg-yellow-900/20 dark:border-yellow-700' :
+                                        'border-gray-200 bg-gray-50 dark:bg-gray-700 dark:border-gray-600';
+
+                                      const badgeColor =
+                                        stepLog.status === 'completed' ? 'bg-green-200 text-green-800' :
+                                        stepLog.status === 'failed' ? 'bg-red-200 text-red-800' :
+                                        stepLog.status === 'running' ? 'bg-blue-200 text-blue-800' :
+                                        stepLog.status === 'skipped' ? 'bg-yellow-200 text-yellow-800' :
+                                        'bg-gray-200 text-gray-600';
+
+                                      return (
+                                        <div
+                                          key={stepLog.id}
+                                          className={`rounded-lg border-2 ${statusColor}`}
+                                        >
+                                          <div className="p-3 cursor-pointer hover:opacity-80" onClick={() => toggleStepExpansion(stepLog.id)}>
+                                            <div className="flex items-center space-x-3">
+                                              {isExpanded ? <ChevronDown className="h-4 w-4 text-gray-600" /> : <ChevronRight className="h-4 w-4 text-gray-600" />}
+                                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${badgeColor}`}>
+                                                {stepLog.stepOrder}
+                                              </div>
+                                              <div className="flex-1">
+                                                <h5 className="font-medium text-gray-900 dark:text-gray-100">{stepLog.stepName}</h5>
+                                                <div className="flex items-center space-x-3 text-sm text-gray-600 dark:text-gray-400">
+                                                  <span className="capitalize">{stepLog.stepType.replace('_', ' ')}</span>
+                                                  {stepLog.durationMs !== null && (
+                                                    <span className="text-xs">• {stepLog.durationMs < 1000 ? `${stepLog.durationMs}ms` : `${(stepLog.durationMs / 1000).toFixed(1)}s`}</span>
+                                                  )}
+                                                </div>
+                                              </div>
+                                              <div className="flex items-center space-x-2">
+                                                <span className={`px-2 py-1 text-xs font-medium rounded-full capitalize ${badgeColor}`}>
+                                                  {stepLog.status}
+                                                </span>
+                                                {stepLog.status === 'failed' && <XCircle className="h-5 w-5 text-red-600" />}
+                                                {stepLog.status === 'running' && <Clock className="h-5 w-5 text-blue-600 animate-pulse" />}
+                                                {stepLog.status === 'completed' && <CheckCircle className="h-5 w-5 text-green-600" />}
+                                                {stepLog.status === 'skipped' && <AlertCircle className="h-5 w-5 text-yellow-600" />}
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          {isExpanded && (
+                                            <div className="border-t border-gray-300 dark:border-gray-600 p-4 bg-white/50 dark:bg-gray-800/50 space-y-3">
+                                              <div className="grid grid-cols-2 gap-4 text-sm">
+                                                <div>
+                                                  <span className="text-gray-600 dark:text-gray-400">Started:</span>
+                                                  <p className="text-gray-900 dark:text-gray-100 font-medium">{formatDate(stepLog.startedAt)}</p>
+                                                </div>
+                                                {stepLog.completedAt && (
+                                                  <div>
+                                                    <span className="text-gray-600 dark:text-gray-400">Completed:</span>
+                                                    <p className="text-gray-900 dark:text-gray-100 font-medium">{formatDate(stepLog.completedAt)}</p>
+                                                  </div>
+                                                )}
+                                              </div>
+
+                                              {stepLog.errorMessage && (
+                                                <div className="bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded p-3">
+                                                  <h6 className="font-medium text-red-800 dark:text-red-300 mb-1">Error:</h6>
+                                                  <p className="text-sm text-red-700 dark:text-red-400">{stepLog.errorMessage}</p>
+                                                </div>
+                                              )}
+
+                                              {stepLog.inputData && Object.keys(stepLog.inputData).length > 0 && (
+                                                <div>
+                                                  <h6 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Input Data:</h6>
+                                                  <div className="bg-gray-100 dark:bg-gray-700 rounded p-3 max-h-48 overflow-auto">
+                                                    <pre className="text-xs text-gray-800 dark:text-gray-200 whitespace-pre-wrap font-mono">
+                                                      {JSON.stringify(stepLog.inputData, null, 2)}
+                                                    </pre>
+                                                  </div>
+                                                </div>
+                                              )}
+
+                                              {stepLog.outputData && Object.keys(stepLog.outputData).length > 0 && (
+                                                <div>
+                                                  <h6 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Output Data:</h6>
+                                                  <div className="bg-gray-100 dark:bg-gray-700 rounded p-3 max-h-48 overflow-auto">
+                                                    <pre className="text-xs text-gray-800 dark:text-gray-200 whitespace-pre-wrap font-mono">
+                                                      {JSON.stringify(stepLog.outputData, null, 2)}
+                                                    </pre>
+                                                  </div>
+                                                </div>
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })
+                                  ) : (
+                                    <div className="text-center py-8 text-gray-600 dark:text-gray-400">
+                                      <AlertCircle className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                                      <p>No step execution logs found</p>
+                                      <p className="text-sm mt-1">Step logs will appear here once workflow steps execute</p>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
                               {/* Context Data */}
                               {expandedLogData.contextData && (
                                 <div>
@@ -381,8 +516,8 @@ export default function WorkflowExecutionLogsSettings({
                                     <button
                                       onClick={handleCopyContextData}
                                       className={`px-3 py-1 rounded text-sm font-medium transition-colors flex items-center space-x-1 ${
-                                        copySuccess 
-                                          ? 'bg-green-600 text-white' 
+                                        copySuccess
+                                          ? 'bg-green-600 text-white'
                                           : 'bg-purple-100 text-purple-800 hover:bg-purple-200'
                                       }`}
                                     >
@@ -406,63 +541,6 @@ export default function WorkflowExecutionLogsSettings({
                                   </div>
                                 </div>
                               )}
-
-                              {/* Workflow Steps Progress */}
-                              <div>
-                                <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-3 flex items-center space-x-2">
-                                  <GitBranch className="h-5 w-5 text-teal-600" />
-                                  <span>Workflow Steps</span>
-                                </h4>
-                                <div className="space-y-2">
-                                  {workflowSteps
-                                    .filter(step => step.workflowId === expandedLogData.workflowId)
-                                    .sort((a, b) => a.stepOrder - b.stepOrder)
-                                    .map((step, index) => {
-                                      const isCurrentStep = step.id === expandedLogData.currentStepId;
-                                      const isCompleted = expandedLogData.status === 'completed' || 
-                                        (expandedLogData.currentStepId && workflowSteps.find(s => s.id === expandedLogData.currentStepId)?.stepOrder > step.stepOrder);
-                                      const isFailed = expandedLogData.status === 'failed' && isCurrentStep;
-                                      
-                                      return (
-                                        <div
-                                          key={step.id}
-                                          className={`p-3 rounded-lg border-2 ${
-                                            isFailed
-                                              ? 'border-red-300 bg-red-50 dark:bg-red-900/20 dark:border-red-700'
-                                              : isCurrentStep
-                                              ? 'border-blue-300 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-700'
-                                              : isCompleted
-                                              ? 'border-green-300 bg-green-50 dark:bg-green-900/20 dark:border-green-700'
-                                              : 'border-gray-200 bg-gray-50 dark:bg-gray-700 dark:border-gray-600'
-                                          }`}
-                                        >
-                                          <div className="flex items-center space-x-3">
-                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                                              isFailed
-                                                ? 'bg-red-200 text-red-800'
-                                                : isCurrentStep
-                                                ? 'bg-blue-200 text-blue-800'
-                                                : isCompleted
-                                                ? 'bg-green-200 text-green-800'
-                                                : 'bg-gray-200 text-gray-600'
-                                            }`}>
-                                              {step.stepOrder}
-                                            </div>
-                                            <div className="flex-1">
-                                              <h5 className="font-medium text-gray-900 dark:text-gray-100">{step.stepName}</h5>
-                                              <p className="text-sm text-gray-600 dark:text-gray-400 capitalize">{step.stepType.replace('_', ' ')}</p>
-                                            </div>
-                                            <div className="text-right">
-                                              {isFailed && <XCircle className="h-5 w-5 text-red-600" />}
-                                              {isCurrentStep && expandedLogData.status === 'running' && <Clock className="h-5 w-5 text-blue-600" />}
-                                              {isCompleted && <CheckCircle className="h-5 w-5 text-green-600" />}
-                                            </div>
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
-                                </div>
-                              </div>
                             </div>
                           </div>
                         ) : (
