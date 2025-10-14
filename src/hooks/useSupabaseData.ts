@@ -407,6 +407,16 @@ export function useSupabaseData() {
     }
   };
 
+  const refreshWorkflowSteps = async (): Promise<void> => {
+    try {
+      const updatedSteps = await fetchWorkflowSteps();
+      setWorkflowSteps(updatedSteps);
+    } catch (error) {
+      console.error('Error refreshing workflow steps:', error);
+      throw error;
+    }
+  };
+
   return {
     extractionTypes,
     transformationTypes,
@@ -445,6 +455,7 @@ export function useSupabaseData() {
     refreshWorkflowExecutionLogs,
     refreshSftpPollingLogs,
     refreshProcessedEmails,
+    refreshWorkflowSteps,
     logExtraction
   };
 }

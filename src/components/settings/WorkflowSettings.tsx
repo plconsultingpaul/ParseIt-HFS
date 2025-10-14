@@ -16,7 +16,7 @@ interface WorkflowSettingsProps {
 }
 
 export default function WorkflowSettings({ apiConfig, refreshData }: WorkflowSettingsProps) {
-  const { workflows, workflowSteps } = useSupabaseData();
+  const { workflows, workflowSteps, refreshWorkflowSteps } = useSupabaseData();
   const {
     localWorkflows,
     isSaving,
@@ -183,7 +183,7 @@ export default function WorkflowSettings({ apiConfig, refreshData }: WorkflowSet
               onUpdateSteps={async (steps) => {
                 const validSteps = steps.filter(step => step != null);
                 await updateWorkflowSteps(selectedWorkflow.id, validSteps);
-                await refreshData();
+                await refreshWorkflowSteps();
               }}
             />
           ) : (
