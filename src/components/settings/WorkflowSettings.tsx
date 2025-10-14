@@ -183,6 +183,7 @@ export default function WorkflowSettings({ apiConfig, refreshData }: WorkflowSet
               onUpdateSteps={async (steps) => {
                 const validSteps = steps.filter(step => step != null);
                 await updateWorkflowSteps(selectedWorkflow.id, validSteps);
+                await refreshData();
               }}
             />
           ) : (
