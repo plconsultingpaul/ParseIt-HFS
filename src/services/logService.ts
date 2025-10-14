@@ -1,6 +1,24 @@
 import { supabase } from '../lib/supabase';
 import type { ExtractionLog, EmailPollingLog, WorkflowExecutionLog, SftpPollingLog, ProcessedEmail } from '../types';
 
+export interface WorkflowStepLog {
+  id: string;
+  workflowExecutionLogId: string;
+  workflowId: string;
+  stepId: string;
+  stepName: string;
+  stepType: string;
+  stepOrder: number;
+  status: 'running' | 'completed' | 'failed' | 'skipped';
+  startedAt: string;
+  completedAt: string | null;
+  durationMs: number | null;
+  errorMessage: string | null;
+  inputData: any;
+  outputData: any;
+  createdAt: string;
+}
+
 // Extraction Logs
 export async function fetchExtractionLogs(): Promise<ExtractionLog[]> {
   try {
@@ -277,7 +295,7 @@ export async function fetchSftpPollingLogs(): Promise<SftpPollingLog[]> {
 // Processed Emails
 export async function fetchProcessedEmails(): Promise<ProcessedEmail[]> {
   try {
-    const { data, error } = await supabase
+    const { data, error} = await supabase
       .from('processed_emails')
       .select('*')
       .order('received_date', { ascending: false })
@@ -301,6 +319,73 @@ export async function fetchProcessedEmails(): Promise<ProcessedEmail[]> {
     }));
   } catch (error) {
     console.error('Error fetching processed emails:', error);
+    throw error;
+  }
+}
+
+// Workflow Step Logs
+export async function fetchWorkflowStepLogs(): Promise<WorkflowStepLog[]> {
+  try {
+    const { data, error } = await supabase
+      .from('workflow_step_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(500);
+
+    if (error) throw error;
+
+    return (data || []).map(log => ({
+      id: log.id,
+      workflowExecutionLogId: log.workflow_execution_log_id,
+      workflowId: log.workflow_id,
+      stepId: log.step_id,
+      stepName: log.step_name,
+      stepType: log.step_type,
+      stepOrder: log.step_order,
+      status: log.status,
+      startedAt: log.started_at,
+      completedAt: log.completed_at,
+      durationMs: log.duration_ms,
+      errorMessage: log.error_message,
+      inputData: log.input_data,
+      outputData: log.output_data,
+      createdAt: log.created_at
+    }));
+  } catch (error) {
+    console.error('Error fetching workflow step logs:', error);
+    throw error;
+  }
+}
+
+export async function fetchWorkflowStepLogsByExecutionId(executionLogId: string): Promise<WorkflowStepLog[]> {
+  try {
+    const { data, error } = await supabase
+      .from('workflow_step_logs')
+      .select('*')
+      .eq('workflow_execution_log_id', executionLogId)
+      .order('step_order', { ascending: true });
+
+    if (error) throw error;
+
+    return (data || []).map(log => ({
+      id: log.id,
+      workflowExecutionLogId: log.workflow_execution_log_id,
+      workflowId: log.workflow_id,
+      stepId: log.step_id,
+      stepName: log.step_name,
+      stepType: log.step_type,
+      stepOrder: log.step_order,
+      status: log.status,
+      startedAt: log.started_at,
+      completedAt: log.completed_at,
+      durationMs: log.duration_ms,
+      errorMessage: log.error_message,
+      inputData: log.input_data,
+      outputData: log.output_data,
+      createdAt: log.created_at
+    }));
+  } catch (error) {
+    console.error('Error fetching workflow step logs by execution ID:', error);
     throw error;
   }
 }
