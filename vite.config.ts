@@ -7,16 +7,4 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['lucide-react'],
   },
-  worker: {
-    format: 'es'
-  },
-  build: {
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          'pdfjs': ['pdfjs-dist']
-        }
-      }
-    }
-  }
 });
