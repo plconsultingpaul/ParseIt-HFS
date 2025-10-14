@@ -18,7 +18,7 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
   const [stepName, setStepName] = useState(step?.stepName || step?.step_name || 'New Step');
   const [stepType, setStepType] = useState(step?.stepType || step?.step_type || 'api_call');
   const [method, setMethod] = useState('POST');
-  const [url, setUrl] = useState('');
+  const [url, setUrl] = useState('https://api.example.com/endpoint');
   const [headers, setHeaders] = useState('{\n  "Content-Type": "application/json",\n  "Authorization": "Bearer YOUR_TOKEN_HERE"\n}');
   const [requestBody, setRequestBody] = useState('');
   const [transformations, setTransformations] = useState<TransformationRule[]>([
@@ -52,11 +52,6 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
   useEffect(() => {
     console.log('StepConfigForm useEffect - step data:', step);
     
-    // Set default URL based on API config for new steps
-    if (!step && apiConfig?.path) {
-      setUrl(apiConfig.path);
-    }
-    
     // Set basic step properties
     if (step) {
       setStepName(step.stepName || step.step_name || 'New Step');
@@ -71,7 +66,7 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
       if (config) {
         // API Call configuration
         setMethod(config.method || 'POST');
-        setUrl(config.url || apiConfig?.path || '');
+        setUrl(config.url || 'https://api.example.com/endpoint');
         
         // Pre-fill headers with API config token if available
         if (config.headers) {
@@ -133,18 +128,10 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
             "Authorization": apiConfig?.password ? `Bearer ${apiConfig.password}` : "Bearer YOUR_TOKEN_HERE"
           };
           setHeaders(JSON.stringify(defaultHeaders, null, 2));
-          
-          // Set default URL if not already set
-          if (!url && apiConfig?.path) {
-            setUrl(apiConfig.path);
-          }
         }
       }
-    } else if (stepType === 'api_call' && !url && apiConfig?.path) {
-      // For new API call steps, use the configured API path
-      setUrl(apiConfig.path);
     }
-  }, [step, apiConfig?.password, apiConfig?.path, stepType]);
+  }, [step, apiConfig?.password]);
 
   const addTransformation = () => {
     setTransformations([...transformations, { field_name: '', transformation: '' }]);
@@ -369,8 +356,7 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                     onChange={(e) => setUrl(e.target.value)}
                     rows={2}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 font-mono text-sm dark:bg-gray-700 dark:text-gray-100"
-                    placeholder={apiConfig?.path || "Enter your API endpoint URL"}
-                    spellCheck={false}
+                    placeholder="https://api.example.com/endpoint"
                   />
                 </div>
 

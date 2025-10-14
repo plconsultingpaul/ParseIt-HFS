@@ -78,8 +78,8 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
     console.log('Updated steps array:', updatedSteps);
     setLocalSteps(updatedSteps);
     
-    // Don't automatically save individual steps - let user save all at once
-    console.log('Step added to local state, waiting for user to save all steps');
+    // Immediately save to database
+    handleSaveStepsToDatabase(updatedSteps);
     
     setShowStepForm(false);
     setEditingStep(null);
@@ -132,18 +132,6 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
   };
 
   const handleSaveStepsToDatabase = async (stepsToSave: WorkflowStep[]) => {
-    console.log('=== SAVE STEPS TO DATABASE START ===');
-    console.log('Workflow ID:', workflow.id);
-    console.log('Steps to save count:', stepsToSave.length);
-    console.log('Steps to save details:', stepsToSave.map(s => ({ 
-      id: s.id, 
-      name: s.stepName, 
-      type: s.stepType, 
-      order: s.stepOrder,
-      hasConfigJson: !!s.configJson,
-      configJsonKeys: s.configJson ? Object.keys(s.configJson) : []
-    })));
-    
     setIsSaving(true);
     try {
       // Filter out any undefined, null, or invalid steps before saving
@@ -154,8 +142,6 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
         }
         if (!step.id || typeof step.id !== 'string') {
           console.log('Filtering out step with invalid ID:', step);
-          console.log('Step ID type:', typeof step.id);
-          console.log('Step ID value:', step.id);
           return false;
         }
         if (!step.stepName || !step.stepType) {
@@ -168,28 +154,11 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
           console.log('Step missing configJson, setting to empty object:', step.id);
           step.configJson = {};
         }
-        
-        console.log('✅ Step validation passed:', { 
-          id: step.id, 
-          name: step.stepName, 
-          type: step.stepType,
-          order: step.stepOrder 
-        });
         return true;
       });
       
       console.log('Original steps to save:', stepsToSave);
       console.log('Valid steps after filtering:', validSteps);
-      console.log('Valid steps detailed:', validSteps.map(s => ({
-        id: s.id,
-        workflowId: s.workflowId,
-        stepOrder: s.stepOrder,
-        stepName: s.stepName,
-        stepType: s.stepType,
-        hasConfigJson: !!s.configJson,
-        nextStepOnSuccessId: s.nextStepOnSuccessId,
-        nextStepOnFailureId: s.nextStepOnFailureId
-      })));
       
       if (validSteps.length !== stepsToSave.length) {
         console.warn(`Filtered out ${stepsToSave.length - validSteps.length} invalid steps`);
@@ -203,21 +172,14 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
       }
       
       console.log('Saving valid steps to database:', validSteps);
-      console.log('Calling onUpdateSteps with', validSteps.length, 'steps...');
       await onUpdateSteps(validSteps);
       console.log('Steps saved successfully');
     } catch (error) {
       console.error('Failed to save steps:', error);
-      console.error('Save steps error type:', error?.constructor?.name);
-      console.error('Save steps error message:', error?.message);
-      console.error('Save steps error details:', error?.details);
-      console.error('Save steps error code:', error?.code);
-      console.error('Save steps error stack:', error?.stack);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       alert(`Failed to save workflow steps: ${errorMessage}`);
     } finally {
       setIsSaving(false);
-      console.log('=== SAVE STEPS TO DATABASE COMPLETE ===');
     }
   };
 
