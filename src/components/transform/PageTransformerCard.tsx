@@ -46,7 +46,6 @@ export default function PageTransformerCard({
   const [copySuccess, setCopySuccess] = useState(false);
   const [workflowExecutionLogId, setWorkflowExecutionLogId] = useState<string>('');
   const [workflowExecutionLog, setWorkflowExecutionLog] = useState<WorkflowExecutionLog | null>(null);
-  const [executedStepIds, setExecutedStepIds] = useState<Set<string>>(new Set());
   const [isPollingWorkflowLog, setIsPollingWorkflowLog] = useState(false);
 
   // Extract page range from filename for display
@@ -130,26 +129,15 @@ export default function PageTransformerCard({
 
   const startPollingWorkflowLog = (logId: string) => {
     if (isPollingWorkflowLog) return;
-    
+
     setIsPollingWorkflowLog(true);
     const pollInterval = setInterval(async () => {
       const log = await fetchWorkflowExecutionLog(logId);
       if (log) {
         setWorkflowExecutionLog(log);
-        const newExecutedSteps = new Set<string>();
         if (log.status === 'completed' || log.status === 'failed') {
-          const currentStepOrder = workflowSteps.find(s => s.id === log.currentStepId && s.workflowId === transformationType.workflowId)?.stepOrder || 0;
-          workflowSteps.forEach(step => {
-            if (step.workflowId === transformationType.workflowId && step.stepOrder <= currentStepOrder) {
-              newExecutedSteps.add(step.id);
-            }
-          });
-          setExecutedStepIds(newExecutedSteps);
           clearInterval(pollInterval);
           setIsPollingWorkflowLog(false);
-        } else if (log.currentStepId) {
-          newExecutedSteps.add(log.currentStepId);
-          setExecutedStepIds(newExecutedSteps);
         }
       }
     }, 2000);
@@ -462,6 +450,10 @@ export default function PageTransformerCard({
 
   const handleShowStatus = () => {
     if (transformResult?.success) {
+      const finalFilename = workflowExecutionLog?.contextData?.actualFilename ||
+        workflowExecutionLog?.contextData?.renamedFilename ||
+        workflowExecutionLog?.contextData?.exactFilename ||
+        transformResult.newFilename;
       setModalTitle(`Page ${pageIndex + 1} - Success`);
       setModalContent(
         <div className="space-y-4">
@@ -470,7 +462,7 @@ export default function PageTransformerCard({
             <div>
               <h4 className="text-lg font-semibold text-green-800 dark:text-green-300">Transformation Successful!</h4>
               <p className="text-green-700 dark:text-green-400">
-                PDF renamed to: <span className="font-mono">{transformResult.newFilename}</span>
+                PDF renamed to: <span className="font-mono">{finalFilename}</span>
               </p>
               <p className="text-green-600 dark:text-green-300 text-sm mt-1">
                 Using: {transformationType.name}
@@ -604,7 +596,12 @@ export default function PageTransformerCard({
               </p>
               {transformResult?.newFilename && (
                 <p className="text-sm font-medium text-blue-600 dark:text-blue-400 mt-1">
-                  New Filename: {transformResult.newFilename}
+                  New Filename: {
+                    workflowExecutionLog?.contextData?.actualFilename ||
+                    workflowExecutionLog?.contextData?.renamedFilename ||
+                    workflowExecutionLog?.contextData?.exactFilename ||
+                    transformResult.newFilename
+                  }
                 </p>
               )}
             </div>
