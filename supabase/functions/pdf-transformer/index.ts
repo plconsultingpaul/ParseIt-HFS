@@ -1,10 +1,20 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { GoogleGenerativeAI } from "npm:@google/generative-ai@0.24.1"
+import { PDFDocument } from "npm:pdf-lib@1.17.1"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
+}
+
+interface FieldMapping {
+  fieldName: string
+  type: 'ai' | 'mapped' | 'hardcoded'
+  value: string
+  dataType?: 'string' | 'number' | 'integer' | 'datetime'
+  maxLength?: number
+  pageNumberInGroup?: number
 }
 
 interface TransformationRequest {
@@ -14,16 +24,71 @@ interface TransformationRequest {
     name: string
     defaultInstructions: string
     filenameTemplate: string
-    fieldMappings?: Array<{
-      fieldName: string
-      type: 'ai' | 'mapped' | 'hardcoded'
-      value: string
-      dataType?: 'string' | 'number' | 'integer' | 'datetime'
-      maxLength?: number
-    }>
+    fieldMappings?: Array<FieldMapping>
   }
   additionalInstructions?: string
   apiKey: string
+}
+
+// Helper function to extract a specific page from a PDF
+async function extractSpecificPage(pdfBase64: string, pageNumber: number): Promise<string> {
+  try {
+    console.log(`📄 Extracting page ${pageNumber} from PDF for isolated AI analysis`)
+
+    // Decode base64 to bytes
+    const pdfBytes = Uint8Array.from(atob(pdfBase64), c => c.charCodeAt(0))
+
+    // Load the PDF document
+    const pdfDoc = await PDFDocument.load(pdfBytes)
+    const totalPages = pdfDoc.getPageCount()
+
+    console.log(`📄 PDF has ${totalPages} pages, extracting page ${pageNumber}`)
+
+    // Validate page number
+    if (pageNumber < 1 || pageNumber > totalPages) {
+      console.warn(`⚠️ Invalid page number ${pageNumber} (PDF has ${totalPages} pages), using page 1 as fallback`)
+      pageNumber = 1
+    }
+
+    // Create a new PDF with only the requested page
+    const singlePageDoc = await PDFDocument.create()
+    const [copiedPage] = await singlePageDoc.copyPages(pdfDoc, [pageNumber - 1]) // Convert to 0-based index
+    singlePageDoc.addPage(copiedPage)
+
+    // Convert back to base64
+    const singlePageBytes = await singlePageDoc.save()
+    const singlePageBase64 = btoa(String.fromCharCode(...singlePageBytes))
+
+    console.log(`✅ Successfully extracted page ${pageNumber} (size: ${singlePageBase64.length} chars)`)
+
+    return singlePageBase64
+  } catch (error) {
+    console.error(`❌ Failed to extract page ${pageNumber}:`, error)
+    throw new Error(`Failed to extract page ${pageNumber}: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+}
+
+// Helper function to group field mappings by page number
+function groupFieldsByPage(fieldMappings: FieldMapping[]): Map<number, FieldMapping[]> {
+  const pageGroups = new Map<number, FieldMapping[]>()
+
+  for (const mapping of fieldMappings) {
+    // Default to page 1 if not specified
+    const pageNum = mapping.pageNumberInGroup || 1
+
+    if (!pageGroups.has(pageNum)) {
+      pageGroups.set(pageNum, [])
+    }
+
+    pageGroups.get(pageNum)!.push(mapping)
+  }
+
+  console.log(`📊 Field mappings grouped by page:`)
+  for (const [pageNum, fields] of pageGroups.entries()) {
+    console.log(`   Page ${pageNum}: ${fields.length} fields - ${fields.map(f => f.fieldName).join(', ')}`)
+  }
+
+  return pageGroups
 }
 
 serve(async (req: Request) => {
@@ -95,52 +160,137 @@ serve(async (req: Request) => {
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' })
 
     // Combine instructions
-    const fullInstructions = additionalInstructions 
+    const fullInstructions = additionalInstructions
       ? `${transformationType.defaultInstructions}\n\nAdditional Instructions: ${additionalInstructions}`
       : transformationType.defaultInstructions
 
     console.log('Full instructions length:', fullInstructions.length);
-    // Build field mapping instructions
-    let fieldMappingInstructions = ''
+
+    // NEW APPROACH: Process fields page by page to ensure accurate extraction
+    console.log('=== PAGE-AWARE FIELD EXTRACTION ===')
+
+    let extractedData: any = {}
+
     if (transformationType.fieldMappings && transformationType.fieldMappings.length > 0) {
       console.log('Processing field mappings:', transformationType.fieldMappings.length);
-      fieldMappingInstructions = '\n\nFIELD EXTRACTION INSTRUCTIONS:\n'
-      transformationType.fieldMappings.forEach(mapping => {
-        // Add page-specific instruction if pageNumberInGroup is specified
-        const pageInstruction = mapping.pageNumberInGroup && mapping.pageNumberInGroup > 1 
-          ? ` (extract from page ${mapping.pageNumberInGroup} of the provided PDF)` 
-          : '';
-          
-        if (mapping.type === 'hardcoded') {
-          const dataTypeNote = mapping.dataType === 'string' ? ' (as string with exact case)' : 
-                              mapping.dataType === 'number' ? ' (format as number)' : 
-                              mapping.dataType === 'integer' ? ' (format as integer)' :
-                              mapping.dataType === 'datetime' ? ' (as datetime string in yyyy-MM-ddThh:mm:ss format)' : ''
-          fieldMappingInstructions += `- "${mapping.fieldName}": Always use the EXACT hardcoded value "${mapping.value}" with precise case preservation${dataTypeNote}${pageInstruction}\n`
-        } else if (mapping.type === 'mapped') {
-          const dataTypeNote = mapping.dataType === 'string' ? ' (format as string)' : 
-                              mapping.dataType === 'number' ? ' (format as number)' : 
-                              mapping.dataType === 'integer' ? ' (format as integer)' :
-                              mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' : ''
-          fieldMappingInstructions += `- "${mapping.fieldName}": Extract data from PDF coordinates ${mapping.value}${dataTypeNote}${pageInstruction}\n`
-        } else {
-          // AI type
-          const dataTypeNote = mapping.dataType === 'string' ? ' (format as string)' : 
-                              mapping.dataType === 'number' ? ' (format as number)' : 
-                              mapping.dataType === 'integer' ? ' (format as integer)' :
-                              mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' : ''
-          fieldMappingInstructions += `- "${mapping.fieldName}": ${mapping.value || 'Extract from PDF document'}${dataTypeNote}${pageInstruction}\n`
-        }
-      })
-    }
 
-    console.log('Field mapping instructions length:', fieldMappingInstructions.length);
-    
-    const prompt = `
-You are a data extraction AI for PDF transformation and renaming. Please analyze the provided PDF document and extract the requested information according to the following instructions:
+      // First, handle all hardcoded fields (no AI needed)
+      for (const mapping of transformationType.fieldMappings) {
+        if (mapping.type === 'hardcoded') {
+          console.log(`✓ Hardcoded field "${mapping.fieldName}": ${mapping.value}`)
+          extractedData[mapping.fieldName] = mapping.value
+        }
+      }
+
+      // Group remaining fields by page number for AI extraction
+      const aiFields = transformationType.fieldMappings.filter(m => m.type === 'ai' || m.type === 'mapped')
+
+      if (aiFields.length > 0) {
+        const pageGroups = groupFieldsByPage(aiFields)
+
+        // Process each page group separately
+        for (const [pageNum, pageFields] of pageGroups.entries()) {
+          console.log(`\n📄 Processing Page ${pageNum} with ${pageFields.length} fields`)
+
+          // Extract the specific page from the PDF
+          const pageSpecificPdfBase64 = await extractSpecificPage(pdfBase64, pageNum)
+
+          // Build field mapping instructions for this specific page
+          let fieldMappingInstructions = '\n\nFIELD EXTRACTION INSTRUCTIONS:\n'
+          fieldMappingInstructions += `IMPORTANT: You are analyzing a single page extracted from a larger document. Extract ONLY from the content visible on THIS page.\n\n`
+
+          pageFields.forEach(mapping => {
+            if (mapping.type === 'mapped') {
+              const dataTypeNote = mapping.dataType === 'string' ? ' (format as string)' :
+                                  mapping.dataType === 'number' ? ' (format as number)' :
+                                  mapping.dataType === 'integer' ? ' (format as integer)' :
+                                  mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' : ''
+              fieldMappingInstructions += `- "${mapping.fieldName}": Extract data from PDF coordinates ${mapping.value}${dataTypeNote}\n`
+            } else {
+              // AI type
+              const dataTypeNote = mapping.dataType === 'string' ? ' (format as string)' :
+                                  mapping.dataType === 'number' ? ' (format as number)' :
+                                  mapping.dataType === 'integer' ? ' (format as integer)' :
+                                  mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' : ''
+              fieldMappingInstructions += `- "${mapping.fieldName}": ${mapping.value || 'Extract from PDF document'}${dataTypeNote}\n`
+            }
+          })
+
+          const pagePrompt = `
+You are a data extraction AI analyzing a single page from a PDF document. Please analyze the provided page and extract the requested information according to the following instructions:
 
 EXTRACTION INSTRUCTIONS:
 ${fullInstructions}${fieldMappingInstructions}
+
+OUTPUT FORMAT:
+Please format the extracted data as JSON with the following structure:
+{
+  "extractedData": {
+    // Include ONLY the fields requested above
+  }
+}
+
+IMPORTANT GUIDELINES:
+1. You are seeing ONLY page ${pageNum} of this document - extract information from THIS page only
+2. Only extract information that is clearly visible on THIS page
+3. If a field is not found on this page, use empty string ("") for text fields, 0 for numbers, null for optional fields
+4. For datetime fields, use the format yyyy-MM-ddThh:mm:ss (e.g., "2024-03-15T14:30:00")
+5. Be precise and accurate with the extracted data
+6. Ensure all field names match exactly what's needed
+
+Please provide only the JSON output without any additional explanation or formatting.
+`
+
+          console.log(`🤖 Calling Gemini AI for Page ${pageNum}...`)
+          console.log(`   Fields to extract: ${pageFields.map(f => f.fieldName).join(', ')}`)
+
+          const result = await model.generateContent([
+            {
+              inlineData: {
+                mimeType: 'application/pdf',
+                data: pageSpecificPdfBase64
+              }
+            },
+            pagePrompt
+          ])
+
+          const response = await result.response
+          let extractedContent = response.text()
+
+          console.log(`✅ Page ${pageNum} AI response received (length: ${extractedContent.length})`)
+
+          // Clean up the response
+          extractedContent = extractedContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+
+          // Parse and merge with existing data
+          try {
+            const parsedResponse = JSON.parse(extractedContent)
+            const pageData = parsedResponse.extractedData || parsedResponse || {}
+
+            // Merge page-specific data into final result
+            Object.assign(extractedData, pageData)
+
+            console.log(`✅ Page ${pageNum} data extracted successfully:`, Object.keys(pageData).join(', '))
+          } catch (parseError) {
+            console.error(`❌ Failed to parse Page ${pageNum} response:`, parseError)
+            // Set empty values for failed fields
+            pageFields.forEach(field => {
+              if (!extractedData.hasOwnProperty(field.fieldName)) {
+                extractedData[field.fieldName] = ''
+              }
+            })
+          }
+        }
+      }
+    } else {
+      // No field mappings - use legacy single-pass extraction
+      console.log('⚠️ No field mappings defined, using legacy extraction mode')
+
+      const prompt = `
+You are a data extraction AI for PDF transformation and renaming. Please analyze the provided PDF document and extract the requested information according to the following instructions:
+
+EXTRACTION INSTRUCTIONS:
+${fullInstructions}
 
 OUTPUT FORMAT:
 Please format the extracted data as JSON with the following structure:
@@ -161,100 +311,64 @@ IMPORTANT GUIDELINES:
 Please provide only the JSON output without any additional explanation or formatting.
 `
 
-    console.log('Prompt length:', prompt.length);
-    console.log('Calling Gemini AI...');
-    
-    const result = await model.generateContent([
-      {
-        inlineData: {
-          mimeType: 'application/pdf',
-          data: pdfBase64
+      console.log('Prompt length:', prompt.length);
+      console.log('Calling Gemini AI (legacy mode)...');
+
+      const result = await model.generateContent([
+        {
+          inlineData: {
+            mimeType: 'application/pdf',
+            data: pdfBase64
+          }
+        },
+        prompt
+      ])
+
+      const response = await result.response
+      let extractedContent = response.text()
+
+      console.log('=== AI RESPONSE ANALYSIS (Legacy) ===')
+      console.log('Raw AI response length:', extractedContent.length)
+
+      // Clean up the response
+      extractedContent = extractedContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+
+      // Parse the extracted data
+      try {
+        const parsedResponse = JSON.parse(extractedContent)
+        extractedData = parsedResponse.extractedData || parsedResponse || {}
+
+        // Ensure extractedData is always a valid object
+        if (typeof extractedData !== 'object' || extractedData === null || Array.isArray(extractedData)) {
+          console.warn('Invalid extracted data format, using fallback object')
+          extractedData = {}
         }
-      },
-      prompt
-    ])
 
-    const response = await result.response
-    let extractedContent = response.text()
-    
-    console.log('=== AI RESPONSE ANALYSIS ===')
-    console.log('Raw AI response length:', extractedContent.length)
-    console.log('Raw AI response preview (first 500 chars):', extractedContent.substring(0, 500))
-    console.log('Raw AI response preview (last 200 chars):', extractedContent.substring(Math.max(0, extractedContent.length - 200)))
+        // Ensure we have at least some basic data structure
+        if (Object.keys(extractedData).length === 0) {
+          console.warn('Extracted data is empty, creating fallback structure')
+          extractedData = {
+            documentType: 'unknown',
+            extractionFailed: true,
+            originalFilename: 'unknown',
+            extractedAt: new Date().toISOString()
+          }
+        }
 
-    // Clean up the response - remove any markdown formatting
-    extractedContent = extractedContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-    console.log('Cleaned AI response length:', extractedContent.length)
-    console.log('Cleaned AI response preview (first 500 chars):', extractedContent.substring(0, 500))
+      } catch (parseError) {
+        console.error('=== CRITICAL JSON PARSE ERROR (Legacy) ===')
+        console.error('Parse error:', parseError)
 
-    // Parse the extracted data
-    console.log('=== PARSING EXTRACTED DATA ===')
-    let extractedData: any
-    try {
-      console.log('Attempting to parse AI response as JSON...')
-      
-      // Validate that we have some content to parse
-      if (!extractedContent || extractedContent.trim() === '') {
-        console.error('AI response is empty after cleaning')
-        throw new Error('AI returned empty response')
-      }
-      
-      // Check if the response looks like it might be truncated
-      const trimmed = extractedContent.trim()
-      if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
-        console.error('AI response does not start with valid JSON character')
-        console.log('Response starts with:', trimmed.substring(0, 50))
-        throw new Error('AI response does not appear to be JSON')
-      }
-      
-      if (!trimmed.endsWith('}') && !trimmed.endsWith(']')) {
-        console.error('AI response does not end with valid JSON character - may be truncated')
-        console.log('Response ends with:', trimmed.substring(Math.max(0, trimmed.length - 50)))
-        throw new Error('AI response appears to be truncated')
-      }
-      
-      const parsedResponse = JSON.parse(extractedContent)
-      console.log('Successfully parsed AI response');
-      console.log('Parsed response structure:', Object.keys(parsedResponse))
-      extractedData = parsedResponse.extractedData || parsedResponse || {}
-      
-      // Ensure extractedData is always a valid object
-      if (typeof extractedData !== 'object' || extractedData === null || Array.isArray(extractedData)) {
-        console.warn('Invalid extracted data format, using fallback object')
-        console.log('Invalid data type:', typeof extractedData)
-        console.log('Invalid data value:', extractedData)
-        extractedData = {}
-      }
-      
-      // Ensure we have at least some basic data structure
-      if (Object.keys(extractedData).length === 0) {
-        console.warn('Extracted data is empty, creating fallback structure')
+        // Create a valid fallback structure
         extractedData = {
           documentType: 'unknown',
           extractionFailed: true,
+          parseError: parseError instanceof Error ? parseError.message : 'Unknown error',
           originalFilename: 'unknown',
           extractedAt: new Date().toISOString()
         }
+        console.log('Created fallback extracted data structure')
       }
-      
-    } catch (parseError) {
-      console.error('=== CRITICAL JSON PARSE ERROR ===')
-      console.error('Parse error type:', parseError.constructor.name)
-      console.error('Parse error message:', parseError.message)
-      console.log('Failed to parse content length:', extractedContent.length)
-      console.log('Failed to parse content (full):', extractedContent)
-      console.log('Content character codes (first 20):', extractedContent.substring(0, 20).split('').map(c => c.charCodeAt(0)))
-      
-      // Create a valid fallback structure
-      extractedData = {
-        documentType: 'unknown',
-        extractionFailed: true,
-        parseError: parseError.message,
-        originalFilename: 'unknown',
-        extractedAt: new Date().toISOString(),
-        rawAiResponse: extractedContent.substring(0, 1000) // Include first 1000 chars for debugging
-      }
-      console.log('Created fallback extracted data structure')
     }
 
     console.log('=== FINAL EXTRACTED DATA VALIDATION ===')
