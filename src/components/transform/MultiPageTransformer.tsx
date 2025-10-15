@@ -264,7 +264,7 @@ export default function MultiPageTransformer({
            console.log('Extracted data uploaded to storage:', extractedDataUpload.path);
             
             const workflowRequestBody = {
-              extractedData: null,
+              extractedData: JSON.stringify(transformResult.extractedData),
               extractedDataStoragePath: extractedDataUpload.path,
               workflowId: pageTransformationType.workflowId,
               userId: user?.id,
@@ -276,6 +276,7 @@ export default function MultiPageTransformer({
               pdfBase64: pdfBase64
             };
            console.log('=== WORKFLOW REQUEST ===');
+           console.log('Workflow request body (extractedData):', JSON.stringify(transformResult.extractedData));
            console.log('Workflow request body:', workflowRequestBody);
             
             const workflowResponse = await fetch(`${supabaseUrl}/functions/v1/json-workflow-processor`, {
