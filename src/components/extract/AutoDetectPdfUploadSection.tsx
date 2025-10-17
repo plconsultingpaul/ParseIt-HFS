@@ -415,19 +415,6 @@ export default function AutoDetectPdfUploadSection({
               <p className={`text-xs ${getStatusColor()}`}>
                 {getDetectionStatusText()}
               </p>
-              
-              {detectionResult?.reasoning && (
-                <div className="mt-2 bg-white/50 dark:bg-gray-800/50 rounded-lg p-2 border border-blue-200 dark:border-blue-600">
-                  <p className="text-xs text-blue-700 dark:text-blue-300">
-                    <strong>AI Reasoning:</strong> {detectionResult.reasoning}
-                  </p>
-                  {detectionResult.isVendorRule && (
-                    <p className="text-xs text-green-700 dark:text-green-300 mt-1">
-                      <strong>Matched Vendor Rule:</strong> This document matched your specific processing rules
-                    </p>
-                  )}
-                </div>
-              )}
             </div>
           </div>
         ) : (
@@ -441,21 +428,7 @@ export default function AutoDetectPdfUploadSection({
           </div>
         )}
       </div>
-      
-      {/* Information about auto-detection */}
-      {user?.role !== 'vendor' && (
-        <div className="mt-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-3">
-          <div className="flex items-center space-x-2 mb-1">
-            <Brain className="h-4 w-4 text-blue-600" />
-            <span className="text-sm font-medium text-blue-800 dark:text-blue-300">How Auto-Detection Works</span>
-          </div>
-          <p className="text-xs text-blue-700 dark:text-blue-400">
-            The AI analyzes your PDF's content and structure to automatically suggest the best extraction type. 
-            If detection fails or confidence is low, you can still manually select the type.
-          </p>
-        </div>
-      )}
-      
+
     </div>
   );
 }
