@@ -681,7 +681,7 @@ Deno.serve(async (req: Request) => {
           console.log('🔧 SFTP upload config:', JSON.stringify(config, null, 2))
 
           console.log('📋 Fetching default SFTP configuration...')
-          const sftpConfigResponse = await fetch(`${supabaseUrl}/rest/v1/sftp_configs?limit=1`, {
+          const sftpConfigResponse = await fetch(`${supabaseUrl}/rest/v1/sftp_config?limit=1`, {
             headers: { 'Authorization': `Bearer ${supabaseServiceKey}`, 'Content-Type': 'application/json', 'apikey': supabaseServiceKey }
           })
 
