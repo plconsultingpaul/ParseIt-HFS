@@ -694,8 +694,50 @@ Deno.serve(async (req: Request) => {
           }
 
           // Remove any existing file extensions from the template
-          const baseFilename = template.replace(/\.(pdf|csv|json|xml)$/i, '')
+          let baseFilename = template.replace(/\.(pdf|csv|json|xml)$/i, '')
           console.log('📄 Base filename (without extension):', baseFilename)
+
+          // Check if timestamp should be appended
+          const appendTimestamp = config.appendTimestamp === true
+          const timestampFormat = config.timestampFormat || 'YYYYMMDD'
+
+          console.log('⏰ Append timestamp:', appendTimestamp)
+          if (appendTimestamp) {
+            console.log('⏰ Timestamp format:', timestampFormat)
+          }
+
+          // Generate timestamp if required
+          let timestamp = ''
+          if (appendTimestamp) {
+            const now = new Date()
+            const year = now.getFullYear()
+            const month = String(now.getMonth() + 1).padStart(2, '0')
+            const day = String(now.getDate()).padStart(2, '0')
+            const hours = String(now.getHours()).padStart(2, '0')
+            const minutes = String(now.getMinutes()).padStart(2, '0')
+            const seconds = String(now.getSeconds()).padStart(2, '0')
+
+            switch (timestampFormat) {
+              case 'YYYYMMDD':
+                timestamp = `${year}${month}${day}`
+                break
+              case 'YYYY-MM-DD':
+                timestamp = `${year}-${month}-${day}`
+                break
+              case 'YYYYMMDD_HHMMSS':
+                timestamp = `${year}${month}${day}_${hours}${minutes}${seconds}`
+                break
+              case 'YYYY-MM-DD_HH-MM-SS':
+                timestamp = `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`
+                break
+              default:
+                timestamp = `${year}${month}${day}`
+            }
+
+            console.log('⏰ Generated timestamp:', timestamp)
+            baseFilename = `${baseFilename}_${timestamp}`
+            console.log('📄 Base filename with timestamp:', baseFilename)
+          }
 
           // Determine which file types to rename based on config
           const renamePdf = config.renamePdf === true
