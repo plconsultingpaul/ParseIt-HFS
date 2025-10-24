@@ -193,7 +193,7 @@ export async function updateWorkflowSteps(workflowId: string, steps: WorkflowSte
         };
 
         // Only include the id field if it's not a temporary ID
-        if (!step.id.startsWith('temp-')) {
+        if (step.id && !step.id.toString().startsWith('temp-')) {
           stepData.id = step.id;
         }
 
@@ -201,10 +201,11 @@ export async function updateWorkflowSteps(workflowId: string, steps: WorkflowSte
         return stepData;
       });
 
+      // Insert steps - let database generate IDs for new steps
       const { data: insertedSteps, error: insertError } = await supabase
         .from('workflow_steps')
         .insert(stepsToInsert)
-        .select('id');
+        .select();
 
       if (insertError) throw insertError;
       console.log('✅ Steps inserted successfully:', insertedSteps);
