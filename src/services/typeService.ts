@@ -17,14 +17,17 @@ export async function fetchExtractionTypes(): Promise<ExtractionType[]> {
       defaultInstructions: type.default_instructions,
       formatTemplate: type.xml_format,
       filename: type.filename,
-      formatType: type.format_type as 'XML' | 'JSON',
+      formatType: type.format_type as 'XML' | 'JSON' | 'CSV',
       jsonPath: type.json_path,
       fieldMappings: type.field_mappings ? JSON.parse(type.field_mappings) : [],
       parseitIdMapping: type.parseit_id_mapping,
       traceTypeMapping: type.trace_type_mapping,
       traceTypeValue: type.trace_type_value,
       workflowId: type.workflow_id,
-      autoDetectInstructions: type.auto_detect_instructions
+      autoDetectInstructions: type.auto_detect_instructions,
+      csvDelimiter: type.csv_delimiter,
+      csvIncludeHeaders: type.csv_include_headers,
+      csvRowDetectionInstructions: type.csv_row_detection_instructions
     }));
   } catch (error) {
     console.error('Error fetching extraction types:', error);
@@ -93,6 +96,9 @@ export async function updateExtractionTypes(types: ExtractionType[]): Promise<vo
           trace_type_value: type.traceTypeValue,
           workflow_id: type.workflowId || null,
           auto_detect_instructions: type.autoDetectInstructions,
+          csv_delimiter: type.csvDelimiter || ',',
+          csv_include_headers: type.csvIncludeHeaders !== false,
+          csv_row_detection_instructions: type.csvRowDetectionInstructions || null,
           updated_at: new Date().toISOString()
         })
         .eq('id', type.id);
@@ -136,7 +142,10 @@ export async function updateExtractionTypes(types: ExtractionType[]): Promise<vo
           trace_type_mapping: type.traceTypeMapping || null,
           trace_type_value: type.traceTypeValue || null,
           workflow_id: type.workflowId || null,
-          auto_detect_instructions: type.autoDetectInstructions || null
+          auto_detect_instructions: type.autoDetectInstructions || null,
+          csv_delimiter: type.csvDelimiter || ',',
+          csv_include_headers: type.csvIncludeHeaders !== false,
+          csv_row_detection_instructions: type.csvRowDetectionInstructions || null
         };
         
         console.log('  Mapped data for database:', mappedData);

@@ -120,7 +120,7 @@ export default function ExtractionTypesSettings({
       defaultInstructions: '',
       formatTemplate: '',
       filename: '',
-      formatType: 'XML',
+      formatType: 'CSV',
       jsonPath: '',
       fieldMappings: []
     };
@@ -741,11 +741,12 @@ export default function ExtractionTypesSettings({
                 </label>
                 <select
                   value={selectedType.formatType}
-                  onChange={(e) => updateExtractionType(selectedTypeIndex, 'formatType', e.target.value as 'XML' | 'JSON')}
+                  onChange={(e) => updateExtractionType(selectedTypeIndex, 'formatType', e.target.value as 'XML' | 'JSON' | 'CSV')}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 >
                   <option value="XML">XML</option>
                   <option value="JSON">JSON</option>
+                  <option value="CSV">CSV</option>
                 </select>
               </div>
               {selectedType.formatType === 'JSON' && (
@@ -762,7 +763,60 @@ export default function ExtractionTypesSettings({
                   />
                 </div>
               )}
+              {selectedType.formatType === 'CSV' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      CSV Delimiter
+                    </label>
+                    <select
+                      value={selectedType.csvDelimiter || ','}
+                      onChange={(e) => updateExtractionType(selectedTypeIndex, 'csvDelimiter', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    >
+                      <option value=",">Comma (,)</option>
+                      <option value=";">Semicolon (;)</option>
+                      <option value="\t">Tab</option>
+                      <option value="|">Pipe (|)</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <input
+                      type="checkbox"
+                      id={`csvHeaders-${selectedTypeIndex}`}
+                      checked={selectedType.csvIncludeHeaders !== false}
+                      onChange={(e) => updateExtractionType(selectedTypeIndex, 'csvIncludeHeaders', e.target.checked)}
+                      className="w-4 h-4 text-purple-600 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded focus:ring-purple-500"
+                    />
+                    <label htmlFor={`csvHeaders-${selectedTypeIndex}`} className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Include Header Row
+                    </label>
+                  </div>
+                </>
+              )}
             </div>
+
+            {/* CSV Row Detection Instructions */}
+            {selectedType.formatType === 'CSV' && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <div className="flex items-center space-x-2">
+                    <FileText className="h-4 w-4 text-purple-600" />
+                    <span>Row Detection Instructions</span>
+                  </div>
+                </label>
+                <textarea
+                  value={selectedType.csvRowDetectionInstructions || ''}
+                  onChange={(e) => updateExtractionType(selectedTypeIndex, 'csvRowDetectionInstructions', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-vertical"
+                  rows={3}
+                  placeholder="e.g., 'Each Carrier Reference 1 field creates a new row in the CSV'"
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Describe what constitutes a new row in the CSV. This helps the AI identify individual records in the PDF.
+                </p>
+              </div>
+            )}
 
             {/* Workflow Assignment */}
             <div className="mb-4">
@@ -802,21 +856,23 @@ export default function ExtractionTypesSettings({
               />
             </div>
 
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                {selectedType.formatType === 'JSON' ? 'JSON Template' : 'XML Template'}
-              </label>
-              <textarea
-                value={selectedType.formatTemplate}
-                onChange={(e) => updateExtractionType(selectedTypeIndex, 'formatTemplate', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-vertical font-mono text-sm"
-                rows={6}
-                placeholder={selectedType.formatType === 'JSON' ? 
-                  '{\n  "field1": "value1",\n  "field2": "value2"\n}' : 
-                  '<Trace>\n  <TraceType type="">\n    <Number>{{PARSEIT_ID_PLACEHOLDER}}</Number>\n  </TraceType>\n</Trace>'
-                }
-              />
-            </div>
+            {selectedType.formatType !== 'CSV' && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  {selectedType.formatType === 'JSON' ? 'JSON Template' : 'XML Template'}
+                </label>
+                <textarea
+                  value={selectedType.formatTemplate}
+                  onChange={(e) => updateExtractionType(selectedTypeIndex, 'formatTemplate', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-vertical font-mono text-sm"
+                  rows={6}
+                  placeholder={selectedType.formatType === 'JSON' ?
+                    '{\n  "field1": "value1",\n  "field2": "value2"\n}' :
+                    '<Trace>\n  <TraceType type="">\n    <Number>{{PARSEIT_ID_PLACEHOLDER}}</Number>\n  </TraceType>\n</Trace>'
+                  }
+                />
+              </div>
+            )}
 
             {/* Auto-Detection Instructions */}
             <div className="mb-4">
@@ -837,20 +893,22 @@ export default function ExtractionTypesSettings({
                 These instructions help the AI identify when to use this extraction type. Be specific about document layout, key fields, headers, or unique characteristics.
               </p>
             </div>
-            {selectedType.formatType === 'JSON' && (
+            {(selectedType.formatType === 'JSON' || selectedType.formatType === 'CSV') && (
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Field Mappings
+                    {selectedType.formatType === 'CSV' ? 'CSV Column Mappings' : 'Field Mappings'}
                   </label>
                   <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => generateFieldMappingsFromTemplateAsync(selectedTypeIndex)}
-                      className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition-colors duration-200 flex items-center space-x-1"
-                    >
-                      <FileText className="h-3 w-3" />
-                      <span>Map JSON</span>
-                    </button>
+                    {selectedType.formatType === 'JSON' && (
+                      <button
+                        onClick={() => generateFieldMappingsFromTemplateAsync(selectedTypeIndex)}
+                        className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition-colors duration-200 flex items-center space-x-1"
+                      >
+                        <FileText className="h-3 w-3" />
+                        <span>Map JSON</span>
+                      </button>
+                    )}
                     <button
                       onClick={() => addFieldMapping(selectedTypeIndex)}
                       className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors duration-200 flex items-center space-x-1"
