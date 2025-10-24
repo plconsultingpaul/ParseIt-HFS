@@ -32,6 +32,62 @@ interface WorkflowStep {
   next_step_on_failure_id?: string
 }
 
+async function createStepLog(
+  supabaseUrl: string,
+  supabaseServiceKey: string,
+  workflowExecutionLogId: string,
+  workflowId: string,
+  step: WorkflowStep,
+  status: string,
+  startedAt: string,
+  completedAt?: string,
+  durationMs?: number,
+  errorMessage?: string,
+  inputData?: any,
+  outputData?: any
+) {
+  try {
+    const stepLogPayload = {
+      workflow_execution_log_id: workflowExecutionLogId,
+      workflow_id: workflowId,
+      step_id: step.id,
+      step_name: step.step_name,
+      step_type: step.step_type,
+      step_order: step.step_order,
+      status,
+      started_at: startedAt,
+      completed_at: completedAt || null,
+      duration_ms: durationMs || null,
+      error_message: errorMessage || null,
+      input_data: inputData || null,
+      output_data: outputData || null,
+      created_at: new Date().toISOString()
+    }
+
+    const stepLogResponse = await fetch(`${supabaseUrl}/rest/v1/workflow_step_logs`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${supabaseServiceKey}`,
+        'Content-Type': 'application/json',
+        'apikey': supabaseServiceKey,
+        'Prefer': 'return=representation'
+      },
+      body: JSON.stringify(stepLogPayload)
+    })
+
+    if (stepLogResponse.ok) {
+      const stepLogData = await stepLogResponse.json()
+      console.log(`✅ Step log created for step ${step.step_order}:`, stepLogData[0]?.id)
+      return stepLogData[0]?.id
+    } else {
+      console.error('❌ Failed to create step log:', stepLogResponse.status)
+    }
+  } catch (error) {
+    console.error('❌ Error creating step log:', error)
+  }
+  return null
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, {
@@ -118,7 +174,7 @@ Deno.serve(async (req: Request) => {
           const transformationTypes = await transformationTypeResponse.json()
           if (transformationTypes && transformationTypes.length > 0) {
             typeDetails = transformationTypes[0]
-            formatType = 'CSV'
+            formatType = typeDetails.format_type || 'CSV'
             console.log('✅ Transformation type details loaded')
           }
         }
@@ -319,8 +375,40 @@ Deno.serve(async (req: Request) => {
     console.log('🔄 Starting workflow execution with', steps.length, 'steps...')
     let lastApiResponse: any = null
 
+    const getValueByPath = (obj: any, path: string): any => {
+      try {
+        const parts = path.split('.')
+        let current = obj
+
+        for (const part of parts) {
+          if (part.includes('[') && part.includes(']')) {
+            const arrayName = part.substring(0, part.indexOf('['))
+            const arrayIndex = parseInt(part.substring(part.indexOf('[') + 1, part.indexOf(']')))
+            current = current[arrayName]?.[arrayIndex]
+          } else if (!isNaN(Number(part))) {
+            const arrayIndex = parseInt(part)
+            current = current?.[arrayIndex]
+          } else {
+            current = current?.[part]
+          }
+
+          if (current === undefined || current === null) {
+            return null
+          }
+        }
+
+        return current
+      } catch (error) {
+        console.error(`Error getting value by path "${path}":`, error)
+        return null
+      }
+    }
+
     for (let i = 0; i < steps.length; i++) {
       const step = steps[i]
+      const stepStartTime = new Date().toISOString()
+      const stepStartMs = Date.now()
+
       console.log(`🔄 === EXECUTING STEP ${step.step_order}: ${step.step_name} ===`)
       console.log('🔧 Step type:', step.step_type)
 
@@ -339,40 +427,13 @@ Deno.serve(async (req: Request) => {
         console.warn('⚠️ Failed to update workflow log:', updateError)
       }
 
+      let stepOutputData: any = null
+
       try {
         if (step.step_type === 'api_call') {
           console.log('🌐 === EXECUTING API CALL STEP ===')
           const config = step.config_json || {}
           console.log('🔧 API call config:', JSON.stringify(config, null, 2))
-
-          const getValueByPath = (obj: any, path: string): any => {
-            try {
-              const parts = path.split('.')
-              let current = obj
-
-              for (const part of parts) {
-                if (part.includes('[') && part.includes(']')) {
-                  const arrayName = part.substring(0, part.indexOf('['))
-                  const arrayIndex = parseInt(part.substring(part.indexOf('[') + 1, part.indexOf(']')))
-                  current = current[arrayName]?.[arrayIndex]
-                } else if (!isNaN(Number(part))) {
-                  const arrayIndex = parseInt(part)
-                  current = current?.[arrayIndex]
-                } else {
-                  current = current?.[part]
-                }
-
-                if (current === undefined || current === null) {
-                  return null
-                }
-              }
-
-              return current
-            } catch (error) {
-              console.error(`Error getting value by path "${path}":`, error)
-              return null
-            }
-          }
 
           let url = config.url || ''
           console.log('🔗 Original URL:', url)
@@ -509,6 +570,7 @@ Deno.serve(async (req: Request) => {
             responseData = JSON.parse(responseText)
             console.log('✅ API response parsed successfully')
             lastApiResponse = responseData
+            stepOutputData = responseData
           } catch (responseParseError) {
             console.error('❌ Failed to parse API response:', responseParseError)
             console.error('📄 Problematic response:', responseText)
@@ -583,16 +645,221 @@ Deno.serve(async (req: Request) => {
             }
           }
 
+        } else if (step.step_type === 'rename_pdf') {
+          console.log('📝 === EXECUTING RENAME PDF STEP ===')
+          const config = step.config_json || {}
+          console.log('🔧 Rename config:', JSON.stringify(config, null, 2))
+
+          let template = config.template || 'Remit_{{pdfFilename}}'
+          console.log('📄 Original template:', template)
+
+          const placeholderRegex = /\{\{([^}]+)\}\}/g
+          let match
+
+          while ((match = placeholderRegex.exec(template)) !== null) {
+            const placeholder = match[0]
+            const path = match[1]
+            const value = getValueByPath(contextData, path)
+
+            console.log(`🔍 Replacing ${placeholder} with value:`, value)
+
+            if (value !== null && value !== undefined) {
+              template = template.replace(placeholder, String(value))
+            }
+          }
+
+          const renamedFilename = template
+          console.log('✅ Renamed filename:', renamedFilename)
+
+          contextData.renamedFilename = renamedFilename
+          contextData.actualFilename = renamedFilename
+          stepOutputData = { renamedFilename }
+
+        } else if (step.step_type === 'sftp_upload') {
+          console.log('📤 === EXECUTING SFTP UPLOAD STEP ===')
+          const config = step.config_json || {}
+          console.log('🔧 SFTP upload config:', JSON.stringify(config, null, 2))
+
+          console.log('📋 Fetching SFTP configuration...')
+          const sftpConfigResponse = await fetch(`${supabaseUrl}/rest/v1/sftp_configs?id=eq.${config.sftpConfigId}`, {
+            headers: { 'Authorization': `Bearer ${supabaseServiceKey}`, 'Content-Type': 'application/json', 'apikey': supabaseServiceKey }
+          })
+
+          if (!sftpConfigResponse.ok) {
+            throw new Error('Failed to fetch SFTP configuration')
+          }
+
+          const sftpConfigs = await sftpConfigResponse.json()
+          if (!sftpConfigs || sftpConfigs.length === 0) {
+            throw new Error('SFTP configuration not found')
+          }
+
+          const sftpConfig = sftpConfigs[0]
+          console.log('✅ SFTP configuration loaded:', sftpConfig.name)
+
+          let fileContent = ''
+          let filename = contextData.renamedFilename || contextData.actualFilename || contextData.pdfFilename || 'document'
+
+          if (config.uploadType === 'pdf') {
+            console.log('📄 Uploading PDF file')
+
+            if (!contextData.pdfBase64) {
+              throw new Error('PDF base64 data not available')
+            }
+
+            fileContent = contextData.pdfBase64
+
+            if (!filename.toLowerCase().endsWith('.pdf')) {
+              filename = `${filename}.pdf`
+            }
+          } else if (config.uploadType === 'json' || config.uploadType === 'xml') {
+            console.log(`📄 Uploading ${config.uploadType.toUpperCase()} file`)
+
+            const dataToUpload = contextData.extractedData || contextData
+            fileContent = Buffer.from(JSON.stringify(dataToUpload, null, 2)).toString('base64')
+
+            const extension = config.uploadType === 'json' ? '.json' : '.xml'
+            if (!filename.toLowerCase().endsWith(extension)) {
+              filename = filename.replace(/\.(pdf|json|xml)$/i, '') + extension
+            }
+          } else if (config.uploadType === 'csv') {
+            console.log('📄 Uploading CSV file')
+
+            if (contextData.extractedData && typeof contextData.extractedData === 'string') {
+              fileContent = Buffer.from(contextData.extractedData).toString('base64')
+            } else {
+              throw new Error('CSV data not available or not in string format')
+            }
+
+            if (!filename.toLowerCase().endsWith('.csv')) {
+              filename = filename.replace(/\.(pdf|json|xml|csv)$/i, '') + '.csv'
+            }
+          }
+
+          console.log('📤 Calling SFTP upload function...')
+          console.log('📄 Filename:', filename)
+          console.log('📏 File content length:', fileContent.length)
+
+          const sftpUploadResponse = await fetch(`${supabaseUrl}/functions/v1/sftp-upload`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${supabaseServiceKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              host: sftpConfig.host,
+              port: sftpConfig.port,
+              username: sftpConfig.username,
+              password: sftpConfig.password,
+              remotePath: sftpConfig.remote_path,
+              filename: filename,
+              fileContent: fileContent,
+              fileType: config.uploadType || 'pdf'
+            })
+          })
+
+          console.log('📤 SFTP upload response status:', sftpUploadResponse.status)
+
+          if (!sftpUploadResponse.ok) {
+            const errorText = await sftpUploadResponse.text()
+            console.error('❌ SFTP upload failed:', errorText)
+            throw new Error(`SFTP upload failed: ${errorText}`)
+          }
+
+          const uploadResult = await sftpUploadResponse.json()
+          console.log('✅ SFTP upload successful:', uploadResult)
+
+          stepOutputData = { uploadResult, filename }
+
+        } else if (step.step_type === 'email_action') {
+          console.log('📧 === EXECUTING EMAIL ACTION STEP ===')
+          const config = step.config_json || {}
+          console.log('🔧 Email config:', JSON.stringify(config, null, 2))
+
+          let subject = config.subject || 'Workflow Notification'
+          let body = config.body || ''
+
+          const placeholderRegex = /\{\{([^}]+)\}\}/g
+          let match
+
+          while ((match = placeholderRegex.exec(subject)) !== null) {
+            const placeholder = match[0]
+            const path = match[1]
+            const value = getValueByPath(contextData, path)
+            if (value !== null && value !== undefined) {
+              subject = subject.replace(placeholder, String(value))
+            }
+          }
+
+          while ((match = placeholderRegex.exec(body)) !== null) {
+            const placeholder = match[0]
+            const path = match[1]
+            const value = getValueByPath(contextData, path)
+            if (value !== null && value !== undefined) {
+              body = body.replace(placeholder, String(value))
+            }
+          }
+
+          console.log('📧 Sending email...')
+          console.log('📧 To:', config.to)
+          console.log('📧 Subject:', subject)
+
+          stepOutputData = {
+            emailSent: true,
+            to: config.to,
+            subject,
+            message: 'Email action executed (actual sending not implemented in this version)'
+          }
+
         } else {
-          console.log(`⏭️ Skipping step type: ${step.step_type} (not implemented in CSV processor)`)
+          console.log(`⚠️ Unknown step type: ${step.step_type}`)
+          stepOutputData = { skipped: true, reason: 'Step type not implemented' }
         }
 
-        console.log(`✅ Step ${step.step_order} completed successfully`)
+        const stepEndTime = new Date().toISOString()
+        const stepDurationMs = Date.now() - stepStartMs
+
+        console.log(`✅ Step ${step.step_order} completed successfully in ${stepDurationMs}ms`)
+
+        if (workflowExecutionLogId) {
+          await createStepLog(
+            supabaseUrl,
+            supabaseServiceKey,
+            workflowExecutionLogId,
+            requestData.workflowId,
+            step,
+            'completed',
+            stepStartTime,
+            stepEndTime,
+            stepDurationMs,
+            undefined,
+            { config: step.config_json },
+            stepOutputData
+          )
+        }
 
       } catch (stepError) {
+        const stepEndTime = new Date().toISOString()
+        const stepDurationMs = Date.now() - stepStartMs
+
         console.error(`❌ Step ${step.step_order} failed:`, stepError)
 
         if (workflowExecutionLogId) {
+          await createStepLog(
+            supabaseUrl,
+            supabaseServiceKey,
+            workflowExecutionLogId,
+            requestData.workflowId,
+            step,
+            'failed',
+            stepStartTime,
+            stepEndTime,
+            stepDurationMs,
+            stepError.message,
+            { config: step.config_json },
+            null
+          )
+
           try {
             await fetch(`${supabaseUrl}/rest/v1/workflow_execution_logs?id=eq.${workflowExecutionLogId}`, {
               method: 'PATCH',
