@@ -146,7 +146,7 @@ Deno.serve(async (req: Request) => {
     console.log('[EdgeFunction] Initializing Gemini AI...');
     const initStartTime = performance.now();
     const genAI = new GoogleGenerativeAI(requestData.apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
     const initEndTime = performance.now();
     console.log(`[EdgeFunction] Gemini initialized in ${((initEndTime - initStartTime) / 1000).toFixed(3)}s`);
 

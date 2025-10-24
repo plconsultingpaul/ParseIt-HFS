@@ -126,7 +126,7 @@ export async function extractCsvFromPDF(request: CsvExtractionRequest): Promise<
   console.log('[csvExtractor] Initializing Gemini AI...');
   const initStartTime = performance.now();
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
   const initEndTime = performance.now();
   console.log(`[csvExtractor] Gemini initialized in ${((initEndTime - initStartTime) / 1000).toFixed(3)}s`);
 
@@ -338,7 +338,7 @@ export async function extractCsvFromMultiPagePDF(request: CsvMultiPageExtraction
   console.log('[csvExtractor] Initializing Gemini AI...');
   const initStartTime = performance.now();
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
   const initEndTime = performance.now();
   console.log(`[csvExtractor] Gemini initialized in ${((initEndTime - initStartTime) / 1000).toFixed(3)}s`);
 

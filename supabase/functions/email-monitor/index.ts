@@ -465,7 +465,7 @@ async function processGmailEmails(config, rules, sftpConfig, apiConfig, geminiAp
 
             // --- AI Extraction ---
             const genAI = new GoogleGenerativeAI(geminiApiKey);
-            const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+            const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
 
             const fullInstructions = extractionType.default_instructions;
             const isJsonFormat = extractionType.format_type === 'JSON';
@@ -858,7 +858,7 @@ async function processOffice365Emails(config, rules, sftpConfig, apiConfig, gemi
 
             // --- AI Extraction ---
             const genAI = new GoogleGenerativeAI(geminiApiKey);
-            const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+            const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
 
             const fullInstructions = extractionType.default_instructions;
             const isJsonFormat = extractionType.format_type === 'JSON';
