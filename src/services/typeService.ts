@@ -28,7 +28,8 @@ export async function fetchExtractionTypes(): Promise<ExtractionType[]> {
       csvDelimiter: type.csv_delimiter,
       csvIncludeHeaders: type.csv_include_headers,
       csvRowDetectionInstructions: type.csv_row_detection_instructions,
-      csvMultiPageProcessing: type.csv_multi_page_processing
+      csvMultiPageProcessing: type.csv_multi_page_processing,
+      defaultUploadMode: type.default_upload_mode as 'manual' | 'auto' | undefined
     }));
   } catch (error) {
     console.error('Error fetching extraction types:', error);
@@ -101,6 +102,7 @@ export async function updateExtractionTypes(types: ExtractionType[]): Promise<vo
           csv_include_headers: type.csvIncludeHeaders !== false,
           csv_row_detection_instructions: type.csvRowDetectionInstructions || null,
           csv_multi_page_processing: type.csvMultiPageProcessing || false,
+          default_upload_mode: type.defaultUploadMode || null,
           updated_at: new Date().toISOString()
         })
         .eq('id', type.id);
@@ -148,7 +150,8 @@ export async function updateExtractionTypes(types: ExtractionType[]): Promise<vo
           csv_delimiter: type.csvDelimiter || ',',
           csv_include_headers: type.csvIncludeHeaders !== false,
           csv_row_detection_instructions: type.csvRowDetectionInstructions || null,
-          csv_multi_page_processing: type.csvMultiPageProcessing || false
+          csv_multi_page_processing: type.csvMultiPageProcessing || false,
+          default_upload_mode: type.defaultUploadMode || null
         };
 
         console.log('  Mapped data for database:', mappedData);

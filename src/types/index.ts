@@ -24,6 +24,7 @@ export interface ExtractionType {
   csvIncludeHeaders?: boolean;
   csvRowDetectionInstructions?: string;
   csvMultiPageProcessing?: boolean;
+  defaultUploadMode?: 'manual' | 'auto';
 }
 
 export interface TransformationFieldMapping {

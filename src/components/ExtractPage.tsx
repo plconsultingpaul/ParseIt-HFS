@@ -42,17 +42,21 @@ export default function ExtractPage({
     transformationTypes[0]?.id || ''
   );
 
-  // Initialize upload mode from user preference and update when user changes
+  // Initialize upload mode from extraction type default, then user preference
   React.useEffect(() => {
     if (user?.role === 'vendor') {
       // Force vendors to use AI auto-detect mode
       setUploadMode('auto');
       // Force vendors to transformation mode only
       setProcessingMode('transformation');
+    } else if (currentExtractionType?.defaultUploadMode) {
+      // Use extraction type's default upload mode if configured
+      setUploadMode(currentExtractionType.defaultUploadMode);
     } else if (user?.preferredUploadMode) {
+      // Fall back to user preference
       setUploadMode(user.preferredUploadMode);
     }
-  }, [user?.preferredUploadMode]);
+  }, [user?.preferredUploadMode, user?.role, currentExtractionType?.defaultUploadMode]);
 
   // Set initial upload mode when component mounts
   React.useEffect(() => {
@@ -61,7 +65,11 @@ export default function ExtractPage({
       setUploadMode('auto');
       // Force vendors to transformation mode only
       setProcessingMode('transformation');
+    } else if (currentExtractionType?.defaultUploadMode) {
+      // Use extraction type's default upload mode if configured
+      setUploadMode(currentExtractionType.defaultUploadMode);
     } else if (user?.preferredUploadMode) {
+      // Fall back to user preference
       setUploadMode(user.preferredUploadMode);
     }
   }, [user]);
