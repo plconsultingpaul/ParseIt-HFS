@@ -165,50 +165,105 @@ export async function updateWorkflowSteps(workflowId: string, steps: WorkflowSte
   console.log('Steps details:', steps.map(s => ({ id: s.id, name: s.stepName, order: s.stepOrder, type: s.stepType })));
 
   try {
-    // First, delete all existing steps for this workflow
-    console.log('🗑️ Deleting existing steps for workflow:', workflowId);
-    const { error: deleteError } = await supabase
+    // Validate steps before proceeding
+    if (steps.some(step => !step.stepName || !step.stepType || typeof step.stepOrder !== 'number')) {
+      throw new Error('Invalid step data: all steps must have stepName, stepType, and stepOrder');
+    }
+
+    // Separate steps into those with existing IDs and new steps
+    const existingSteps = steps.filter(step => step.id && !step.id.toString().startsWith('temp-'));
+    const newSteps = steps.filter(step => !step.id || step.id.toString().startsWith('temp-'));
+
+    console.log('Existing steps to update/keep:', existingSteps.length);
+    console.log('New steps to insert:', newSteps.length);
+
+    // Get current steps from database
+    const { data: currentSteps, error: fetchError } = await supabase
       .from('workflow_steps')
-      .delete()
+      .select('id')
       .eq('workflow_id', workflowId);
 
-    if (deleteError) throw deleteError;
-    console.log('✅ Existing steps deleted');
+    if (fetchError) throw fetchError;
 
-    // Then insert the new steps if any
-    if (steps.length > 0) {
+    const currentStepIds = new Set((currentSteps || []).map(s => s.id));
+    const keepStepIds = new Set(existingSteps.map(s => s.id));
+
+    // Find steps to delete (exist in DB but not in our keep list)
+    const stepsToDelete = Array.from(currentStepIds).filter(id => !keepStepIds.has(id));
+
+    console.log('Steps to delete:', stepsToDelete.length);
+
+    // Insert new steps first (without id field)
+    if (newSteps.length > 0) {
       console.log('📝 Inserting new steps...');
 
-      const stepsToInsert = steps.map(step => {
-        // Build the step data object, completely omitting 'id' for temp steps
-        // This allows the database to use its DEFAULT gen_random_uuid() for new steps
-        const stepData: any = {
-          workflow_id: workflowId,
-          step_order: step.stepOrder,
-          step_type: step.stepType,
-          step_name: step.stepName,
-          config_json: step.configJson || {},
-          next_step_on_success_id: step.nextStepOnSuccessId || null,
-          next_step_on_failure_id: step.nextStepOnFailureId || null
-        };
+      const stepsToInsert = newSteps.map(step => ({
+        workflow_id: workflowId,
+        step_order: step.stepOrder,
+        step_type: step.stepType,
+        step_name: step.stepName,
+        config_json: step.configJson || {},
+        next_step_on_success_id: step.nextStepOnSuccessId || null,
+        next_step_on_failure_id: step.nextStepOnFailureId || null
+      }));
 
-        // Only include the id field if it's not a temporary ID
-        if (step.id && !step.id.toString().startsWith('temp-')) {
-          stepData.id = step.id;
-        }
+      console.log('Inserting steps (without id):', stepsToInsert);
 
-        console.log('Step to insert:', stepData);
-        return stepData;
-      });
-
-      // Insert steps - let database generate IDs for new steps
+      // Insert without specifying id field - let database auto-generate
       const { data: insertedSteps, error: insertError } = await supabase
         .from('workflow_steps')
         .insert(stepsToInsert)
         .select();
 
-      if (insertError) throw insertError;
-      console.log('✅ Steps inserted successfully:', insertedSteps);
+      if (insertError) {
+        console.error('Insert error:', insertError);
+        throw insertError;
+      }
+      console.log('✅ Steps inserted successfully:', insertedSteps?.length);
+    }
+
+    // Update existing steps
+    if (existingSteps.length > 0) {
+      console.log('🔄 Updating existing steps...');
+
+      for (const step of existingSteps) {
+        const { error: updateError } = await supabase
+          .from('workflow_steps')
+          .update({
+            step_order: step.stepOrder,
+            step_type: step.stepType,
+            step_name: step.stepName,
+            config_json: step.configJson || {},
+            next_step_on_success_id: step.nextStepOnSuccessId || null,
+            next_step_on_failure_id: step.nextStepOnFailureId || null,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', step.id)
+          .eq('workflow_id', workflowId);
+
+        if (updateError) {
+          console.error('Update error for step:', step.id, updateError);
+          throw updateError;
+        }
+      }
+      console.log('✅ Existing steps updated');
+    }
+
+    // Delete removed steps (only after successful inserts/updates)
+    if (stepsToDelete.length > 0) {
+      console.log('🗑️ Deleting removed steps:', stepsToDelete);
+
+      const { error: deleteError } = await supabase
+        .from('workflow_steps')
+        .delete()
+        .in('id', stepsToDelete)
+        .eq('workflow_id', workflowId);
+
+      if (deleteError) {
+        console.error('Delete error:', deleteError);
+        throw deleteError;
+      }
+      console.log('✅ Removed steps deleted');
     }
 
     console.log('=== updateWorkflowSteps COMPLETE ===');

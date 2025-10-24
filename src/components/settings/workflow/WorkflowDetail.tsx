@@ -50,18 +50,18 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
     setShowStepForm(true);
   };
 
-  const handleSaveStep = (step: WorkflowStep) => {
+  const handleSaveStep = async (step: WorkflowStep) => {
     console.log('Saving step:', step);
-    
+
     // Ensure configJson is never undefined
     if (!step.configJson) {
       step.configJson = {};
     }
-    
+
     // Check if this is a new step or updating existing
     const existingStepIndex = localSteps.findIndex(s => s.id === step.id);
     let updatedSteps: WorkflowStep[];
-    
+
     if (existingStepIndex >= 0) {
       // Updating existing step
       updatedSteps = localSteps.map(s => s.id === step.id ? step : s);
@@ -74,15 +74,22 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
       };
       updatedSteps = [...localSteps, stepWithOrder];
     }
-    
+
     console.log('Updated steps array:', updatedSteps);
     setLocalSteps(updatedSteps);
-    
+
     // Immediately save to database
-    handleSaveStepsToDatabase(updatedSteps);
-    
-    setShowStepForm(false);
-    setEditingStep(null);
+    try {
+      await handleSaveStepsToDatabase(updatedSteps);
+
+      // Only close form if save succeeded
+      setShowStepForm(false);
+      setEditingStep(null);
+    } catch (error) {
+      // Error already handled in handleSaveStepsToDatabase
+      // Keep form open so user can retry or cancel
+      console.log('Save failed, keeping form open for retry');
+    }
   };
 
   const handleDeleteStep = (stepId: string) => {
@@ -95,19 +102,25 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
 
   const confirmDeleteStep = async () => {
     if (!stepToDelete) return;
-    
+
     const updatedSteps = localSteps.filter(s => s.id !== stepToDelete.id);
     setLocalSteps(updatedSteps);
-    
-    // Immediately save to database
-    await handleSaveStepsToDatabase(updatedSteps);
-    
-    // Close modal
-    setShowDeleteModal(false);
-    setStepToDelete(null);
+
+    try {
+      // Immediately save to database
+      await handleSaveStepsToDatabase(updatedSteps);
+
+      // Only close modal if save succeeded
+      setShowDeleteModal(false);
+      setStepToDelete(null);
+    } catch (error) {
+      // Error already handled in handleSaveStepsToDatabase
+      // Keep modal open so user can retry or cancel
+      console.log('Delete failed, keeping modal open for retry');
+    }
   };
 
-  const handleMoveStep = (stepId: string, direction: 'up' | 'down') => {
+  const handleMoveStep = async (stepId: string, direction: 'up' | 'down') => {
     const stepIndex = localSteps.findIndex(s => s.id === stepId);
     if (stepIndex === -1) return;
 
@@ -116,15 +129,21 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
 
     const updatedSteps = [...localSteps];
     [updatedSteps[stepIndex], updatedSteps[newIndex]] = [updatedSteps[newIndex], updatedSteps[stepIndex]];
-    
+
     // Update step orders to match new positions
     updatedSteps.forEach((step, index) => {
       step.stepOrder = index + 1;
     });
-    
+
     setLocalSteps(updatedSteps);
+
     // Immediately save to database
-    handleSaveStepsToDatabase(updatedSteps);
+    try {
+      await handleSaveStepsToDatabase(updatedSteps);
+    } catch (error) {
+      // Error already handled in handleSaveStepsToDatabase
+      console.log('Move failed, steps restored to previous state');
+    }
   };
 
   const handleSaveSteps = async () => {
@@ -133,6 +152,10 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
 
   const handleSaveStepsToDatabase = async (stepsToSave: WorkflowStep[]) => {
     setIsSaving(true);
+
+    // Keep a backup of current steps in case save fails
+    const previousSteps = [...localSteps];
+
     try {
       // Filter out any undefined, null, or invalid steps before saving
       const validSteps = stepsToSave.filter(step => {
@@ -149,6 +172,10 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
           console.log('Step details:', { stepName: step.stepName, stepType: step.stepType });
           return false;
         }
+        if (typeof step.stepOrder !== 'number' || step.stepOrder < 1) {
+          console.log('Filtering out step with invalid stepOrder:', step);
+          return false;
+        }
         // Ensure configJson exists
         if (!step.configJson) {
           console.log('Step missing configJson, setting to empty object:', step.id);
@@ -156,28 +183,36 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
         }
         return true;
       });
-      
+
       console.log('Original steps to save:', stepsToSave);
       console.log('Valid steps after filtering:', validSteps);
-      
+
       if (validSteps.length !== stepsToSave.length) {
         console.warn(`Filtered out ${stepsToSave.length - validSteps.length} invalid steps`);
       }
-      
+
       // Don't proceed if we have no valid steps and we're not intentionally clearing
       if (validSteps.length === 0 && stepsToSave.length > 0) {
         console.error('All steps were filtered out as invalid, aborting save to prevent data loss');
         console.error('Steps that were filtered out:', stepsToSave);
         throw new Error('All workflow steps are invalid. Please check step configuration.');
       }
-      
+
       console.log('Saving valid steps to database:', validSteps);
       await onUpdateSteps(validSteps);
       console.log('Steps saved successfully');
     } catch (error) {
       console.error('Failed to save steps:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      alert(`Failed to save workflow steps: ${errorMessage}`);
+
+      // Restore previous steps on error to prevent UI from showing empty state
+      console.log('Restoring previous steps due to save error');
+      setLocalSteps(previousSteps);
+
+      alert(`Failed to save workflow steps: ${errorMessage}\n\nYour changes have been reverted to prevent data loss.`);
+
+      // Re-throw to prevent caller from thinking save succeeded
+      throw error;
     } finally {
       setIsSaving(false);
     }
