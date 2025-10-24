@@ -88,6 +88,11 @@ export async function extractCsvFromPDF(request: CsvExtractionRequest): Promise<
 
   const requestSize = new Blob([JSON.stringify(requestBody)]).size;
   console.log(`[csvExtractor] Request payload size: ${(requestSize / 1024).toFixed(2)} KB`);
+
+  const fullUrl = `${supabaseUrl}/functions/v1/pdf-to-csv-extractor`;
+  console.log('[csvExtractor] Target URL:', fullUrl);
+  console.log('[csvExtractor] Has API Key:', !!apiKey);
+  console.log('[csvExtractor] Has Supabase Anon Key:', !!supabaseAnonKey);
   console.log('[csvExtractor] Calling pdf-to-csv-extractor edge function...');
   console.log('[csvExtractor] ⏱️  Waiting for Gemini API response (this may take 30-60 seconds)...');
 
@@ -101,7 +106,8 @@ export async function extractCsvFromPDF(request: CsvExtractionRequest): Promise<
 
   let response: Response;
   try {
-    response = await fetch(`${supabaseUrl}/functions/v1/pdf-to-csv-extractor`, {
+    console.log('[csvExtractor] About to call fetch()...');
+    response = await fetch(fullUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -110,13 +116,19 @@ export async function extractCsvFromPDF(request: CsvExtractionRequest): Promise<
       body: JSON.stringify(requestBody),
       signal: controller.signal
     });
+    console.log('[csvExtractor] Fetch completed successfully');
   } catch (fetchError) {
     clearTimeout(timeoutId);
+    console.error('[csvExtractor] ❌ Fetch failed immediately!');
+    console.error('[csvExtractor] Error name:', fetchError instanceof Error ? fetchError.name : 'Unknown');
+    console.error('[csvExtractor] Error message:', fetchError instanceof Error ? fetchError.message : 'Unknown');
+    console.error('[csvExtractor] Full error:', fetchError);
+
     if (fetchError instanceof Error && fetchError.name === 'AbortError') {
       console.error('[csvExtractor] ❌ Request timed out after 120 seconds');
       throw new Error('CSV extraction timed out. The PDF may be too large or complex. Try with a smaller file or fewer field mappings.');
     }
-    console.error('[csvExtractor] ❌ Network error:', fetchError);
+    console.error('[csvExtractor] ❌ Network error - this suggests CORS, network, or edge function deployment issue');
     throw new Error(`Network error: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}`);
   }
   clearTimeout(timeoutId);
