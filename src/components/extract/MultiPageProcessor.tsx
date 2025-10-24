@@ -202,7 +202,8 @@ export default function MultiPageProcessor({
               pdfFilename: pageFile.name,
               pdfPages: 1,
               pdfBase64: pdfBase64,
-              originalPdfFilename: pageFile.name
+              originalPdfFilename: pageFile.name,
+              formatType: currentExtractionType.formatType
             });
             
             // Store the workflow execution log ID for status tracking

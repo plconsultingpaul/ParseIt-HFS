@@ -118,7 +118,8 @@ export default function SingleFileProcessor({
             pdfFilename: uploadedFile.name,
             pdfPages: 1,
             pdfBase64: pdfBase64,
-            originalPdfFilename: uploadedFile.name
+            originalPdfFilename: uploadedFile.name,
+            formatType: currentExtractionType.formatType
           });
           
           console.log('Workflow execution completed successfully:', workflowResult);

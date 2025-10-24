@@ -726,7 +726,7 @@ async function sendEmailGmail(
 }
 
 async function executeRenamePdf(step: WorkflowStep, contextData: any): Promise<any> {
-  console.log('📝 === EXECUTING RENAME PDF ===')
+  console.log('📝 === EXECUTING RENAME FILE ===')
   console.log('📝 Step config:', JSON.stringify(step.config_json, null, 2))
 
   const config = step.config_json
@@ -738,12 +738,50 @@ async function executeRenamePdf(step: WorkflowStep, contextData: any): Promise<a
 
   let newFilename = replaceTemplateVariables(template, contextData)
 
-  if (!newFilename.endsWith('.pdf')) {
-    newFilename += '.pdf'
+  // Detect file extension from context data or template
+  let fileExtension = '.pdf' // default
+
+  // Check if template already has an extension
+  const hasExtension = /\.(pdf|csv|json|xml)$/i.test(newFilename)
+
+  if (!hasExtension) {
+    // Auto-detect extension based on format type in context
+    const formatType = contextData.formatType || contextData.extractionType?.formatType
+    console.log('📝 Detected format type:', formatType)
+
+    if (formatType === 'CSV') {
+      fileExtension = '.csv'
+    } else if (formatType === 'JSON') {
+      fileExtension = '.json'
+    } else if (formatType === 'XML') {
+      fileExtension = '.xml'
+    }
+    // else default to .pdf
+  } else {
+    // Extract the extension from the filename
+    const match = newFilename.match(/\.(pdf|csv|json|xml)$/i)
+    if (match) {
+      fileExtension = match[0].toLowerCase()
+      newFilename = newFilename.substring(0, newFilename.length - fileExtension.length)
+    }
   }
+
+  // Add timestamp if configured
+  if (config.appendTimestamp) {
+    const timestamp = generateTimestamp(config.timestampFormat || 'YYYYMMDD')
+    newFilename = `${newFilename}_${timestamp}`
+    console.log('📝 Added timestamp to filename:', timestamp)
+  }
+
+  // Add the appropriate file extension
+  newFilename = `${newFilename}${fileExtension}`
+
+  // Sanitize filename to remove invalid characters
+  newFilename = sanitizeFilename(newFilename)
 
   console.log('📝 Original filename:', contextData.originalPdfFilename || contextData.pdfFilename)
   console.log('📝 New filename:', newFilename)
+  console.log('📝 File extension:', fileExtension)
 
   return {
     success: true,
@@ -753,6 +791,35 @@ async function executeRenamePdf(step: WorkflowStep, contextData: any): Promise<a
       renamedFilename: newFilename
     }
   }
+}
+
+function generateTimestamp(format: string): string {
+  const now = new Date()
+
+  const year = now.getUTCFullYear()
+  const month = String(now.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(now.getUTCDate()).padStart(2, '0')
+  const hours = String(now.getUTCHours()).padStart(2, '0')
+  const minutes = String(now.getUTCMinutes()).padStart(2, '0')
+  const seconds = String(now.getUTCSeconds()).padStart(2, '0')
+
+  switch (format) {
+    case 'YYYYMMDD':
+      return `${year}${month}${day}`
+    case 'YYYY-MM-DD':
+      return `${year}-${month}-${day}`
+    case 'YYYYMMDD_HHMMSS':
+      return `${year}${month}${day}_${hours}${minutes}${seconds}`
+    case 'YYYY-MM-DD_HH-MM-SS':
+      return `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`
+    default:
+      return `${year}${month}${day}`
+  }
+}
+
+function sanitizeFilename(filename: string): string {
+  // Remove invalid filename characters but keep valid ones like underscores, hyphens, and dots
+  return filename.replace(/[/\\:*?"<>|]/g, '_')
 }
 
 async function extractSpecificPageFromPdf(pdfBase64: string, pageNumber: number): Promise<string> {

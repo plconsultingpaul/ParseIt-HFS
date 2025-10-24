@@ -9,6 +9,7 @@ interface WorkflowExecutionRequest {
   pdfPages: number;
   pdfBase64: string;
   originalPdfFilename: string;
+  formatType?: string;
 }
 
 export async function executeWorkflow(request: WorkflowExecutionRequest): Promise<any> {

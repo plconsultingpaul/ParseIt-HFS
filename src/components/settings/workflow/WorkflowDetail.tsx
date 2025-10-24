@@ -209,7 +209,7 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
       case 'sftp_upload':
         return 'SFTP Upload';
       case 'rename_pdf':
-        return 'Rename PDF';
+        return 'Rename File';
       case 'email_action':
         return 'Email Action';
       default:

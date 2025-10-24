@@ -46,6 +46,8 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
   const [renamePdfTemplate, setRenamePdfTemplate] = useState('');
   const [useExtractedDataForRename, setUseExtractedDataForRename] = useState(true);
   const [renameFallbackFilename, setRenameFallbackFilename] = useState('');
+  const [appendTimestamp, setAppendTimestamp] = useState(false);
+  const [timestampFormat, setTimestampFormat] = useState('YYYYMMDD');
   const [pdfUploadStrategy, setPdfUploadStrategy] = useState<'all_pages_in_group' | 'specific_page_in_group'>('all_pages_in_group');
   const [specificPageToUpload, setSpecificPageToUpload] = useState(1);
 
@@ -98,6 +100,8 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
         setRenamePdfTemplate(config.filenameTemplate || '');
         setUseExtractedDataForRename(config.useExtractedData !== false);
         setRenameFallbackFilename(config.fallbackFilename || '');
+        setAppendTimestamp(config.appendTimestamp || false);
+        setTimestampFormat(config.timestampFormat || 'YYYYMMDD');
         
         // Data Transform configuration
         setTransformations(config.transformations || [{ field_name: '', transformation: '' }]);
@@ -195,7 +199,9 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
         config = {
           filenameTemplate: renamePdfTemplate,
           useExtractedData: useExtractedDataForRename,
-          fallbackFilename: renameFallbackFilename.trim() || undefined
+          fallbackFilename: renameFallbackFilename.trim() || undefined,
+          appendTimestamp: appendTimestamp,
+          timestampFormat: appendTimestamp ? timestampFormat : undefined
         };
         break;
       case 'email_action':
@@ -271,7 +277,7 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                 <option value="conditional_check">Conditional Check</option>
                 <option value="data_transform">Data Transform</option>
                 <option value="email_action">Email Action</option>
-                <option value="rename_pdf">Rename PDF</option>
+                <option value="rename_pdf">Rename File</option>
                 <option value="sftp_upload">SFTP Upload</option>
               </select>
             </div>
@@ -597,7 +603,7 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                     placeholder="e.g., {{invoiceNumber}}_{{customerName}} or BL_{{billNumber}}"
                   />
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Use {`{{fieldName}}`} to reference extracted data. The .pdf extension will be added automatically.
+                    Use {`{{fieldName}}`} to reference extracted data. File extension (.pdf, .csv, .json) will be added automatically based on extraction type.
                   </p>
                 </div>
 
@@ -613,6 +619,40 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                     Use extracted data for filename
                   </label>
                 </div>
+
+                <div className="flex items-center space-x-3">
+                  <input
+                    type="checkbox"
+                    id="appendTimestamp"
+                    checked={appendTimestamp}
+                    onChange={(e) => setAppendTimestamp(e.target.checked)}
+                    className="w-4 h-4 text-purple-600 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded focus:ring-purple-500"
+                  />
+                  <label htmlFor="appendTimestamp" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Append Timestamp to Filename
+                  </label>
+                </div>
+
+                {appendTimestamp && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Timestamp Format
+                    </label>
+                    <select
+                      value={timestampFormat}
+                      onChange={(e) => setTimestampFormat(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                    >
+                      <option value="YYYYMMDD">YYYYMMDD (e.g., 20250116)</option>
+                      <option value="YYYY-MM-DD">YYYY-MM-DD (e.g., 2025-01-16)</option>
+                      <option value="YYYYMMDD_HHMMSS">YYYYMMDD_HHMMSS (e.g., 20250116_143022)</option>
+                      <option value="YYYY-MM-DD_HH-MM-SS">YYYY-MM-DD_HH-MM-SS (e.g., 2025-01-16_14-30-22)</option>
+                    </select>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Timestamp will be inserted before the file extension (e.g., invoice_20250116.pdf)
+                    </p>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
