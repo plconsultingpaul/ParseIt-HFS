@@ -645,14 +645,16 @@ Deno.serve(async (req: Request) => {
             }
           }
 
-        } else if (step.step_type === 'rename_pdf') {
-          console.log('📝 === EXECUTING RENAME PDF STEP ===')
+        } else if (step.step_type === 'rename_file' || step.step_type === 'rename_pdf') {
+          console.log('📝 === EXECUTING RENAME FILE STEP ===')
           const config = step.config_json || {}
           console.log('🔧 Rename config:', JSON.stringify(config, null, 2))
 
-          let template = config.template || 'Remit_{{pdfFilename}}'
+          // Support both 'template' (legacy) and 'filenameTemplate' (new)
+          let template = config.filenameTemplate || config.template || 'Remit_{{pdfFilename}}'
           console.log('📄 Original template:', template)
 
+          // Replace placeholders in the template
           const placeholderRegex = /\{\{([^}]+)\}\}/g
           let match
 
@@ -668,12 +670,73 @@ Deno.serve(async (req: Request) => {
             }
           }
 
-          const renamedFilename = template
-          console.log('✅ Renamed filename:', renamedFilename)
+          // Remove any existing file extensions from the template
+          const baseFilename = template.replace(/\.(pdf|csv|json|xml)$/i, '')
+          console.log('📄 Base filename (without extension):', baseFilename)
 
-          contextData.renamedFilename = renamedFilename
-          contextData.actualFilename = renamedFilename
-          stepOutputData = { renamedFilename }
+          // Determine which file types to rename based on config
+          const renamePdf = config.renamePdf === true
+          const renameCsv = config.renameCsv === true
+          const renameJson = config.renameJson === true
+          const renameXml = config.renameXml === true
+
+          console.log('📋 File types to rename:', { renamePdf, renameCsv, renameJson, renameXml })
+
+          const renamedFilenames: any = {}
+
+          // Generate renamed filenames for each selected file type
+          if (renamePdf) {
+            contextData.renamedPdfFilename = `${baseFilename}.pdf`
+            renamedFilenames.pdf = contextData.renamedPdfFilename
+            console.log('✅ Renamed PDF filename:', contextData.renamedPdfFilename)
+          }
+
+          if (renameCsv) {
+            contextData.renamedCsvFilename = `${baseFilename}.csv`
+            renamedFilenames.csv = contextData.renamedCsvFilename
+            console.log('✅ Renamed CSV filename:', contextData.renamedCsvFilename)
+          }
+
+          if (renameJson) {
+            contextData.renamedJsonFilename = `${baseFilename}.json`
+            renamedFilenames.json = contextData.renamedJsonFilename
+            console.log('✅ Renamed JSON filename:', contextData.renamedJsonFilename)
+          }
+
+          if (renameXml) {
+            contextData.renamedXmlFilename = `${baseFilename}.xml`
+            renamedFilenames.xml = contextData.renamedXmlFilename
+            console.log('✅ Renamed XML filename:', contextData.renamedXmlFilename)
+          }
+
+          // For backward compatibility, set renamedFilename and actualFilename to the first enabled type
+          // Priority: JSON > XML > CSV > PDF (based on formatType)
+          let primaryFilename = baseFilename
+          if (formatType === 'JSON' && renameJson) {
+            primaryFilename = contextData.renamedJsonFilename
+          } else if (formatType === 'XML' && renameXml) {
+            primaryFilename = contextData.renamedXmlFilename
+          } else if (formatType === 'CSV' && renameCsv) {
+            primaryFilename = contextData.renamedCsvFilename
+          } else if (renamePdf) {
+            primaryFilename = contextData.renamedPdfFilename
+          } else if (renameJson) {
+            primaryFilename = contextData.renamedJsonFilename
+          } else if (renameXml) {
+            primaryFilename = contextData.renamedXmlFilename
+          } else if (renameCsv) {
+            primaryFilename = contextData.renamedCsvFilename
+          }
+
+          contextData.renamedFilename = primaryFilename
+          contextData.actualFilename = primaryFilename
+
+          console.log('✅ Primary renamed filename:', primaryFilename)
+          stepOutputData = {
+            renamedFilenames,
+            primaryFilename,
+            baseFilename
+          }
 
         } else if (step.step_type === 'sftp_upload') {
           console.log('📤 === EXECUTING SFTP UPLOAD STEP ===')
@@ -703,36 +766,63 @@ Deno.serve(async (req: Request) => {
           if (config.uploadType === 'pdf') {
             console.log('📄 Uploading PDF file')
 
+            // Use format-specific renamed filename if available
+            if (contextData.renamedPdfFilename) {
+              filename = contextData.renamedPdfFilename
+              console.log('✅ Using renamed PDF filename:', filename)
+            } else if (!filename.toLowerCase().endsWith('.pdf')) {
+              filename = `${filename}.pdf`
+            }
+
             if (!contextData.pdfBase64) {
               throw new Error('PDF base64 data not available')
             }
 
             fileContent = contextData.pdfBase64
 
-            if (!filename.toLowerCase().endsWith('.pdf')) {
-              filename = `${filename}.pdf`
+          } else if (config.uploadType === 'json') {
+            console.log('📄 Uploading JSON file')
+
+            // Use format-specific renamed filename if available
+            if (contextData.renamedJsonFilename) {
+              filename = contextData.renamedJsonFilename
+              console.log('✅ Using renamed JSON filename:', filename)
+            } else if (!filename.toLowerCase().endsWith('.json')) {
+              filename = filename.replace(/\.(pdf|json|xml|csv)$/i, '') + '.json'
             }
-          } else if (config.uploadType === 'json' || config.uploadType === 'xml') {
-            console.log(`📄 Uploading ${config.uploadType.toUpperCase()} file`)
 
             const dataToUpload = contextData.extractedData || contextData
             fileContent = Buffer.from(JSON.stringify(dataToUpload, null, 2)).toString('base64')
 
-            const extension = config.uploadType === 'json' ? '.json' : '.xml'
-            if (!filename.toLowerCase().endsWith(extension)) {
-              filename = filename.replace(/\.(pdf|json|xml)$/i, '') + extension
+          } else if (config.uploadType === 'xml') {
+            console.log('📄 Uploading XML file')
+
+            // Use format-specific renamed filename if available
+            if (contextData.renamedXmlFilename) {
+              filename = contextData.renamedXmlFilename
+              console.log('✅ Using renamed XML filename:', filename)
+            } else if (!filename.toLowerCase().endsWith('.xml')) {
+              filename = filename.replace(/\.(pdf|json|xml|csv)$/i, '') + '.xml'
             }
+
+            const dataToUpload = contextData.extractedData || contextData
+            fileContent = Buffer.from(JSON.stringify(dataToUpload, null, 2)).toString('base64')
+
           } else if (config.uploadType === 'csv') {
             console.log('📄 Uploading CSV file')
+
+            // Use format-specific renamed filename if available
+            if (contextData.renamedCsvFilename) {
+              filename = contextData.renamedCsvFilename
+              console.log('✅ Using renamed CSV filename:', filename)
+            } else if (!filename.toLowerCase().endsWith('.csv')) {
+              filename = filename.replace(/\.(pdf|json|xml|csv)$/i, '') + '.csv'
+            }
 
             if (contextData.extractedData && typeof contextData.extractedData === 'string') {
               fileContent = Buffer.from(contextData.extractedData).toString('base64')
             } else {
               throw new Error('CSV data not available or not in string format')
-            }
-
-            if (!filename.toLowerCase().endsWith('.csv')) {
-              filename = filename.replace(/\.(pdf|json|xml|csv)$/i, '') + '.csv'
             }
           }
 

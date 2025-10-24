@@ -48,6 +48,12 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
   const [renameFallbackFilename, setRenameFallbackFilename] = useState('');
   const [appendTimestamp, setAppendTimestamp] = useState(false);
   const [timestampFormat, setTimestampFormat] = useState('YYYYMMDD');
+  const [renameFileTypes, setRenameFileTypes] = useState({
+    pdf: true,
+    csv: false,
+    json: false,
+    xml: false
+  });
   const [pdfUploadStrategy, setPdfUploadStrategy] = useState<'all_pages_in_group' | 'specific_page_in_group'>('all_pages_in_group');
   const [specificPageToUpload, setSpecificPageToUpload] = useState(1);
   const [uploadFileTypes, setUploadFileTypes] = useState({
@@ -105,12 +111,18 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
         setUploadFileTypes(config.uploadFileTypes || { json: true, pdf: true, xml: true, csv: true });
         setUploadType(config.uploadType || 'csv');
 
-        // Rename PDF configuration
-        setRenamePdfTemplate(config.filenameTemplate || '');
+        // Rename File configuration
+        setRenamePdfTemplate(config.filenameTemplate || config.template || '');
         setUseExtractedDataForRename(config.useExtractedData !== false);
         setRenameFallbackFilename(config.fallbackFilename || '');
         setAppendTimestamp(config.appendTimestamp || false);
         setTimestampFormat(config.timestampFormat || 'YYYYMMDD');
+        setRenameFileTypes({
+          pdf: config.renamePdf !== false,
+          csv: config.renameCsv === true,
+          json: config.renameJson === true,
+          xml: config.renameXml === true
+        });
 
         // Data Transform configuration
         setTransformations(config.transformations || [{ field_name: '', transformation: '' }]);
@@ -207,13 +219,18 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
           expectedValue: conditionalValue
         };
         break;
+      case 'rename_file':
       case 'rename_pdf':
         config = {
           filenameTemplate: renamePdfTemplate,
           useExtractedData: useExtractedDataForRename,
           fallbackFilename: renameFallbackFilename.trim() || undefined,
           appendTimestamp: appendTimestamp,
-          timestampFormat: appendTimestamp ? timestampFormat : undefined
+          timestampFormat: appendTimestamp ? timestampFormat : undefined,
+          renamePdf: renameFileTypes.pdf,
+          renameCsv: renameFileTypes.csv,
+          renameJson: renameFileTypes.json,
+          renameXml: renameFileTypes.xml
         };
         break;
       case 'email_action':
@@ -289,7 +306,7 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                 <option value="conditional_check">Conditional Check</option>
                 <option value="data_transform">Data Transform</option>
                 <option value="email_action">Email Action</option>
-                <option value="rename_pdf">Rename File</option>
+                <option value="rename_file">Rename File</option>
                 <option value="sftp_upload">SFTP Upload</option>
               </select>
             </div>
@@ -679,7 +696,7 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
               </div>
             )}
 
-            {stepType === 'rename_pdf' && (
+            {(stepType === 'rename_file' || stepType === 'rename_pdf') && (
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -693,7 +710,66 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                     placeholder="e.g., {{invoiceNumber}}_{{customerName}} or BL_{{billNumber}}"
                   />
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Use {`{{fieldName}}`} to reference extracted data. <strong>DO NOT include file extension</strong> - it will be added automatically based on format type (.pdf, .csv, .json, .xml).
+                    Use {`{{fieldName}}`} to reference extracted data. <strong>DO NOT include file extension</strong> - it will be added automatically based on selected file types (.pdf, .csv, .json, .xml).
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                    File Types to Rename
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="flex items-center space-x-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                      <input
+                        type="checkbox"
+                        id="renamePdf"
+                        checked={renameFileTypes.pdf}
+                        onChange={(e) => setRenameFileTypes({ ...renameFileTypes, pdf: e.target.checked })}
+                        className="w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded focus:ring-blue-500"
+                      />
+                      <label htmlFor="renamePdf" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        PDF (.pdf)
+                      </label>
+                    </div>
+                    <div className="flex items-center space-x-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                      <input
+                        type="checkbox"
+                        id="renameCsv"
+                        checked={renameFileTypes.csv}
+                        onChange={(e) => setRenameFileTypes({ ...renameFileTypes, csv: e.target.checked })}
+                        className="w-4 h-4 text-green-600 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded focus:ring-green-500"
+                      />
+                      <label htmlFor="renameCsv" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        CSV (.csv)
+                      </label>
+                    </div>
+                    <div className="flex items-center space-x-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                      <input
+                        type="checkbox"
+                        id="renameJson"
+                        checked={renameFileTypes.json}
+                        onChange={(e) => setRenameFileTypes({ ...renameFileTypes, json: e.target.checked })}
+                        className="w-4 h-4 text-orange-600 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded focus:ring-orange-500"
+                      />
+                      <label htmlFor="renameJson" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        JSON (.json)
+                      </label>
+                    </div>
+                    <div className="flex items-center space-x-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                      <input
+                        type="checkbox"
+                        id="renameXml"
+                        checked={renameFileTypes.xml}
+                        onChange={(e) => setRenameFileTypes({ ...renameFileTypes, xml: e.target.checked })}
+                        className="w-4 h-4 text-red-600 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded focus:ring-red-500"
+                      />
+                      <label htmlFor="renameXml" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        XML (.xml)
+                      </label>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                    Select which file types to rename. The same template will be used for all selected types with the appropriate extension added automatically.
                   </p>
                 </div>
 

@@ -243,6 +243,7 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
         return 'Data Transform';
       case 'sftp_upload':
         return 'SFTP Upload';
+      case 'rename_file':
       case 'rename_pdf':
         return 'Rename File';
       case 'email_action':
@@ -413,7 +414,7 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
                           {step.stepType === 'conditional_check' && step.configJson.jsonPath && `Check: ${step.configJson.jsonPath}`}
                           {step.stepType === 'data_transform' && 'Transform data'}
                           {step.stepType === 'sftp_upload' && 'Upload PDF to SFTP'}
-                          {step.stepType === 'rename_pdf' && step.configJson.filenameTemplate && `Template: ${step.configJson.filenameTemplate}`}
+                          {(step.stepType === 'rename_file' || step.stepType === 'rename_pdf') && step.configJson.filenameTemplate && `Template: ${step.configJson.filenameTemplate}`}
                           {step.stepType === 'email_action' && step.configJson.to && `To: ${step.configJson.to}`}
                         </p>
                       </div>
