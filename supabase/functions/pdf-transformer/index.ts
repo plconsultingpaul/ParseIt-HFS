@@ -209,6 +209,11 @@ serve(async (req: Request) => {
           // Apply boolean normalization for hardcoded boolean fields
           if (mapping.dataType === 'boolean') {
             extractedData[mapping.fieldName] = normalizeBooleanValue(mapping.value)
+          } else if (mapping.dataType === 'string' || !mapping.dataType) {
+            // Convert hardcoded string fields to uppercase
+            extractedData[mapping.fieldName] = typeof mapping.value === 'string' && mapping.value !== ''
+              ? mapping.value.toUpperCase()
+              : mapping.value
           } else {
             extractedData[mapping.fieldName] = mapping.value
           }
@@ -234,7 +239,7 @@ serve(async (req: Request) => {
 
           pageFields.forEach(mapping => {
             if (mapping.type === 'mapped') {
-              const dataTypeNote = mapping.dataType === 'string' ? ' (format as string)' :
+              const dataTypeNote = mapping.dataType === 'string' ? ' (format as UPPER CASE string)' :
                                   mapping.dataType === 'number' ? ' (format as number)' :
                                   mapping.dataType === 'integer' ? ' (format as integer)' :
                                   mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' :
@@ -242,7 +247,7 @@ serve(async (req: Request) => {
               fieldMappingInstructions += `- "${mapping.fieldName}": Extract data from PDF coordinates ${mapping.value}${dataTypeNote}\n`
             } else {
               // AI type
-              const dataTypeNote = mapping.dataType === 'string' ? ' (format as string)' :
+              const dataTypeNote = mapping.dataType === 'string' ? ' (format as UPPER CASE string)' :
                                   mapping.dataType === 'number' ? ' (format as number)' :
                                   mapping.dataType === 'integer' ? ' (format as integer)' :
                                   mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' :
@@ -271,8 +276,9 @@ IMPORTANT GUIDELINES:
 3. If a field is not found on this page, use empty string ("") for text fields, 0 for numbers, null for optional fields
 4. For datetime fields, use the format yyyy-MM-ddThh:mm:ss (e.g., "2024-03-15T14:30:00")
 5. For boolean fields, respond with ONLY "True" or "False" (proper case: capital first letter, lowercase remaining)
-6. Be precise and accurate with the extracted data
-7. Ensure all field names match exactly what's needed
+6. CRITICAL: For all string data type fields, convert the extracted value to UPPER CASE before including it in the output
+7. Be precise and accurate with the extracted data
+8. Ensure all field names match exactly what's needed
 
 Please provide only the JSON output without any additional explanation or formatting.
 `
@@ -303,10 +309,15 @@ Please provide only the JSON output without any additional explanation or format
             const parsedResponse = JSON.parse(extractedContent)
             const pageData = parsedResponse.extractedData || parsedResponse || {}
 
-            // Apply boolean normalization for boolean fields
+            // Apply boolean normalization and string uppercase conversion
             pageFields.forEach(field => {
               if (field.dataType === 'boolean' && pageData.hasOwnProperty(field.fieldName)) {
                 pageData[field.fieldName] = normalizeBooleanValue(pageData[field.fieldName])
+              } else if ((field.dataType === 'string' || !field.dataType) && pageData.hasOwnProperty(field.fieldName)) {
+                // Convert string fields to uppercase
+                if (typeof pageData[field.fieldName] === 'string' && pageData[field.fieldName] !== '') {
+                  pageData[field.fieldName] = pageData[field.fieldName].toUpperCase()
+                }
               }
             })
 

@@ -116,23 +116,23 @@ POSTAL CODE FORMATTING RULES:
       fieldMappingInstructions = '\n\nFIELD MAPPING INSTRUCTIONS:\n';
       fieldMappings.forEach(mapping => {
         if (mapping.type === 'hardcoded') {
-          const dataTypeNote = mapping.dataType === 'string' ? ' (as string with exact case)' : 
-                              mapping.dataType === 'number' ? ' (format as number)' : 
+          const dataTypeNote = mapping.dataType === 'string' ? ' (as UPPER CASE string)' :
+                              mapping.dataType === 'number' ? ' (format as number)' :
                               mapping.dataType === 'integer' ? ' (format as integer)' :
                               mapping.dataType === 'datetime' ? ' (as datetime string in yyyy-MM-ddThh:mm:ss format)' :
                               mapping.dataType === 'phone' ? ' (as formatted phone number XXX-XXX-XXXX)' : '';
-          fieldMappingInstructions += `- "${mapping.fieldName}": Always use the EXACT hardcoded value "${mapping.value}" with precise case preservation${dataTypeNote}\n`;
+          fieldMappingInstructions += `- "${mapping.fieldName}": Always use the EXACT hardcoded value "${mapping.value}"${dataTypeNote}\n`;
         } else if (mapping.type === 'mapped') {
-          const dataTypeNote = mapping.dataType === 'string' ? ' (format as string)' : 
-                              mapping.dataType === 'number' ? ' (format as number)' : 
+          const dataTypeNote = mapping.dataType === 'string' ? ' (format as UPPER CASE string)' :
+                              mapping.dataType === 'number' ? ' (format as number)' :
                               mapping.dataType === 'integer' ? ' (format as integer)' :
                               mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' :
                               mapping.dataType === 'phone' ? ' (format as phone number XXX-XXX-XXXX)' : '';
           fieldMappingInstructions += `- "${mapping.fieldName}": Extract data from PDF coordinates ${mapping.value}${dataTypeNote}\n`;
         } else {
           // AI type - use default instructions behavior
-          const dataTypeNote = mapping.dataType === 'string' ? ' (format as string)' : 
-                              mapping.dataType === 'number' ? ' (format as number)' : 
+          const dataTypeNote = mapping.dataType === 'string' ? ' (format as UPPER CASE string)' :
+                              mapping.dataType === 'number' ? ' (format as number)' :
                               mapping.dataType === 'integer' ? ' (format as integer)' :
                               mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' :
                               mapping.dataType === 'phone' ? ' (format as phone number XXX-XXX-XXXX)' : '';
@@ -182,7 +182,7 @@ IMPORTANT GUIDELINES:
 4. Maintain the exact ${outputFormat} structure provided and preserve exact case for all hardcoded values
 5. Do NOT duplicate fields outside of their proper nested structure
 6. ${isJsonFormat ? 'Ensure valid JSON syntax with proper quotes and brackets' : 'Ensure all XML tags are properly closed'}
-7. Use appropriate data types (dates, numbers, text). For JSON, ensure empty values are represented as empty strings (""), not "N/A". CRITICAL: For hardcoded values, use the EXACT case as specified (e.g., "True" not "true", "False" not "false"). For datetime fields, use the format yyyy-MM-ddThh:mm:ss (e.g., "2024-03-15T14:30:00"). If a datetime field is empty or not found, use today's date and current time in the same format
+7. Use appropriate data types (dates, numbers, text). For JSON, ensure empty values are represented as empty strings (""), not "N/A". CRITICAL: For hardcoded values, use the EXACT case as specified (e.g., "True" not "true", "False" not "false"). For datetime fields, use the format yyyy-MM-ddThh:mm:ss (e.g., "2024-03-15T14:30:00"). If a datetime field is empty or not found, use today's date and current time in the same format. CRITICAL: For all string data type fields (dataType="string"), convert the extracted value to UPPER CASE before including it in the output
 8. Be precise and accurate with the extracted data
 9. ${isJsonFormat ? 'CRITICAL: For JSON output, the ONLY top-level key allowed is "orders". Do NOT include any other top-level keys or duplicate fields at the root level. Return ONLY the JSON structure from the template - no additional fields outside the "orders" array.' : 'CRITICAL FOR XML: Your response MUST start with the opening tag of the root element from the template and end with its closing tag. Do NOT include any XML content outside of this structure. Do NOT duplicate any elements or add extra XML blocks after the main structure. Return ONLY the complete XML structure from the template with no additional content before or after it.'}
 
@@ -272,7 +272,7 @@ Please provide only the ${outputFormat} output without any additional explanatio
               } else if (mapping.dataType === 'string' || !mapping.dataType) {
                 const fieldPath = mapping.fieldName.split('.');
                 let current = obj;
-                
+
                 // Navigate to the field location
                 for (let i = 0; i < fieldPath.length - 1; i++) {
                   if (current[fieldPath[i]] === undefined) {
@@ -280,15 +280,20 @@ Please provide only the ${outputFormat} output without any additional explanatio
                   }
                   current = current[fieldPath[i]];
                 }
-                
+
                 const finalField = fieldPath[fieldPath.length - 1];
-                
+
                 // Convert null string fields to empty strings, but preserve other falsy values like ""
                 if (current[finalField] === null || current[finalField] === "null") {
                   current[finalField] = "";
                 }
-                
-                // Apply max length truncation for string fields
+
+                // Convert string values to UPPER CASE
+                if (typeof current[finalField] === 'string' && current[finalField] !== "") {
+                  current[finalField] = current[finalField].toUpperCase();
+                }
+
+                // Apply max length truncation for string fields (after uppercase conversion)
                 if (mapping.maxLength && typeof mapping.maxLength === 'number' && mapping.maxLength > 0) {
                   if (typeof current[finalField] === 'string') {
                     // Check if the JSON-escaped length exceeds the max length
