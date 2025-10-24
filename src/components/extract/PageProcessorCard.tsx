@@ -190,10 +190,24 @@ export default function PageProcessorCard({
   const [pdfPreviewImage, setPdfPreviewImage] = useState<string>('');
   const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [showCsvPreview, setShowCsvPreview] = useState(false);
+  const [pendingCsvPreview, setPendingCsvPreview] = useState(false);
 
-  const handlePreviewData = () => {
-    if (isCsvType) {
+  // Auto-show CSV preview after extraction completes (for preview action)
+  useEffect(() => {
+    if (pendingCsvPreview && pageState.extractedData && !pageState.isExtracting) {
       setShowCsvPreview(true);
+      setPendingCsvPreview(false);
+    }
+  }, [pendingCsvPreview, pageState.extractedData, pageState.isExtracting]);
+
+  const handlePreviewData = async () => {
+    if (isCsvType) {
+      if (!pageState.extractedData) {
+        setPendingCsvPreview(true);
+        onPreview(pageIndex);
+      } else {
+        setShowCsvPreview(true);
+      }
     } else {
       onPreview(pageIndex);
     }
@@ -356,6 +370,7 @@ export default function PageProcessorCard({
     setPdfPreviewImage('');
     setShowPdfPreview(false);
     setShowCsvPreview(false);
+    setPendingCsvPreview(false);
   };
 
   const handleZoomChange = async (newZoom: number) => {
@@ -653,7 +668,7 @@ export default function PageProcessorCard({
 
             <button
               onClick={handlePreviewData}
-              disabled={pageState.isExtracting || isExtractingAll || (isCsvType && !pageState.extractedData)}
+              disabled={pageState.isExtracting || isExtractingAll}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white font-medium rounded-lg transition-all duration-200 flex items-center space-x-2 disabled:cursor-not-allowed"
             >
               {pageState.isExtracting ? (
