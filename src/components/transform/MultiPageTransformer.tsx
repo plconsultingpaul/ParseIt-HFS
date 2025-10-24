@@ -273,12 +273,14 @@ export default function MultiPageTransformer({
               pdfPages: 1,
               pdfStoragePath: uploadData.path,
               originalPdfFilename: pageFile.name,
-              pdfBase64: pdfBase64
+              pdfBase64: pdfBase64,
+              formatType: 'JSON' // Transformations are always JSON-based
             };
            console.log('=== WORKFLOW REQUEST ===');
            console.log('Workflow request body (extractedData):', JSON.stringify(transformResult.extractedData));
            console.log('Workflow request body:', workflowRequestBody);
-            
+
+            // Transformations are always JSON-based, so always use json-workflow-processor
             const workflowResponse = await fetch(`${supabaseUrl}/functions/v1/json-workflow-processor`, {
               method: 'POST',
               headers: {

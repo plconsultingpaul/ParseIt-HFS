@@ -251,8 +251,13 @@ serve(async (req: Request) => {
               if (workflowId) {
                 // Process using workflow
                 console.log(`Processing with workflow: ${workflowId}`)
-                
-                const workflowResponse = await fetch(`${supabaseUrl}/functions/v1/json-workflow-processor`, {
+
+                // Determine which workflow processor to use based on format type
+                const formatType = extractionType.format_type || 'JSON'
+                const processorEndpoint = formatType === 'CSV' ? 'csv-workflow-processor' : 'json-workflow-processor'
+                console.log(`Using ${processorEndpoint} for format type: ${formatType}`)
+
+                const workflowResponse = await fetch(`${supabaseUrl}/functions/v1/${processorEndpoint}`, {
                   method: 'POST',
                   headers: {
                     'Authorization': `Bearer ${supabaseServiceKey}`,
@@ -266,7 +271,8 @@ serve(async (req: Request) => {
                     pdfFilename: pdfFile.name,
                     pdfPages: 1,
                     pdfBase64: pdfBase64,
-                    originalPdfFilename: pdfFile.name
+                    originalPdfFilename: pdfFile.name,
+                    formatType: formatType
                   })
                 })
 

@@ -51,9 +51,15 @@ export async function executeWorkflow(request: WorkflowExecutionRequest): Promis
     console.error('Invalid JSON content preview:', requestString.substring(0, 1000));
     throw new Error('Cannot send invalid JSON to workflow processor');
   }
+  // Determine which workflow processor to use based on format type
+  const formatType = request.formatType || 'JSON';
+  const processorEndpoint = formatType === 'CSV' ? 'csv-workflow-processor' : 'json-workflow-processor';
+
+  console.log('Format type:', formatType);
+  console.log('Using workflow processor:', processorEndpoint);
   console.log('Making request to workflow processor...');
-  
-  const response = await fetch(`${supabaseUrl}/functions/v1/json-workflow-processor`, {
+
+  const response = await fetch(`${supabaseUrl}/functions/v1/${processorEndpoint}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

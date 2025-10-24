@@ -40,7 +40,7 @@ Deno.serve(async (req: Request) => {
     })
   }
 
-  console.log('🚀 === JSON WORKFLOW PROCESSOR START ===')
+  console.log('🚀 === CSV WORKFLOW PROCESSOR START ===')
 
   let workflowExecutionLogId: string | null = null
   let extractionLogId: string | null = null
@@ -91,7 +91,7 @@ Deno.serve(async (req: Request) => {
 
     console.log('🔍 === FETCHING TYPE DETAILS ===')
     let typeDetails: any = null
-    let formatType = 'JSON'
+    let formatType = 'CSV'
 
     try {
       if (requestData.extractionTypeId) {
@@ -104,7 +104,7 @@ Deno.serve(async (req: Request) => {
           const extractionTypes = await extractionTypeResponse.json()
           if (extractionTypes && extractionTypes.length > 0) {
             typeDetails = extractionTypes[0]
-            formatType = typeDetails.format_type || 'JSON'
+            formatType = typeDetails.format_type || 'CSV'
             console.log('✅ Extraction type details loaded, formatType:', formatType)
           }
         }
@@ -118,7 +118,7 @@ Deno.serve(async (req: Request) => {
           const transformationTypes = await transformationTypeResponse.json()
           if (transformationTypes && transformationTypes.length > 0) {
             typeDetails = transformationTypes[0]
-            formatType = 'JSON'
+            formatType = 'CSV'
             console.log('✅ Transformation type details loaded')
           }
         }
@@ -129,7 +129,7 @@ Deno.serve(async (req: Request) => {
 
     } catch (typeError) {
       console.error('❌ Failed to fetch type details:', typeError)
-      console.log('⚠️ Continuing with default formatType: JSON')
+      console.log('⚠️ Continuing with default formatType: CSV')
     }
 
     console.log('📝 Creating extraction log entry...')
@@ -584,7 +584,7 @@ Deno.serve(async (req: Request) => {
           }
 
         } else {
-          console.log(`⏭️ Skipping step type: ${step.step_type} (not implemented in JSON processor)`)
+          console.log(`⏭️ Skipping step type: ${step.step_type} (not implemented in CSV processor)`)
         }
 
         console.log(`✅ Step ${step.step_order} completed successfully`)

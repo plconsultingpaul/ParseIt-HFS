@@ -322,7 +322,8 @@ export default function PageTransformerCard({
           pdfFilename: resultToUse.newFilename,
           pdfPages: 1,
           pdfStoragePath: uploadData.path,
-          originalPdfFilename: pageFile.name
+          originalPdfFilename: pageFile.name,
+          formatType: 'JSON' // Transformations are always JSON-based
         };
         
         try {
@@ -331,7 +332,8 @@ export default function PageTransformerCard({
         } catch (validateError) {
           throw new Error('Cannot send invalid JSON to workflow processor');
         }
-        
+
+        // Transformations are always JSON-based, so always use json-workflow-processor
         const workflowResponse = await fetch(`${supabaseUrl}/functions/v1/json-workflow-processor`, {
           method: 'POST',
           headers: {
