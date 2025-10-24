@@ -775,22 +775,49 @@ Deno.serve(async (req: Request) => {
           console.log('📄 Filename:', filename)
           console.log('📏 File content length:', fileContent.length)
 
+          const uploadFileTypes: any = {}
+          if (config.uploadType === 'pdf') {
+            uploadFileTypes.pdf = true
+          } else if (config.uploadType === 'json') {
+            uploadFileTypes.json = true
+          } else if (config.uploadType === 'xml') {
+            uploadFileTypes.xml = true
+          } else if (config.uploadType === 'csv') {
+            uploadFileTypes.csv = true
+          }
+
+          const sftpUploadPayload = {
+            sftpConfig: {
+              host: sftpConfig.host,
+              port: sftpConfig.port,
+              username: sftpConfig.username,
+              password: sftpConfig.password,
+              xmlPath: sftpConfig.remote_path || '/ParseIt_XML',
+              pdfPath: sftpConfig.pdf_path || '/ParseIt_PDF',
+              jsonPath: sftpConfig.json_path || '/ParseIt_JSON',
+              csvPath: sftpConfig.csv_path || '/ParseIt_CSV'
+            },
+            xmlContent: config.uploadType === 'csv' ? fileContent : (contextData.extractedData && typeof contextData.extractedData === 'object' ? JSON.stringify(contextData.extractedData) : '{}'),
+            pdfBase64: contextData.pdfBase64 || '',
+            baseFilename: filename,
+            originalFilename: contextData.originalPdfFilename || filename,
+            formatType: formatType,
+            uploadFileTypes: uploadFileTypes
+          }
+
+          console.log('📤 SFTP upload payload:', JSON.stringify({
+            ...sftpUploadPayload,
+            pdfBase64: `[${sftpUploadPayload.pdfBase64.length} chars]`,
+            xmlContent: `[${sftpUploadPayload.xmlContent.length} chars]`
+          }, null, 2))
+
           const sftpUploadResponse = await fetch(`${supabaseUrl}/functions/v1/sftp-upload`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${supabaseServiceKey}`,
               'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-              host: sftpConfig.host,
-              port: sftpConfig.port,
-              username: sftpConfig.username,
-              password: sftpConfig.password,
-              remotePath: sftpConfig.remote_path,
-              filename: filename,
-              fileContent: fileContent,
-              fileType: config.uploadType || 'pdf'
-            })
+            body: JSON.stringify(sftpUploadPayload)
           })
 
           console.log('📤 SFTP upload response status:', sftpUploadResponse.status)
