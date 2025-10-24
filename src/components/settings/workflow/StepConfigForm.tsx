@@ -56,10 +56,7 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
     xml: true,
     csv: true
   });
-  const [sftpConfigId, setSftpConfigId] = useState('');
   const [uploadType, setUploadType] = useState('csv');
-  const [sftpConfigs, setSftpConfigs] = useState<any[]>([]);
-  const [loadingSftpConfigs, setLoadingSftpConfigs] = useState(false);
 
   useEffect(() => {
     console.log('StepConfigForm useEffect - step data:', step);
@@ -106,7 +103,6 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
         setPdfUploadStrategy(config.pdfUploadStrategy || 'all_pages_in_group');
         setSpecificPageToUpload(config.specificPageToUpload || 1);
         setUploadFileTypes(config.uploadFileTypes || { json: true, pdf: true, xml: true, csv: true });
-        setSftpConfigId(config.sftpConfigId || '');
         setUploadType(config.uploadType || 'csv');
 
         // Rename PDF configuration
@@ -150,39 +146,6 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
     }
   }, [step, apiConfig?.password]);
 
-  useEffect(() => {
-    const fetchSftpConfigs = async () => {
-      if (stepType !== 'sftp_upload') return;
-
-      setLoadingSftpConfigs(true);
-      try {
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-        const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-        const response = await fetch(`${supabaseUrl}/rest/v1/sftp_configs`, {
-          headers: {
-            'Authorization': `Bearer ${supabaseAnonKey}`,
-            'Content-Type': 'application/json',
-            'apikey': supabaseAnonKey
-          }
-        });
-
-        if (response.ok) {
-          const configs = await response.json();
-          setSftpConfigs(configs);
-          console.log('Loaded SFTP configs:', configs);
-        } else {
-          console.error('Failed to fetch SFTP configs:', response.status);
-        }
-      } catch (error) {
-        console.error('Error fetching SFTP configs:', error);
-      } finally {
-        setLoadingSftpConfigs(false);
-      }
-    };
-
-    fetchSftpConfigs();
-  }, [stepType]);
 
   const addTransformation = () => {
     setTransformations([...transformations, { field_name: '', transformation: '' }]);
@@ -227,7 +190,6 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
         break;
       case 'sftp_upload':
         config = {
-          sftpConfigId: sftpConfigId || undefined,
           uploadType: uploadType,
           useApiResponseForFilename: useApiResponseForFilename,
           filenameSourcePath: filenameSourcePath.trim() || undefined,
@@ -527,39 +489,6 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    SFTP Configuration <span className="text-red-500">*</span>
-                  </label>
-                  {loadingSftpConfigs ? (
-                    <div className="text-sm text-gray-500 dark:text-gray-400">Loading SFTP configurations...</div>
-                  ) : sftpConfigs.length === 0 ? (
-                    <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-md p-3">
-                      <p className="text-sm text-yellow-800 dark:text-yellow-300">
-                        No SFTP configurations found. Please create an SFTP configuration in Settings before adding an SFTP upload step.
-                      </p>
-                    </div>
-                  ) : (
-                    <>
-                      <select
-                        value={sftpConfigId}
-                        onChange={(e) => setSftpConfigId(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
-                      >
-                        <option value="">Select SFTP Configuration</option>
-                        {sftpConfigs.map((config) => (
-                          <option key={config.id} value={config.id}>
-                            {config.name} ({config.host})
-                          </option>
-                        ))}
-                      </select>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        Select which SFTP server to upload files to
-                      </p>
-                    </>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Upload Type <span className="text-red-500">*</span>
                   </label>
                   <select
@@ -573,7 +502,7 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                     <option value="pdf">PDF File</option>
                   </select>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Select the type of file to upload to SFTP
+                    Select the type of file to upload to SFTP. The default SFTP configuration from Settings will be used.
                   </p>
                 </div>
 
