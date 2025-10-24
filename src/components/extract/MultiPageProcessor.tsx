@@ -105,14 +105,30 @@ export default function MultiPageProcessor({
   };
 
   const processPageAction = async (pageIndex: number, actionType: 'preview' | 'process') => {
+    const startTime = performance.now();
+    console.log(`\n[MultiPageProcessor] ========================================`);
+    console.log(`[MultiPageProcessor] Starting ${actionType} for page ${pageIndex + 1}`);
+    console.log(`[MultiPageProcessor] Timestamp: ${new Date().toISOString()}`);
+
     const pageFile = pdfPages[pageIndex];
-    if (!pageFile || !currentExtractionType) return;
+    if (!pageFile || !currentExtractionType) {
+      console.error(`[MultiPageProcessor] Missing pageFile or extraction type for page ${pageIndex + 1}`);
+      return;
+    }
+
+    console.log(`[MultiPageProcessor] File details:`);
+    console.log(`  - Name: ${pageFile.name}`);
+    console.log(`  - Size: ${(pageFile.size / 1024).toFixed(2)} KB`);
+    console.log(`  - Type: ${pageFile.type}`);
+    console.log(`[MultiPageProcessor] Extraction type: ${currentExtractionType.name} (${currentExtractionType.formatType})`);
+    console.log(`[MultiPageProcessor] Is CSV type: ${isCsvType}`);
 
     // Define Supabase variables at the beginning of the function
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
     const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
     // Reset state for this page
+    console.log(`[MultiPageProcessor] Resetting page state for ${actionType}...`);
     updatePageState(pageIndex, {
       isExtracting: actionType === 'preview',
       isProcessing: actionType === 'process',
@@ -127,6 +143,12 @@ export default function MultiPageProcessor({
       let extractedData: string;
 
       if (isCsvType) {
+        console.log(`[MultiPageProcessor] CSV extraction starting...`);
+        console.log(`[MultiPageProcessor] Field mappings count: ${currentExtractionType.fieldMappings?.length || 0}`);
+        console.log(`[MultiPageProcessor] Delimiter: "${currentExtractionType.csvDelimiter || ','}"`);
+        console.log(`[MultiPageProcessor] Include headers: ${currentExtractionType.csvIncludeHeaders !== false}`);
+
+        const extractionStartTime = performance.now();
         // Use CSV extraction for CSV types
         extractedData = await extractCsvFromPDF({
           pdfFile: pageFile,
@@ -138,6 +160,8 @@ export default function MultiPageProcessor({
           includeHeaders: currentExtractionType.csvIncludeHeaders,
           apiKey: apiConfig.googleApiKey || settingsConfig.geminiApiKey
         });
+        const extractionEndTime = performance.now();
+        console.log(`[MultiPageProcessor] CSV extraction completed in ${((extractionEndTime - extractionStartTime) / 1000).toFixed(2)}s`);
       } else {
         // Use standard extraction for XML/JSON types
         extractedData = await extractDataFromPDF({
@@ -153,6 +177,9 @@ export default function MultiPageProcessor({
           apiKey: apiConfig.googleApiKey || settingsConfig.geminiApiKey
         });
       }
+
+      console.log(`[MultiPageProcessor] Extraction completed for page ${pageIndex + 1}`);
+      console.log(`[MultiPageProcessor] Extracted data length: ${extractedData.length} characters`);
 
       updatePageState(pageIndex, {
         extractedData,
@@ -400,11 +427,22 @@ export default function MultiPageProcessor({
         });
       }
     } catch (error) {
+      const errorTime = performance.now();
+      const elapsedTime = ((errorTime - startTime) / 1000).toFixed(2);
+      console.error(`[MultiPageProcessor] ❌ Error ${actionType}ing page ${pageIndex + 1} after ${elapsedTime}s:`, error);
+      console.error(`[MultiPageProcessor] Error details:`, error instanceof Error ? error.message : error);
+      console.error(`[MultiPageProcessor] Error stack:`, error instanceof Error ? error.stack : 'N/A');
+
       // For JSON processing errors, the error handling is done above in the API section
       updatePageState(pageIndex, {
-        isProcessing: false
+        isProcessing: false,
+        extractionError: error instanceof Error ? error.message : 'Unknown error occurred'
       });
-      console.error(`Error ${actionType}ing page ${pageIndex + 1}:`, error);
+    } finally {
+      const endTime = performance.now();
+      const totalTime = ((endTime - startTime) / 1000).toFixed(2);
+      console.log(`[MultiPageProcessor] Total ${actionType} time for page ${pageIndex + 1}: ${totalTime}s`);
+      console.log(`[MultiPageProcessor] ========================================\n`);
     }
   };
 

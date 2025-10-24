@@ -201,14 +201,22 @@ export default function PageProcessorCard({
   }, [pendingCsvPreview, pageState.extractedData, pageState.isExtracting]);
 
   const handlePreviewData = async () => {
+    console.log(`[PageProcessorCard] Preview button clicked for page ${pageIndex + 1}`);
+    console.log(`[PageProcessorCard] File: ${pageFile.name}, Size: ${pageFile.size} bytes`);
+    console.log(`[PageProcessorCard] Format type: ${currentExtractionType?.formatType}`);
+    console.log(`[PageProcessorCard] Has extracted data: ${!!pageState.extractedData}`);
+
     if (isCsvType) {
       if (!pageState.extractedData) {
+        console.log(`[PageProcessorCard] No existing data - initiating extraction for page ${pageIndex + 1}`);
         setPendingCsvPreview(true);
         onPreview(pageIndex);
       } else {
+        console.log(`[PageProcessorCard] Using cached data - opening CSV preview for page ${pageIndex + 1}`);
         setShowCsvPreview(true);
       }
     } else {
+      console.log(`[PageProcessorCard] Non-CSV type - calling onPreview for page ${pageIndex + 1}`);
       onPreview(pageIndex);
     }
   };

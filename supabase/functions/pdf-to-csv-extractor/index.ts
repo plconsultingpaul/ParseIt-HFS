@@ -93,6 +93,8 @@ function generateCsvRow(rowData: any, fieldMappings: FieldMapping[], delimiter: 
 }
 
 Deno.serve(async (req: Request) => {
+  const requestStartTime = performance.now();
+
   if (req.method === "OPTIONS") {
     return new Response(null, {
       status: 200,
@@ -100,19 +102,35 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  console.log('🚀 === PDF TO CSV EXTRACTOR START ===');
+  console.log('\n[EdgeFunction] ============================================');
+  console.log('[EdgeFunction] 🚀 === PDF TO CSV EXTRACTOR START ===');
+  console.log('[EdgeFunction] Timestamp:', new Date().toISOString());
+  console.log('[EdgeFunction] Request method:', req.method);
+  console.log('[EdgeFunction] Request URL:', req.url);
 
   try {
+    console.log('[EdgeFunction] Parsing request body...');
+    const parseStartTime = performance.now();
     const requestData: ExtractionRequest = await req.json();
-    console.log('📥 Request received');
-    console.log('- Field mappings count:', requestData.fieldMappings?.length || 0);
-    console.log('- Single PDF mode:', !!requestData.pdfBase64);
-    console.log('- Multi-page PDF mode:', !!requestData.pdfBase64Array);
-    console.log('- PDF count:', requestData.pdfBase64Array?.length || 1);
-    console.log('- Row detection instructions:', requestData.rowDetectionInstructions?.substring(0, 100) || 'none');
+    const parseEndTime = performance.now();
+    console.log(`[EdgeFunction] Request parsed in ${((parseEndTime - parseStartTime) / 1000).toFixed(3)}s`);
+
+    console.log('[EdgeFunction] 📥 Request details:');
+    console.log('[EdgeFunction] - Field mappings count:', requestData.fieldMappings?.length || 0);
+    console.log('[EdgeFunction] - Single PDF mode:', !!requestData.pdfBase64);
+    console.log('[EdgeFunction] - Multi-page PDF mode:', !!requestData.pdfBase64Array);
+    console.log('[EdgeFunction] - PDF count:', requestData.pdfBase64Array?.length || 1);
+    console.log('[EdgeFunction] - Row detection instructions length:', requestData.rowDetectionInstructions?.length || 0);
+    console.log('[EdgeFunction] - Delimiter:', JSON.stringify(requestData.delimiter || ','));
+    console.log('[EdgeFunction] - Include headers:', requestData.includeHeaders !== false);
 
     // Validate that we have either single PDF or array of PDFs
     if ((!requestData.pdfBase64 && !requestData.pdfBase64Array) || !requestData.apiKey || !requestData.fieldMappings || requestData.fieldMappings.length === 0) {
+      console.error('[EdgeFunction] ❌ Validation failed: Missing required fields');
+      console.error('[EdgeFunction] - Has pdfBase64:', !!requestData.pdfBase64);
+      console.error('[EdgeFunction] - Has pdfBase64Array:', !!requestData.pdfBase64Array);
+      console.error('[EdgeFunction] - Has apiKey:', !!requestData.apiKey);
+      console.error('[EdgeFunction] - Field mappings count:', requestData.fieldMappings?.length || 0);
       return new Response(
         JSON.stringify({ error: "Missing required fields: (pdfBase64 or pdfBase64Array), apiKey, and fieldMappings are required" }),
         {
@@ -125,10 +143,12 @@ Deno.serve(async (req: Request) => {
     const delimiter = requestData.delimiter || ',';
     const includeHeaders = requestData.includeHeaders !== false;
 
+    console.log('[EdgeFunction] Initializing Gemini AI...');
+    const initStartTime = performance.now();
     const genAI = new GoogleGenerativeAI(requestData.apiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-    console.log('🤖 Initializing Gemini AI');
+    const initEndTime = performance.now();
+    console.log(`[EdgeFunction] Gemini initialized in ${((initEndTime - initStartTime) / 1000).toFixed(3)}s`);
 
     const fieldDescriptions = requestData.fieldMappings
       .filter(m => m.type === 'ai')
@@ -185,8 +205,10 @@ Example response format:
 
 Please analyze the PDF and return the extracted data as a JSON array.`;
 
-    console.log('📤 Sending request to Gemini AI');
-    console.log('Prompt length:', prompt.length);
+    console.log('[EdgeFunction] 📤 Preparing to send request to Gemini AI');
+    console.log('[EdgeFunction] Prompt length:', prompt.length, 'characters');
+    console.log('[EdgeFunction] Content parts:', contentParts.length);
+    console.log('[EdgeFunction] ⏱️  Calling Gemini API (this typically takes 20-90 seconds)...');
 
     // Build the content array for Gemini - support both single and multi-page PDFs
     const contentParts: any[] = [];
@@ -218,42 +240,64 @@ Please analyze the PDF and return the extracted data as a JSON array.`;
     // Add the prompt
     contentParts.push(prompt);
 
+    const geminiStartTime = performance.now();
+    console.log('[EdgeFunction] Gemini API call starting at:', new Date().toISOString());
     const result = await model.generateContent(contentParts);
+    const geminiEndTime = performance.now();
+    const geminiDuration = ((geminiEndTime - geminiStartTime) / 1000).toFixed(2);
+    console.log(`[EdgeFunction] ✅ Gemini API responded in ${geminiDuration}s`);
 
     const response = await result.response;
     const text = response.text();
 
-    console.log('📥 Received response from Gemini AI');
-    console.log('Response length:', text.length);
-    console.log('Response preview:', text.substring(0, 200));
+    console.log('[EdgeFunction] 📥 Gemini response details:');
+    console.log('[EdgeFunction] Response length:', text.length, 'characters');
+    console.log('[EdgeFunction] Response preview (first 200 chars):', text.substring(0, 200));
 
+    console.log('[EdgeFunction] Parsing JSON from AI response...');
+    const parseJsonStartTime = performance.now();
     let jsonMatch = text.match(/\[[\s\S]*\]/);
     if (!jsonMatch) {
+      console.log('[EdgeFunction] Array pattern not found, trying object pattern...');
       jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
+        console.log('[EdgeFunction] Found object, converting to array...');
         const parsedObj = JSON.parse(jsonMatch[0]);
         jsonMatch = [`[${JSON.stringify(parsedObj)}]`];
       }
     }
 
     if (!jsonMatch) {
+      console.error('[EdgeFunction] ❌ Could not find valid JSON in AI response');
+      console.error('[EdgeFunction] Response text:', text);
       throw new Error('Could not find valid JSON array in AI response');
     }
 
     const extractedData = JSON.parse(jsonMatch[0]);
-    console.log('✅ Parsed extracted data');
-    console.log('- Rows extracted:', extractedData.length);
+    const parseJsonEndTime = performance.now();
+    console.log(`[EdgeFunction] JSON parsed in ${((parseJsonEndTime - parseJsonStartTime) / 1000).toFixed(3)}s`);
+    console.log('[EdgeFunction] ✅ Extracted data details:');
+    console.log('[EdgeFunction] - Rows extracted:', extractedData.length);
+    console.log('[EdgeFunction] - First row keys:', extractedData.length > 0 ? Object.keys(extractedData[0]).join(', ') : 'N/A');
 
     if (!Array.isArray(extractedData) || extractedData.length === 0) {
+      console.error('[EdgeFunction] ❌ Extracted data is invalid');
+      console.error('[EdgeFunction] - Is array:', Array.isArray(extractedData));
+      console.error('[EdgeFunction] - Length:', extractedData?.length || 0);
       throw new Error('Extracted data is not a valid array or is empty');
     }
 
-    for (const mapping of requestData.fieldMappings.filter(m => m.type === 'hardcoded')) {
+    console.log('[EdgeFunction] Applying hardcoded fields...');
+    const hardcodedFields = requestData.fieldMappings.filter(m => m.type === 'hardcoded');
+    console.log('[EdgeFunction] - Hardcoded fields count:', hardcodedFields.length);
+    for (const mapping of hardcodedFields) {
       for (const row of extractedData) {
         row[mapping.fieldName] = mapping.value;
       }
     }
 
+    console.log('[EdgeFunction] Generating CSV...');
+    const csvStartTime = performance.now();
     const csvLines: string[] = [];
 
     if (includeHeaders) {
@@ -265,10 +309,26 @@ Please analyze the PDF and return the extracted data as a JSON array.`;
     }
 
     const csvContent = csvLines.join('\n');
+    const csvEndTime = performance.now();
+    console.log(`[EdgeFunction] CSV generated in ${((csvEndTime - csvStartTime) / 1000).toFixed(3)}s`);
 
-    console.log('✅ CSV generated successfully');
-    console.log('- Total lines:', csvLines.length);
-    console.log('- CSV content length:', csvContent.length);
+    console.log('[EdgeFunction] ✅ CSV generation successful:');
+    console.log('[EdgeFunction] - Total lines:', csvLines.length);
+    console.log('[EdgeFunction] - CSV content length:', csvContent.length, 'characters');
+    console.log('[EdgeFunction] - CSV size:', (csvContent.length / 1024).toFixed(2), 'KB');
+
+    const requestEndTime = performance.now();
+    const totalDuration = ((requestEndTime - requestStartTime) / 1000).toFixed(2);
+
+    console.log('[EdgeFunction] 🎉 === REQUEST COMPLETED SUCCESSFULLY ===');
+    console.log(`[EdgeFunction] Total processing time: ${totalDuration}s`);
+    console.log('[EdgeFunction] Time breakdown:');
+    console.log(`[EdgeFunction]   - Request parsing: ${((parseEndTime - parseStartTime) / 1000).toFixed(3)}s`);
+    console.log(`[EdgeFunction]   - Gemini initialization: ${((initEndTime - initStartTime) / 1000).toFixed(3)}s`);
+    console.log(`[EdgeFunction]   - Gemini API call: ${geminiDuration}s`);
+    console.log(`[EdgeFunction]   - JSON parsing: ${((parseJsonEndTime - parseJsonStartTime) / 1000).toFixed(3)}s`);
+    console.log(`[EdgeFunction]   - CSV generation: ${((csvEndTime - csvStartTime) / 1000).toFixed(3)}s`);
+    console.log('[EdgeFunction] ============================================\n');
 
     return new Response(
       JSON.stringify({
@@ -284,7 +344,14 @@ Please analyze the PDF and return the extracted data as a JSON array.`;
     );
 
   } catch (error) {
-    console.error('❌ PDF to CSV extraction failed:', error);
+    const errorTime = performance.now();
+    const errorDuration = ((errorTime - requestStartTime) / 1000).toFixed(2);
+    console.error('[EdgeFunction] ❌ === PDF TO CSV EXTRACTION FAILED ===');
+    console.error('[EdgeFunction] Error occurred after:', errorDuration, 's');
+    console.error('[EdgeFunction] Error type:', error?.constructor?.name || 'Unknown');
+    console.error('[EdgeFunction] Error message:', error instanceof Error ? error.message : 'Unknown error');
+    console.error('[EdgeFunction] Error stack:', error instanceof Error ? error.stack : 'N/A');
+    console.error('[EdgeFunction] Full error object:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
     return new Response(
