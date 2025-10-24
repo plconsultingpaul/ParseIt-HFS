@@ -23,6 +23,7 @@ export interface ExtractionType {
   csvDelimiter?: string;
   csvIncludeHeaders?: boolean;
   csvRowDetectionInstructions?: string;
+  csvMultiPageProcessing?: boolean;
 }
 
 export interface TransformationFieldMapping {

@@ -3,6 +3,7 @@ import { Send, Loader2 } from 'lucide-react';
 import PageProcessorCard from './PageProcessorCard';
 import type { ExtractionType, SftpConfig, SettingsConfig, ApiConfig, User, PageProcessingState, ApiError, WorkflowExecutionLog } from '../../types';
 import { extractDataFromPDF } from '../../lib/gemini';
+import { extractCsvFromPDF, extractCsvFromMultiPagePDF } from '../../lib/csvExtractor';
 import { uploadToSftp } from '../../lib/sftp';
 import { executeWorkflow } from '../../lib/workflow';
 import { sendToApi } from '../../lib/apiClient';
@@ -35,6 +36,8 @@ export default function MultiPageProcessor({
   const [pageProcessingStates, setPageProcessingStates] = useState<PageProcessingState[]>([]);
 
   const isJsonType = currentExtractionType?.formatType === 'JSON';
+  const isCsvType = currentExtractionType?.formatType === 'CSV';
+  const isCsvMultiPage = isCsvType && currentExtractionType?.csvMultiPageProcessing === true;
 
   // Initialize page processing states when pdfPages or currentExtractionType changes
   useEffect(() => {
@@ -397,20 +400,77 @@ export default function MultiPageProcessor({
 
   const handleExtractAll = async () => {
     if (pdfPages.length === 0) return;
-    
+
     setIsExtractingAll(true);
-    
+
     try {
-      for (let pageIndex = 0; pageIndex < pdfPages.length; pageIndex++) {
-        setCurrentProcessingPage(pageIndex);
-        
-        console.log(`Extract All: Processing page ${pageIndex + 1} of ${pdfPages.length}`);
-        
-        // Process each page
-        await processPageAction(pageIndex, 'process');
-        
-        if (pageIndex < pdfPages.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
+      // Check if this is multi-page CSV processing
+      if (isCsvMultiPage) {
+        console.log('Processing all pages as one CSV document');
+        setCurrentProcessingPage(0);
+
+        // Extract CSV from all pages combined
+        const extractedData = await extractCsvFromMultiPagePDF({
+          pdfFiles: pdfPages,
+          defaultInstructions: currentExtractionType.defaultInstructions,
+          additionalInstructions: additionalInstructions,
+          fieldMappings: currentExtractionType.fieldMappings,
+          rowDetectionInstructions: currentExtractionType.csvRowDetectionInstructions,
+          delimiter: currentExtractionType.csvDelimiter,
+          includeHeaders: currentExtractionType.csvIncludeHeaders,
+          apiKey: apiConfig.googleApiKey || settingsConfig.geminiApiKey
+        });
+
+        // Update all page states with the same extracted data
+        for (let i = 0; i < pdfPages.length; i++) {
+          updatePageState(i, {
+            extractedData,
+            isExtracting: false
+          });
+        }
+
+        // Upload to SFTP if configured
+        if (sftpConfig && sftpConfig.host) {
+          try {
+            // Use the first page file for SFTP upload (filename reference)
+            await uploadToSftp({
+              sftpConfig,
+              xmlContent: extractedData,
+              pdfFile: pdfPages[0],
+              baseFilename: currentExtractionType.filename || 'combined'
+            });
+
+            // Mark all pages as successful
+            for (let i = 0; i < pdfPages.length; i++) {
+              updatePageState(i, {
+                success: true,
+                isProcessing: false
+              });
+            }
+          } catch (sftpError) {
+            const errorMessage = sftpError instanceof Error ? sftpError.message : 'Unknown SFTP error';
+            // Mark all pages with error
+            for (let i = 0; i < pdfPages.length; i++) {
+              updatePageState(i, {
+                extractionError: `Failed to upload to SFTP: ${errorMessage}`,
+                isProcessing: false
+              });
+            }
+          }
+        }
+      } else {
+        // Original behavior: process each page individually
+        for (let pageIndex = 0; pageIndex < pdfPages.length; pageIndex++) {
+          setCurrentProcessingPage(pageIndex);
+
+          console.log(`Extract All: Processing page ${pageIndex + 1} of ${pdfPages.length}`);
+
+          // Process each page
+          await processPageAction(pageIndex, 'process');
+
+          if (pageIndex < pdfPages.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
         }
       }
     } catch (workflowError) {

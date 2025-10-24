@@ -27,7 +27,8 @@ export async function fetchExtractionTypes(): Promise<ExtractionType[]> {
       autoDetectInstructions: type.auto_detect_instructions,
       csvDelimiter: type.csv_delimiter,
       csvIncludeHeaders: type.csv_include_headers,
-      csvRowDetectionInstructions: type.csv_row_detection_instructions
+      csvRowDetectionInstructions: type.csv_row_detection_instructions,
+      csvMultiPageProcessing: type.csv_multi_page_processing
     }));
   } catch (error) {
     console.error('Error fetching extraction types:', error);
@@ -99,6 +100,7 @@ export async function updateExtractionTypes(types: ExtractionType[]): Promise<vo
           csv_delimiter: type.csvDelimiter || ',',
           csv_include_headers: type.csvIncludeHeaders !== false,
           csv_row_detection_instructions: type.csvRowDetectionInstructions || null,
+          csv_multi_page_processing: type.csvMultiPageProcessing || false,
           updated_at: new Date().toISOString()
         })
         .eq('id', type.id);
@@ -145,9 +147,10 @@ export async function updateExtractionTypes(types: ExtractionType[]): Promise<vo
           auto_detect_instructions: type.autoDetectInstructions || null,
           csv_delimiter: type.csvDelimiter || ',',
           csv_include_headers: type.csvIncludeHeaders !== false,
-          csv_row_detection_instructions: type.csvRowDetectionInstructions || null
+          csv_row_detection_instructions: type.csvRowDetectionInstructions || null,
+          csv_multi_page_processing: type.csvMultiPageProcessing || false
         };
-        
+
         console.log('  Mapped data for database:', mappedData);
         console.log('  Required fields check:', {
           hasName: !!mappedData.name,

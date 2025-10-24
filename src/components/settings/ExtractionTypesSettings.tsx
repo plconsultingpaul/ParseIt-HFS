@@ -792,6 +792,26 @@ export default function ExtractionTypesSettings({
                       Include Header Row
                     </label>
                   </div>
+                  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
+                    <div className="flex items-start space-x-3">
+                      <input
+                        type="checkbox"
+                        id={`csvMultiPage-${selectedTypeIndex}`}
+                        checked={selectedType.csvMultiPageProcessing === true}
+                        onChange={(e) => updateExtractionType(selectedTypeIndex, 'csvMultiPageProcessing', e.target.checked)}
+                        className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded focus:ring-blue-500"
+                      />
+                      <div className="flex-1">
+                        <label htmlFor={`csvMultiPage-${selectedTypeIndex}`} className="text-sm font-semibold text-gray-900 dark:text-gray-100 cursor-pointer">
+                          Process all pages as one CSV document
+                        </label>
+                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                          When enabled, all pages from a multi-page PDF will be processed together and output as a single CSV file.
+                          This is useful for documents where tabular data spans multiple pages (e.g., multi-page invoices, order lists).
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 </>
               )}
             </div>

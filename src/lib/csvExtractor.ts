@@ -11,6 +11,17 @@ interface CsvExtractionRequest {
   apiKey: string;
 }
 
+interface CsvMultiPageExtractionRequest {
+  pdfFiles: File[];
+  defaultInstructions: string;
+  additionalInstructions?: string;
+  fieldMappings?: FieldMapping[];
+  rowDetectionInstructions?: string;
+  delimiter?: string;
+  includeHeaders?: boolean;
+  apiKey: string;
+}
+
 export async function extractCsvFromPDF(request: CsvExtractionRequest): Promise<string> {
   const {
     pdfFile,
@@ -80,6 +91,87 @@ export async function extractCsvFromPDF(request: CsvExtractionRequest): Promise<
   console.log('=== CSV EXTRACTION SUCCESS ===');
   console.log('Rows extracted:', result.rowCount);
   console.log('Field count:', result.fieldCount);
+
+  return result.csvContent;
+}
+
+export async function extractCsvFromMultiPagePDF(request: CsvMultiPageExtractionRequest): Promise<string> {
+  const {
+    pdfFiles,
+    defaultInstructions,
+    additionalInstructions,
+    fieldMappings = [],
+    rowDetectionInstructions = 'Extract each logical record as a separate row',
+    delimiter = ',',
+    includeHeaders = true,
+    apiKey
+  } = request;
+
+  console.log('=== MULTI-PAGE CSV EXTRACTION START ===');
+  console.log('PDF files:', pdfFiles.length);
+  console.log('Field mappings:', fieldMappings.length);
+  console.log('Row detection instructions:', rowDetectionInstructions);
+
+  if (!apiKey) {
+    throw new Error('Google API Key is required for CSV extraction');
+  }
+
+  if (!fieldMappings || fieldMappings.length === 0) {
+    throw new Error('Field mappings are required for CSV extraction');
+  }
+
+  if (!pdfFiles || pdfFiles.length === 0) {
+    throw new Error('At least one PDF file is required');
+  }
+
+  // Convert all PDF files to base64
+  const pdfBase64Array = await Promise.all(
+    pdfFiles.map(file => fileToBase64(file))
+  );
+
+  const combinedInstructions = additionalInstructions
+    ? `${defaultInstructions}\n\nAdditional context: ${additionalInstructions}`
+    : defaultInstructions;
+
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error('Supabase configuration is missing');
+  }
+
+  const requestBody = {
+    pdfBase64Array,
+    apiKey,
+    fieldMappings,
+    instructions: combinedInstructions,
+    rowDetectionInstructions,
+    delimiter,
+    includeHeaders
+  };
+
+  console.log('Calling pdf-to-csv-extractor edge function with multiple pages');
+
+  const response = await fetch(`${supabaseUrl}/functions/v1/pdf-to-csv-extractor`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${supabaseAnonKey}`,
+    },
+    body: JSON.stringify(requestBody)
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error(errorData.error || errorData.details || 'CSV extraction failed');
+  }
+
+  const result = await response.json();
+
+  console.log('=== MULTI-PAGE CSV EXTRACTION SUCCESS ===');
+  console.log('Total rows extracted:', result.rowCount);
+  console.log('Field count:', result.fieldCount);
+  console.log('Pages processed:', pdfFiles.length);
 
   return result.csvContent;
 }

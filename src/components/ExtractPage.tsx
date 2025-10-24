@@ -240,6 +240,27 @@ export default function ExtractPage({
         </div>
       )}
 
+      {/* CSV Multi-Page Mode Indicator */}
+      {uploadedFile && currentExtractionType && pdfPages.length > 1 &&
+       currentExtractionType.formatType === 'CSV' &&
+       currentExtractionType.csvMultiPageProcessing && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-2xl p-6 shadow-sm">
+          <div className="flex items-start space-x-4">
+            <div className="bg-blue-100 dark:bg-blue-800 p-3 rounded-lg">
+              <CheckCircle className="h-6 w-6 text-blue-600 dark:text-blue-300" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100 mb-2">
+                Multi-Page CSV Processing Enabled
+              </h3>
+              <p className="text-blue-800 dark:text-blue-200 text-sm leading-relaxed">
+                All {pdfPages.length} pages will be processed together as a single document. The extracted data from all pages will be combined into one CSV file.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Multi-page Processor */}
       {uploadedFile && currentExtractionType && pdfPages.length > 0 && (
         <MultiPageProcessor

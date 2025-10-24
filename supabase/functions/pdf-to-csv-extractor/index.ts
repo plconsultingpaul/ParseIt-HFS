@@ -15,7 +15,8 @@ interface FieldMapping {
 }
 
 interface ExtractionRequest {
-  pdfBase64: string;
+  pdfBase64?: string;
+  pdfBase64Array?: string[];
   apiKey: string;
   fieldMappings: FieldMapping[];
   instructions: string;
@@ -105,12 +106,15 @@ Deno.serve(async (req: Request) => {
     const requestData: ExtractionRequest = await req.json();
     console.log('📥 Request received');
     console.log('- Field mappings count:', requestData.fieldMappings?.length || 0);
-    console.log('- PDF base64 length:', requestData.pdfBase64?.length || 0);
+    console.log('- Single PDF mode:', !!requestData.pdfBase64);
+    console.log('- Multi-page PDF mode:', !!requestData.pdfBase64Array);
+    console.log('- PDF count:', requestData.pdfBase64Array?.length || 1);
     console.log('- Row detection instructions:', requestData.rowDetectionInstructions?.substring(0, 100) || 'none');
 
-    if (!requestData.pdfBase64 || !requestData.apiKey || !requestData.fieldMappings || requestData.fieldMappings.length === 0) {
+    // Validate that we have either single PDF or array of PDFs
+    if ((!requestData.pdfBase64 && !requestData.pdfBase64Array) || !requestData.apiKey || !requestData.fieldMappings || requestData.fieldMappings.length === 0) {
       return new Response(
-        JSON.stringify({ error: "Missing required fields: pdfBase64, apiKey, and fieldMappings are required" }),
+        JSON.stringify({ error: "Missing required fields: (pdfBase64 or pdfBase64Array), apiKey, and fieldMappings are required" }),
         {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -136,10 +140,16 @@ Deno.serve(async (req: Request) => {
       .map(m => `- ${m.fieldName}: always set to "${m.value}"`)
       .join('\n');
 
-    const prompt = `You are analyzing a PDF document to extract data into CSV format.
+    const isMultiPage = requestData.pdfBase64Array && requestData.pdfBase64Array.length > 1;
+    const pageInfo = isMultiPage
+      ? `You are analyzing ${requestData.pdfBase64Array.length} PDF pages that should be processed together as a single document.`
+      : 'You are analyzing a PDF document to extract data into CSV format.';
+
+    const prompt = `${pageInfo}
 
 ROW DETECTION INSTRUCTIONS:
 ${requestData.rowDetectionInstructions || 'Extract each logical record as a separate row'}
+${isMultiPage ? '\n⚠️ IMPORTANT: Process ALL pages together. Extract rows from ALL pages in the order they appear. Do not stop after processing just one page.' : ''}
 
 EXTRACTION INSTRUCTIONS:
 ${requestData.instructions}
@@ -178,17 +188,37 @@ Please analyze the PDF and return the extracted data as a JSON array.`;
     console.log('📤 Sending request to Gemini AI');
     console.log('Prompt length:', prompt.length);
 
-    const pdfData = requestData.pdfBase64.replace(/^data:application\/pdf;base64,/, '');
+    // Build the content array for Gemini - support both single and multi-page PDFs
+    const contentParts: any[] = [];
 
-    const result = await model.generateContent([
-      {
+    if (requestData.pdfBase64Array && requestData.pdfBase64Array.length > 0) {
+      // Multi-page mode: add all PDFs
+      console.log('Processing multiple PDFs:', requestData.pdfBase64Array.length);
+      for (let i = 0; i < requestData.pdfBase64Array.length; i++) {
+        const pdfData = requestData.pdfBase64Array[i].replace(/^data:application\/pdf;base64,/, '');
+        contentParts.push({
+          inlineData: {
+            mimeType: "application/pdf",
+            data: pdfData
+          }
+        });
+      }
+    } else if (requestData.pdfBase64) {
+      // Single page mode: add single PDF
+      console.log('Processing single PDF');
+      const pdfData = requestData.pdfBase64.replace(/^data:application\/pdf;base64,/, '');
+      contentParts.push({
         inlineData: {
           mimeType: "application/pdf",
           data: pdfData
         }
-      },
-      prompt
-    ]);
+      });
+    }
+
+    // Add the prompt
+    contentParts.push(prompt);
+
+    const result = await model.generateContent(contentParts);
 
     const response = await result.response;
     const text = response.text();
