@@ -680,18 +680,22 @@ Deno.serve(async (req: Request) => {
           const config = step.config_json || {}
           console.log('🔧 SFTP upload config:', JSON.stringify(config, null, 2))
 
+          if (!config.sftpConfigId) {
+            throw new Error('SFTP configuration ID is missing. Please edit the workflow step and select an SFTP configuration.')
+          }
+
           console.log('📋 Fetching SFTP configuration...')
           const sftpConfigResponse = await fetch(`${supabaseUrl}/rest/v1/sftp_configs?id=eq.${config.sftpConfigId}`, {
             headers: { 'Authorization': `Bearer ${supabaseServiceKey}`, 'Content-Type': 'application/json', 'apikey': supabaseServiceKey }
           })
 
           if (!sftpConfigResponse.ok) {
-            throw new Error('Failed to fetch SFTP configuration')
+            throw new Error(`Failed to fetch SFTP configuration: ${sftpConfigResponse.status} ${sftpConfigResponse.statusText}`)
           }
 
           const sftpConfigs = await sftpConfigResponse.json()
           if (!sftpConfigs || sftpConfigs.length === 0) {
-            throw new Error('SFTP configuration not found')
+            throw new Error(`SFTP configuration not found with ID: ${config.sftpConfigId}. Please verify the SFTP configuration exists in Settings.`)
           }
 
           const sftpConfig = sftpConfigs[0]
