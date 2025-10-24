@@ -205,17 +205,12 @@ Example response format:
 
 Please analyze the PDF and return the extracted data as a JSON array.`;
 
-    console.log('[EdgeFunction] 📤 Preparing to send request to Gemini AI');
-    console.log('[EdgeFunction] Prompt length:', prompt.length, 'characters');
-    console.log('[EdgeFunction] Content parts:', contentParts.length);
-    console.log('[EdgeFunction] ⏱️  Calling Gemini API (this typically takes 20-90 seconds)...');
-
     // Build the content array for Gemini - support both single and multi-page PDFs
     const contentParts: any[] = [];
 
     if (requestData.pdfBase64Array && requestData.pdfBase64Array.length > 0) {
       // Multi-page mode: add all PDFs
-      console.log('Processing multiple PDFs:', requestData.pdfBase64Array.length);
+      console.log('[EdgeFunction] Processing multiple PDFs:', requestData.pdfBase64Array.length);
       for (let i = 0; i < requestData.pdfBase64Array.length; i++) {
         const pdfData = requestData.pdfBase64Array[i].replace(/^data:application\/pdf;base64,/, '');
         contentParts.push({
@@ -227,7 +222,7 @@ Please analyze the PDF and return the extracted data as a JSON array.`;
       }
     } else if (requestData.pdfBase64) {
       // Single page mode: add single PDF
-      console.log('Processing single PDF');
+      console.log('[EdgeFunction] Processing single PDF');
       const pdfData = requestData.pdfBase64.replace(/^data:application\/pdf;base64,/, '');
       contentParts.push({
         inlineData: {
@@ -239,6 +234,11 @@ Please analyze the PDF and return the extracted data as a JSON array.`;
 
     // Add the prompt
     contentParts.push(prompt);
+
+    console.log('[EdgeFunction] 📤 Preparing to send request to Gemini AI');
+    console.log('[EdgeFunction] Prompt length:', prompt.length, 'characters');
+    console.log('[EdgeFunction] Content parts:', contentParts.length);
+    console.log('[EdgeFunction] ⏱️  Calling Gemini API (this typically takes 20-90 seconds)...');
 
     const geminiStartTime = performance.now();
     console.log('[EdgeFunction] Gemini API call starting at:', new Date().toISOString());
@@ -288,9 +288,9 @@ Please analyze the PDF and return the extracted data as a JSON array.`;
     }
 
     console.log('[EdgeFunction] Applying hardcoded fields...');
-    const hardcodedFields = requestData.fieldMappings.filter(m => m.type === 'hardcoded');
-    console.log('[EdgeFunction] - Hardcoded fields count:', hardcodedFields.length);
-    for (const mapping of hardcodedFields) {
+    const hardcodedFieldsList = requestData.fieldMappings.filter(m => m.type === 'hardcoded');
+    console.log('[EdgeFunction] - Hardcoded fields count:', hardcodedFieldsList.length);
+    for (const mapping of hardcodedFieldsList) {
       for (const row of extractedData) {
         row[mapping.fieldName] = mapping.value;
       }
