@@ -124,18 +124,35 @@ export default function MultiPageProcessor({
 
     try {
       // Extract data from PDF
-      const extractedData = await extractDataFromPDF({
-        pdfFile: pageFile,
-        defaultInstructions: currentExtractionType.defaultInstructions,
-        additionalInstructions: additionalInstructions,
-        formatTemplate: currentExtractionType.formatTemplate,
-        formatType: currentExtractionType.formatType,
-        fieldMappings: currentExtractionType.fieldMappings,
-        parseitIdMapping: currentExtractionType.parseitIdMapping,
-        traceTypeMapping: currentExtractionType.traceTypeMapping,
-        traceTypeValue: currentExtractionType.traceTypeValue,
-        apiKey: apiConfig.googleApiKey || settingsConfig.geminiApiKey
-      });
+      let extractedData: string;
+
+      if (isCsvType) {
+        // Use CSV extraction for CSV types
+        extractedData = await extractCsvFromPDF({
+          pdfFile: pageFile,
+          defaultInstructions: currentExtractionType.defaultInstructions,
+          additionalInstructions: additionalInstructions,
+          fieldMappings: currentExtractionType.fieldMappings,
+          rowDetectionInstructions: currentExtractionType.csvRowDetectionInstructions,
+          delimiter: currentExtractionType.csvDelimiter,
+          includeHeaders: currentExtractionType.csvIncludeHeaders,
+          apiKey: apiConfig.googleApiKey || settingsConfig.geminiApiKey
+        });
+      } else {
+        // Use standard extraction for XML/JSON types
+        extractedData = await extractDataFromPDF({
+          pdfFile: pageFile,
+          defaultInstructions: currentExtractionType.defaultInstructions,
+          additionalInstructions: additionalInstructions,
+          formatTemplate: currentExtractionType.formatTemplate,
+          formatType: currentExtractionType.formatType,
+          fieldMappings: currentExtractionType.fieldMappings,
+          parseitIdMapping: currentExtractionType.parseitIdMapping,
+          traceTypeMapping: currentExtractionType.traceTypeMapping,
+          traceTypeValue: currentExtractionType.traceTypeValue,
+          apiKey: apiConfig.googleApiKey || settingsConfig.geminiApiKey
+        });
+      }
 
       updatePageState(pageIndex, {
         extractedData,
@@ -350,15 +367,16 @@ export default function MultiPageProcessor({
             });
           }
         } else {
-          // For non-JSON types, handle SFTP upload
+          // For non-JSON types (XML, CSV), handle SFTP upload
           try {
             await uploadToSftp({
               sftpConfig,
               xmlContent: extractedData,
               pdfFile: pageFile,
-              baseFilename: currentExtractionType.filename || 'document'
+              baseFilename: currentExtractionType.filename || 'document',
+              formatType: currentExtractionType.formatType
             });
-            
+
             updatePageState(pageIndex, {
               success: true,
               isProcessing: false
@@ -437,7 +455,8 @@ export default function MultiPageProcessor({
               sftpConfig,
               xmlContent: extractedData,
               pdfFile: pdfPages[0],
-              baseFilename: currentExtractionType.filename || 'combined'
+              baseFilename: currentExtractionType.filename || 'combined',
+              formatType: 'CSV'
             });
 
             // Mark all pages as successful

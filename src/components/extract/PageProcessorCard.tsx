@@ -4,6 +4,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import type { PageProcessingState, ApiError, WorkflowStep, ExtractionType, WorkflowExecutionLog } from '../../types';
 import { fetchWorkflowStepLogsByExecutionId, type WorkflowStepLog } from '../../services/logService';
 import Modal from '../common/Modal';
+import CsvPreviewModal from './CsvPreviewModal';
 
 interface PageProcessorCardProps {
   pageFile: File;
@@ -30,7 +31,8 @@ export default function PageProcessorCard({
   onProcess,
   onRemove
 }: PageProcessorCardProps) {
-  const dataLabel = isJsonType ? 'JSON' : 'XML';
+  const isCsvType = currentExtractionType?.formatType === 'CSV';
+  const dataLabel = isCsvType ? 'CSV' : (isJsonType ? 'JSON' : 'XML');
 
   // State to store fetched workflow step logs
   const [workflowStepLogs, setWorkflowStepLogs] = useState<WorkflowStepLog[]>([]);
@@ -187,8 +189,16 @@ export default function PageProcessorCard({
   const [cachedPdfPage, setCachedPdfPage] = useState<any>(null);
   const [pdfPreviewImage, setPdfPreviewImage] = useState<string>('');
   const [showPdfPreview, setShowPdfPreview] = useState(false);
+  const [showCsvPreview, setShowCsvPreview] = useState(false);
 
-  const handlePreviewData = () => onPreview(pageIndex);
+  const handlePreviewData = () => {
+    if (isCsvType) {
+      setShowCsvPreview(true);
+    } else {
+      onPreview(pageIndex);
+    }
+  };
+
   const handleExtractAndSend = () => onProcess(pageIndex);
 
   const handleShowStatus = () => {
@@ -345,6 +355,7 @@ export default function PageProcessorCard({
     setPdfZoomLevel(1.5);
     setPdfPreviewImage('');
     setShowPdfPreview(false);
+    setShowCsvPreview(false);
   };
 
   const handleZoomChange = async (newZoom: number) => {
@@ -642,7 +653,7 @@ export default function PageProcessorCard({
 
             <button
               onClick={handlePreviewData}
-              disabled={pageState.isExtracting || isExtractingAll}
+              disabled={pageState.isExtracting || isExtractingAll || (isCsvType && !pageState.extractedData)}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white font-medium rounded-lg transition-all duration-200 flex items-center space-x-2 disabled:cursor-not-allowed"
             >
               {pageState.isExtracting ? (
@@ -792,6 +803,18 @@ export default function PageProcessorCard({
       >
         {showPdfPreview ? renderPdfPreviewContent() : modalContent}
       </Modal>
+
+      {/* CSV Preview Modal */}
+      {isCsvType && pageState.extractedData && (
+        <CsvPreviewModal
+          isOpen={showCsvPreview}
+          onClose={() => setShowCsvPreview(false)}
+          csvContent={pageState.extractedData}
+          delimiter={currentExtractionType.csvDelimiter || ','}
+          hasHeaders={currentExtractionType.csvIncludeHeaders !== false}
+          pageTitle={`Page ${pageIndex + 1} - CSV Preview`}
+        />
+      )}
     </>
   );
 }
