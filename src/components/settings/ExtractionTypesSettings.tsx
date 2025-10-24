@@ -933,7 +933,7 @@ export default function ExtractionTypesSettings({
                           </label>
                           <select
                             value={mapping.dataType || 'string'}
-                            onChange={(e) => updateFieldMapping(selectedTypeIndex, mappingIndex, 'dataType', e.target.value as 'string' | 'number' | 'integer')}
+                            onChange={(e) => updateFieldMapping(selectedTypeIndex, mappingIndex, 'dataType', e.target.value as 'string' | 'number' | 'integer' | 'boolean')}
                             className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
                           >
                             <option value="string">String</option>
@@ -941,6 +941,7 @@ export default function ExtractionTypesSettings({
                             <option value="integer">Integer</option>
                             <option value="datetime">DateTime</option>
                             <option value="phone">Phone Number</option>
+                            <option value="boolean">Boolean</option>
                           </select>
                         </div>
                         <div>
@@ -958,7 +959,7 @@ export default function ExtractionTypesSettings({
                             />
                           ) : (
                             <div className="w-full px-2 py-1 text-xs text-gray-400 dark:text-gray-500 italic">
-                              {(mapping.dataType === 'phone') ? 'Auto' : 'N/A'}
+                              {(mapping.dataType === 'phone') ? 'Auto' : (mapping.dataType === 'boolean') ? 'True/False' : 'N/A'}
                             </div>
                           )}
                         </div>

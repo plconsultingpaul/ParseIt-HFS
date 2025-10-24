@@ -12,7 +12,7 @@ interface FieldMapping {
   fieldName: string
   type: 'ai' | 'mapped' | 'hardcoded'
   value: string
-  dataType?: 'string' | 'number' | 'integer' | 'datetime'
+  dataType?: 'string' | 'number' | 'integer' | 'datetime' | 'boolean'
   maxLength?: number
   pageNumberInGroup?: number
 }
@@ -28,6 +28,34 @@ interface TransformationRequest {
   }
   additionalInstructions?: string
   apiKey: string
+}
+
+// Helper function to normalize boolean values to proper case (True/False)
+function normalizeBooleanValue(value: any): string {
+  if (typeof value === 'boolean') {
+    return value ? 'True' : 'False'
+  }
+
+  if (typeof value === 'string') {
+    const lowerValue = value.trim().toLowerCase()
+
+    // Handle common boolean representations
+    if (lowerValue === 'true' || lowerValue === 't' || lowerValue === 'yes' || lowerValue === 'y' || lowerValue === '1') {
+      return 'True'
+    }
+    if (lowerValue === 'false' || lowerValue === 'f' || lowerValue === 'no' || lowerValue === 'n' || lowerValue === '0') {
+      return 'False'
+    }
+
+    // If it's already in proper case format, return as is
+    if (value === 'True' || value === 'False') {
+      return value
+    }
+  }
+
+  // Default to False for any other value
+  console.warn(`⚠️ Invalid boolean value "${value}", defaulting to False`)
+  return 'False'
 }
 
 // Helper function to extract a specific page from a PDF
@@ -178,7 +206,12 @@ serve(async (req: Request) => {
       for (const mapping of transformationType.fieldMappings) {
         if (mapping.type === 'hardcoded') {
           console.log(`✓ Hardcoded field "${mapping.fieldName}": ${mapping.value}`)
-          extractedData[mapping.fieldName] = mapping.value
+          // Apply boolean normalization for hardcoded boolean fields
+          if (mapping.dataType === 'boolean') {
+            extractedData[mapping.fieldName] = normalizeBooleanValue(mapping.value)
+          } else {
+            extractedData[mapping.fieldName] = mapping.value
+          }
         }
       }
 
@@ -204,14 +237,16 @@ serve(async (req: Request) => {
               const dataTypeNote = mapping.dataType === 'string' ? ' (format as string)' :
                                   mapping.dataType === 'number' ? ' (format as number)' :
                                   mapping.dataType === 'integer' ? ' (format as integer)' :
-                                  mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' : ''
+                                  mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' :
+                                  mapping.dataType === 'boolean' ? ' (format as boolean: respond with ONLY "True" or "False" in proper case - capital T or F, lowercase remaining letters)' : ''
               fieldMappingInstructions += `- "${mapping.fieldName}": Extract data from PDF coordinates ${mapping.value}${dataTypeNote}\n`
             } else {
               // AI type
               const dataTypeNote = mapping.dataType === 'string' ? ' (format as string)' :
                                   mapping.dataType === 'number' ? ' (format as number)' :
                                   mapping.dataType === 'integer' ? ' (format as integer)' :
-                                  mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' : ''
+                                  mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' :
+                                  mapping.dataType === 'boolean' ? ' (format as boolean: respond with ONLY "True" or "False" in proper case - capital T or F, lowercase remaining letters)' : ''
               fieldMappingInstructions += `- "${mapping.fieldName}": ${mapping.value || 'Extract from PDF document'}${dataTypeNote}\n`
             }
           })
@@ -235,8 +270,9 @@ IMPORTANT GUIDELINES:
 2. Only extract information that is clearly visible on THIS page
 3. If a field is not found on this page, use empty string ("") for text fields, 0 for numbers, null for optional fields
 4. For datetime fields, use the format yyyy-MM-ddThh:mm:ss (e.g., "2024-03-15T14:30:00")
-5. Be precise and accurate with the extracted data
-6. Ensure all field names match exactly what's needed
+5. For boolean fields, respond with ONLY "True" or "False" (proper case: capital first letter, lowercase remaining)
+6. Be precise and accurate with the extracted data
+7. Ensure all field names match exactly what's needed
 
 Please provide only the JSON output without any additional explanation or formatting.
 `
@@ -266,6 +302,13 @@ Please provide only the JSON output without any additional explanation or format
           try {
             const parsedResponse = JSON.parse(extractedContent)
             const pageData = parsedResponse.extractedData || parsedResponse || {}
+
+            // Apply boolean normalization for boolean fields
+            pageFields.forEach(field => {
+              if (field.dataType === 'boolean' && pageData.hasOwnProperty(field.fieldName)) {
+                pageData[field.fieldName] = normalizeBooleanValue(pageData[field.fieldName])
+              }
+            })
 
             // Merge page-specific data into final result
             Object.assign(extractedData, pageData)
