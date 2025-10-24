@@ -18,6 +18,7 @@ interface UploadRequest {
     xmlPath: string
     pdfPath: string
     jsonPath: string
+    csvPath?: string
   }
   xmlContent: string
   pdfBase64: string
@@ -181,6 +182,9 @@ serve(async (req: Request) => {
       await sftp.mkdir(sftpConfig.xmlPath, true)
       await sftp.mkdir(sftpConfig.pdfPath, true)
       await sftp.mkdir(sftpConfig.jsonPath, true)
+      if (sftpConfig.csvPath) {
+        await sftp.mkdir(sftpConfig.csvPath, true)
+      }
 
       const uploadResults = []
 
@@ -235,26 +239,34 @@ serve(async (req: Request) => {
           console.log('🔄 Using base filename:', finalFilenamePrefix)
         }
         
-        // Handle data file (JSON/XML) upload - single file for the logical document
+        // Handle data file (JSON/XML/CSV) upload - single file for the logical document
         let dataFilename: string
         let dataContent: string
         let dataPath: string
-        
+
         if (formatType === 'JSON') {
           try {
             let jsonObject = JSON.parse(xmlContent)
-            
+
             // Inject ParseIt ID if mapping is provided
             if (parseitIdMapping) {
               jsonObject = injectParseitId(jsonObject, parseitIdMapping, parseitId)
             }
-            
+
             dataContent = JSON.stringify(jsonObject, null, 2)
             dataFilename = `${finalFilenamePrefix}.json`
             dataPath = `${sftpConfig.jsonPath}/${dataFilename}`
           } catch (error) {
             throw new Error(`Failed to process JSON content: ${error.message}`)
           }
+        } else if (formatType === 'CSV') {
+          dataContent = xmlContent
+          dataFilename = `${finalFilenamePrefix}.csv`
+          if (!sftpConfig.csvPath) {
+            throw new Error('CSV Path is not configured in SFTP settings. Please configure CSV Path before uploading CSV files.')
+          }
+          dataPath = `${sftpConfig.csvPath}/${dataFilename}`
+          console.log('🔄 Using CSV format, uploading to:', dataPath)
         } else {
           dataContent = xmlContent
           dataContent = dataContent.replace(/{{PARSEIT_ID_PLACEHOLDER}}/g, parseitId.toString())
@@ -408,29 +420,40 @@ serve(async (req: Request) => {
             // Handle JSON format
             try {
               let jsonObject = JSON.parse(xmlContent)
-              
+
               // Inject ParseIt ID if mapping is provided
               if (parseitIdMapping) {
                 jsonObject = injectParseitId(jsonObject, parseitIdMapping, parseitId)
               }
-              
+
               dataContent = JSON.stringify(jsonObject, null, 2)
-              dataFilename = exactFilename && pageCount === 1 
+              dataFilename = exactFilename && pageCount === 1
                 ? `${finalFilenamePrefix}.json`
                 : `${finalFilenamePrefix}_${pageIndex + 1}.json`
               dataPath = `${sftpConfig.jsonPath}/${dataFilename}`
             } catch (error) {
               throw new Error(`Failed to process JSON content: ${error.message}`)
             }
+          } else if (formatType === 'CSV') {
+            // Handle CSV format
+            dataContent = xmlContent
+            dataFilename = exactFilename && pageCount === 1
+              ? `${finalFilenamePrefix}.csv`
+              : `${finalFilenamePrefix}_${pageIndex + 1}.csv`
+            if (!sftpConfig.csvPath) {
+              throw new Error('CSV Path is not configured in SFTP settings. Please configure CSV Path before uploading CSV files.')
+            }
+            dataPath = `${sftpConfig.csvPath}/${dataFilename}`
+            console.log(`📄 Using CSV format, uploading to: ${dataPath}`)
           } else {
             // Handle XML format (default)
             dataContent = xmlContent
-            
+
             // Inject ParseIt ID if mapping is provided for XML
             // Direct string replacement for ParseIt ID placeholder
             dataContent = dataContent.replace(/{{PARSEIT_ID_PLACEHOLDER}}/g, parseitId.toString())
-            
-            dataFilename = exactFilename && pageCount === 1 
+
+            dataFilename = exactFilename && pageCount === 1
               ? `${finalFilenamePrefix}.xml`
               : `${finalFilenamePrefix}_${pageIndex + 1}.xml`
             dataPath = `${sftpConfig.xmlPath}/${dataFilename}`

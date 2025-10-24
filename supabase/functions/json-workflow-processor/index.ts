@@ -20,6 +20,7 @@ interface WorkflowExecutionRequest {
   pdfStoragePath?: string
   originalPdfFilename: string
   pdfBase64?: string
+  formatType?: string
 }
 
 interface WorkflowStep {
@@ -185,7 +186,8 @@ Deno.serve(async (req: Request) => {
       originalPdfFilename: requestData.originalPdfFilename,
       transformSetupFilename: requestData.pdfFilename,
       pdfBase64: requestData.pdfBase64,
-      pdfPages: requestData.pdfPages
+      pdfPages: requestData.pdfPages,
+      formatType: requestData.formatType
     }
 
     console.log('📋 Initial context data:')
@@ -236,6 +238,10 @@ Deno.serve(async (req: Request) => {
 
           case 'rename_pdf':
             stepResult = await executeRenamePdf(step, contextData)
+            break
+
+          case 'sftp_upload':
+            stepResult = await executeSftpUpload(step, contextData, supabase, requestData)
             break
 
           default:
@@ -858,6 +864,155 @@ async function extractSpecificPageFromPdf(pdfBase64: string, pageNumber: number)
     console.error('📄 ❌ PDF extraction failed:', error)
     throw error
   }
+}
+
+async function executeSftpUpload(step: WorkflowStep, contextData: any, supabase: any, requestData: WorkflowExecutionRequest): Promise<any> {
+  console.log('📤 === EXECUTING SFTP UPLOAD ===')
+  console.log('📤 Step config:', JSON.stringify(step.config_json, null, 2))
+  console.log('📤 Context data keys:', Object.keys(contextData))
+
+  const config = step.config_json
+
+  // Fetch SFTP configuration from database
+  const { data: sftpConfig, error: sftpConfigError } = await supabase
+    .from('sftp_config')
+    .select('*')
+    .single()
+
+  if (sftpConfigError || !sftpConfig) {
+    console.error('❌ Failed to fetch SFTP configuration:', sftpConfigError)
+    throw new Error('SFTP configuration not found. Please configure SFTP settings first.')
+  }
+
+  console.log('✅ SFTP config loaded')
+  console.log('📤 SFTP Host:', sftpConfig.host)
+  console.log('📤 XML Path:', sftpConfig.xml_path)
+  console.log('📤 PDF Path:', sftpConfig.pdf_path)
+  console.log('📤 JSON Path:', sftpConfig.json_path)
+  console.log('📤 CSV Path:', sftpConfig.csv_path || 'NOT CONFIGURED')
+
+  // Determine format type from context
+  const formatType = contextData.formatType || requestData.formatType || 'XML'
+  console.log('📤 Format type:', formatType)
+
+  // Validate required data
+  if (!contextData.extractedData) {
+    throw new Error('No extracted data available for SFTP upload')
+  }
+
+  if (!contextData.pdfBase64) {
+    throw new Error('No PDF data available for SFTP upload')
+  }
+
+  // Determine filename
+  let baseFilename = 'document'
+
+  // Check for renamed filename from previous step
+  if (contextData.renamedFilename) {
+    baseFilename = contextData.renamedFilename.replace(/\.(pdf|csv|json|xml)$/i, '')
+    console.log('📤 Using renamed filename from previous step:', baseFilename)
+  } else if (config.useApiResponseForFilename && config.filenameSourcePath) {
+    // Try to get filename from API response or extracted data
+    const customFilename = extractValueFromJsonPath(contextData, config.filenameSourcePath)
+    if (customFilename) {
+      baseFilename = String(customFilename)
+      console.log('📤 Using custom filename from API response:', baseFilename)
+    } else if (config.fallbackFilename) {
+      baseFilename = config.fallbackFilename
+      console.log('📤 Using fallback filename:', baseFilename)
+    }
+  } else if (config.fallbackFilename) {
+    baseFilename = config.fallbackFilename
+    console.log('📤 Using configured fallback filename:', baseFilename)
+  } else if (contextData.pdfFilename) {
+    baseFilename = contextData.pdfFilename.replace(/\.pdf$/i, '')
+    console.log('📤 Using PDF filename from context:', baseFilename)
+  }
+
+  // Build SFTP upload request
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+
+  if (!supabaseUrl || !supabaseServiceKey) {
+    throw new Error('Supabase configuration missing for SFTP upload')
+  }
+
+  const uploadRequest: any = {
+    sftpConfig: {
+      host: sftpConfig.host,
+      port: sftpConfig.port,
+      username: sftpConfig.username,
+      password: sftpConfig.password,
+      xmlPath: config.sftpPathOverride || sftpConfig.xml_path,
+      pdfPath: config.sftpPathOverride || sftpConfig.pdf_path,
+      jsonPath: config.sftpPathOverride || sftpConfig.json_path,
+      csvPath: config.sftpPathOverride || sftpConfig.csv_path
+    },
+    xmlContent: contextData.extractedData,
+    pdfBase64: contextData.pdfBase64,
+    baseFilename: baseFilename,
+    originalFilename: contextData.originalPdfFilename || requestData.originalPdfFilename,
+    formatType: formatType,
+    exactFilename: contextData.renamedFilename,
+    pdfUploadStrategy: config.pdfUploadStrategy || 'all_pages_in_group',
+    specificPageToUpload: config.specificPageToUpload
+  }
+
+  console.log('📤 Calling SFTP upload function...')
+  console.log('📤 Base filename:', uploadRequest.baseFilename)
+  console.log('📤 Format type:', uploadRequest.formatType)
+  console.log('📤 PDF upload strategy:', uploadRequest.pdfUploadStrategy)
+
+  const sftpUploadUrl = `${supabaseUrl}/functions/v1/sftp-upload`
+  const response = await fetch(sftpUploadUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${supabaseServiceKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(uploadRequest)
+  })
+
+  console.log('📤 SFTP upload response status:', response.status)
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error('📤 ❌ SFTP upload failed:', errorText)
+    throw new Error(`SFTP upload failed: ${errorText}`)
+  }
+
+  const uploadResult = await response.json()
+  console.log('📤 ✅ SFTP UPLOAD SUCCESSFUL')
+  console.log('📤 Upload result:', uploadResult)
+
+  return {
+    success: true,
+    uploadResult: uploadResult,
+    message: 'SFTP upload completed successfully'
+  }
+}
+
+function extractValueFromJsonPath(data: any, path: string): any {
+  if (!path) return null
+
+  const parts = path.split('.')
+  let current = data
+
+  for (const part of parts) {
+    if (current === null || current === undefined) return null
+
+    // Handle array indexing like "orders[0]" or "orders.0"
+    const arrayMatch = part.match(/^(.+)\[(\d+)\]$/)
+    if (arrayMatch) {
+      const arrayName = arrayMatch[1]
+      const index = parseInt(arrayMatch[2])
+      current = current[arrayName]?.[index]
+    } else {
+      current = current[part]
+    }
+  }
+
+  return current
 }
 
 function replaceTemplateVariables(template: string, contextData: any): string {
