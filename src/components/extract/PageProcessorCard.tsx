@@ -201,9 +201,9 @@ export default function PageProcessorCard({
   }, [pendingCsvPreview, pageState.extractedData, pageState.isExtracting]);
 
   const handlePreviewData = async () => {
-    // Force immediate visible feedback
-    alert(`Preview clicked for page ${pageIndex + 1}. Check console for logs.`);
-    console.log(`[PageProcessorCard] Preview button clicked for page ${pageIndex + 1}`);
+    console.log('═══════════════════════════════════════════════════════');
+    console.log(`[PageProcessorCard] 🚀 PREVIEW BUTTON CLICKED - Page ${pageIndex + 1}`);
+    console.log('═══════════════════════════════════════════════════════');
     console.log(`[PageProcessorCard] File: ${pageFile.name}, Size: ${pageFile.size} bytes`);
     console.log(`[PageProcessorCard] Format type: ${currentExtractionType?.formatType}`);
     console.log(`[PageProcessorCard] Has extracted data: ${!!pageState.extractedData}`);
