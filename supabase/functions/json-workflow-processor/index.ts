@@ -955,13 +955,15 @@ async function executeSftpUpload(step: WorkflowStep, contextData: any, supabase:
     formatType: formatType,
     exactFilename: contextData.renamedFilename,
     pdfUploadStrategy: config.pdfUploadStrategy || 'all_pages_in_group',
-    specificPageToUpload: config.specificPageToUpload
+    specificPageToUpload: config.specificPageToUpload,
+    uploadFileTypes: config.uploadFileTypes || { json: true, pdf: true, xml: true, csv: true }
   }
 
   console.log('📤 Calling SFTP upload function...')
   console.log('📤 Base filename:', uploadRequest.baseFilename)
   console.log('📤 Format type:', uploadRequest.formatType)
   console.log('📤 PDF upload strategy:', uploadRequest.pdfUploadStrategy)
+  console.log('📤 Upload file types:', uploadRequest.uploadFileTypes)
 
   const sftpUploadUrl = `${supabaseUrl}/functions/v1/sftp-upload`
   const response = await fetch(sftpUploadUrl, {

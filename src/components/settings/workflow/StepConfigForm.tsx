@@ -50,6 +50,12 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
   const [timestampFormat, setTimestampFormat] = useState('YYYYMMDD');
   const [pdfUploadStrategy, setPdfUploadStrategy] = useState<'all_pages_in_group' | 'specific_page_in_group'>('all_pages_in_group');
   const [specificPageToUpload, setSpecificPageToUpload] = useState(1);
+  const [uploadFileTypes, setUploadFileTypes] = useState({
+    json: true,
+    pdf: true,
+    xml: true,
+    csv: true
+  });
 
   useEffect(() => {
     console.log('StepConfigForm useEffect - step data:', step);
@@ -95,6 +101,7 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
         setSftpPathOverride(config.sftpPathOverride || '');
         setPdfUploadStrategy(config.pdfUploadStrategy || 'all_pages_in_group');
         setSpecificPageToUpload(config.specificPageToUpload || 1);
+        setUploadFileTypes(config.uploadFileTypes || { json: true, pdf: true, xml: true, csv: true });
         
         // Rename PDF configuration
         setRenamePdfTemplate(config.filenameTemplate || '');
@@ -185,7 +192,8 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
           fallbackFilename: fallbackFilename.trim() || undefined,
           sftpPathOverride: sftpPathOverride.trim() || undefined,
           pdfUploadStrategy: pdfUploadStrategy,
-          specificPageToUpload: pdfUploadStrategy === 'specific_page_in_group' ? specificPageToUpload : undefined
+          specificPageToUpload: pdfUploadStrategy === 'specific_page_in_group' ? specificPageToUpload : undefined,
+          uploadFileTypes: uploadFileTypes
         };
         break;
       case 'conditional_check':
@@ -475,6 +483,65 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
 
             {stepType === 'sftp_upload' && (
               <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                    File Types to Upload
+                  </label>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-md">
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id="uploadJson"
+                        checked={uploadFileTypes.json}
+                        onChange={(e) => setUploadFileTypes({ ...uploadFileTypes, json: e.target.checked })}
+                        className="w-4 h-4 text-purple-600 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-600 rounded focus:ring-purple-500"
+                      />
+                      <label htmlFor="uploadJson" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        JSON
+                      </label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id="uploadPdf"
+                        checked={uploadFileTypes.pdf}
+                        onChange={(e) => setUploadFileTypes({ ...uploadFileTypes, pdf: e.target.checked })}
+                        className="w-4 h-4 text-purple-600 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-600 rounded focus:ring-purple-500"
+                      />
+                      <label htmlFor="uploadPdf" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        PDF
+                      </label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id="uploadXml"
+                        checked={uploadFileTypes.xml}
+                        onChange={(e) => setUploadFileTypes({ ...uploadFileTypes, xml: e.target.checked })}
+                        className="w-4 h-4 text-purple-600 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-600 rounded focus:ring-purple-500"
+                      />
+                      <label htmlFor="uploadXml" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        XML
+                      </label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id="uploadCsv"
+                        checked={uploadFileTypes.csv}
+                        onChange={(e) => setUploadFileTypes({ ...uploadFileTypes, csv: e.target.checked })}
+                        className="w-4 h-4 text-purple-600 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-600 rounded focus:ring-purple-500"
+                      />
+                      <label htmlFor="uploadCsv" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        CSV
+                      </label>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                    Select which file types to upload to the SFTP server. At least one type must be selected.
+                  </p>
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     SFTP Path Override (Optional)

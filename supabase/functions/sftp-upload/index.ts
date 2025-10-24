@@ -34,6 +34,12 @@ interface UploadRequest {
   exactFilename?: string
   pdfUploadStrategy?: 'all_pages_in_group' | 'specific_page_in_group'
   specificPageToUpload?: number
+  uploadFileTypes?: {
+    json?: boolean
+    pdf?: boolean
+    xml?: boolean
+    csv?: boolean
+  }
 }
 
 serve(async (req: Request) => {
@@ -45,7 +51,7 @@ serve(async (req: Request) => {
   }
 
   try {
-    const { sftpConfig, xmlContent, pdfBase64, baseFilename, originalFilename, parseitIdMapping, useExistingParseitId, userId, extractionTypeId, transformationTypeId, formatType, customFilenamePart, exactFilename, pdfUploadStrategy, specificPageToUpload }: UploadRequest = await req.json()
+    const { sftpConfig, xmlContent, pdfBase64, baseFilename, originalFilename, parseitIdMapping, useExistingParseitId, userId, extractionTypeId, transformationTypeId, formatType, customFilenamePart, exactFilename, pdfUploadStrategy, specificPageToUpload, uploadFileTypes }: UploadRequest = await req.json()
 
     console.log('=== SFTP UPLOAD DEBUG ===')
     console.log('Request received with fields:')
@@ -69,6 +75,7 @@ serve(async (req: Request) => {
     console.log('- transformationTypeId:', transformationTypeId || 'MISSING')
     console.log('- pdfUploadStrategy:', pdfUploadStrategy || 'MISSING')
     console.log('- specificPageToUpload:', specificPageToUpload || 'MISSING')
+    console.log('- uploadFileTypes:', uploadFileTypes || 'MISSING (will default to all types)')
     
     console.log('SFTP Upload Request received:')
     console.log('- useExistingParseitId:', useExistingParseitId)
@@ -186,6 +193,15 @@ serve(async (req: Request) => {
         await sftp.mkdir(sftpConfig.csvPath, true)
       }
 
+      // Set default file type filters (all enabled if not specified)
+      const fileTypeFilters = uploadFileTypes || { json: true, pdf: true, xml: true, csv: true }
+      console.log('📋 File type filters:', fileTypeFilters)
+      console.log('📋 Will upload:')
+      console.log('  - JSON files:', fileTypeFilters.json !== false ? 'YES' : 'NO')
+      console.log('  - PDF files:', fileTypeFilters.pdf !== false ? 'YES' : 'NO')
+      console.log('  - XML files:', fileTypeFilters.xml !== false ? 'YES' : 'NO')
+      console.log('  - CSV files:', fileTypeFilters.csv !== false ? 'YES' : 'NO')
+
       const uploadResults = []
 
       // === CRITICAL DECISION POINT: TRANSFORMATION VS EXTRACTION LOGIC ===
@@ -274,12 +290,25 @@ serve(async (req: Request) => {
           dataPath = `${sftpConfig.xmlPath}/${dataFilename}`
         }
         
-        // Upload data file (skip JSON upload for transformation context if needed)
-        if (!(transformationTypeId && formatType === 'JSON')) {
+        // Upload data file based on file type filters
+        let shouldUploadDataFile = true
+        if (formatType === 'JSON' && fileTypeFilters.json === false) {
+          shouldUploadDataFile = false
+          console.log(`🔄 ⏭️  Skipping JSON file upload (disabled in filters): ${dataPath}`)
+        } else if (formatType === 'CSV' && fileTypeFilters.csv === false) {
+          shouldUploadDataFile = false
+          console.log(`🔄 ⏭️  Skipping CSV file upload (disabled in filters): ${dataPath}`)
+        } else if (formatType === 'XML' && fileTypeFilters.xml === false) {
+          shouldUploadDataFile = false
+          console.log(`🔄 ⏭️  Skipping XML file upload (disabled in filters): ${dataPath}`)
+        } else if (transformationTypeId && formatType === 'JSON') {
+          shouldUploadDataFile = false
+          console.log(`🔄 ⏭️  Skipping JSON data file upload for transformation context: ${dataPath}`)
+        }
+
+        if (shouldUploadDataFile) {
           console.log(`🔄 Uploading data file: ${dataPath}`)
           await sftp.put(Buffer.from(dataContent, 'utf8'), dataPath)
-        } else {
-          console.log(`🔄 Skipping JSON data file upload for transformation context: ${dataPath}`)
         }
 
         // Determine PDF content to upload based on strategy
@@ -305,13 +334,19 @@ serve(async (req: Request) => {
         // Upload the PDF as a single logical document
         const pdfFilename = `${finalFilenamePrefix}.pdf`
         const pdfPath = `${sftpConfig.pdfPath}/${pdfFilename}`
-        
-        console.log(`🔄 Uploading logical document PDF: ${pdfPath}`)
-        console.log(`🔄 PDF contains ${actualPdfPageCount} page(s)`)
-        
-        const pdfBytes = await pdfToUploadDoc.save()
-        const pdfBufferForUpload = Buffer.from(pdfBytes)
-        await sftp.put(pdfBufferForUpload, pdfPath)
+
+        let pdfUploaded = false
+        if (fileTypeFilters.pdf === false) {
+          console.log(`🔄 ⏭️  Skipping PDF upload (disabled in filters): ${pdfPath}`)
+        } else {
+          console.log(`🔄 Uploading logical document PDF: ${pdfPath}`)
+          console.log(`🔄 PDF contains ${actualPdfPageCount} page(s)`)
+
+          const pdfBytes = await pdfToUploadDoc.save()
+          const pdfBufferForUpload = Buffer.from(pdfBytes)
+          await sftp.put(pdfBufferForUpload, pdfPath)
+          pdfUploaded = true
+        }
 
         uploadResults.push({
           logicalDocument: 1,
@@ -320,8 +355,8 @@ serve(async (req: Request) => {
           dataFilename: dataFilename,
           pagesInDocument: actualPdfPageCount,
           files: {
-            data: dataPath,
-            pdf: pdfPath
+            data: shouldUploadDataFile ? dataPath : null,
+            pdf: pdfUploaded ? pdfPath : null
           }
         })
 
@@ -459,26 +494,46 @@ serve(async (req: Request) => {
             dataPath = `${sftpConfig.xmlPath}/${dataFilename}`
           }
           
-          // Upload data file
-          console.log(`📄 Uploading data file: ${dataPath}`)
-          await sftp.put(Buffer.from(dataContent, 'utf8'), dataPath)
+          // Upload data file based on file type filters
+          let shouldUploadDataFileExtraction = true
+          if (formatType === 'JSON' && fileTypeFilters.json === false) {
+            shouldUploadDataFileExtraction = false
+            console.log(`📄 ⏭️  Skipping JSON file upload (disabled in filters): ${dataPath}`)
+          } else if (formatType === 'CSV' && fileTypeFilters.csv === false) {
+            shouldUploadDataFileExtraction = false
+            console.log(`📄 ⏭️  Skipping CSV file upload (disabled in filters): ${dataPath}`)
+          } else if (formatType === 'XML' && fileTypeFilters.xml === false) {
+            shouldUploadDataFileExtraction = false
+            console.log(`📄 ⏭️  Skipping XML file upload (disabled in filters): ${dataPath}`)
+          }
+
+          if (shouldUploadDataFileExtraction) {
+            console.log(`📄 Uploading data file: ${dataPath}`)
+            await sftp.put(Buffer.from(dataContent, 'utf8'), dataPath)
+          }
 
           // Upload single page PDF file
-          const pdfFilename = exactFilename && pageCount === 1 
+          const pdfFilename = exactFilename && pageCount === 1
             ? `${finalFilenamePrefix}.pdf`
             : `${finalFilenamePrefix}_${pageIndex + 1}.pdf`
           const pdfPath = `${sftpConfig.pdfPath}/${pdfFilename}`
 
-          // Create a new PDF document with just this page
-          const singlePagePdf = await PDFDocument.create()
-          const [copiedPage] = await singlePagePdf.copyPages(pdfDoc, [pageIndex])
-          singlePagePdf.addPage(copiedPage)
-          
-          // Convert single page PDF to buffer
-          const singlePagePdfBytes = await singlePagePdf.save()
-          const singlePageBuffer = Buffer.from(singlePagePdfBytes)
+          let pdfUploadedExtraction = false
+          if (fileTypeFilters.pdf === false) {
+            console.log(`📄 ⏭️  Skipping PDF upload (disabled in filters): ${pdfPath}`)
+          } else {
+            // Create a new PDF document with just this page
+            const singlePagePdf = await PDFDocument.create()
+            const [copiedPage] = await singlePagePdf.copyPages(pdfDoc, [pageIndex])
+            singlePagePdf.addPage(copiedPage)
 
-          await sftp.put(singlePageBuffer, pdfPath)
+            // Convert single page PDF to buffer
+            const singlePagePdfBytes = await singlePagePdf.save()
+            const singlePageBuffer = Buffer.from(singlePagePdfBytes)
+
+            await sftp.put(singlePageBuffer, pdfPath)
+            pdfUploadedExtraction = true
+          }
 
           uploadResults.push({
             page: pageIndex + 1,
@@ -486,8 +541,8 @@ serve(async (req: Request) => {
             actualFilename: pdfFilename, // Use the actual PDF filename that was uploaded
             dataFilename: dataFilename, // Also include the data filename
             files: {
-              data: dataPath,
-              pdf: pdfPath
+              data: shouldUploadDataFileExtraction ? dataPath : null,
+              pdf: pdfUploadedExtraction ? pdfPath : null
             }
           })
         }
