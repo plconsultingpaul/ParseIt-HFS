@@ -42,6 +42,9 @@ export default function ExtractPage({
     transformationTypes[0]?.id || ''
   );
 
+  const currentExtractionType = extractionTypes.find(type => type.id === selectedExtractionType);
+  const currentTransformationType = transformationTypes.find(type => type.id === selectedTransformationType);
+
   // Initialize upload mode from extraction type default, then user preference
   React.useEffect(() => {
     if (user?.role === 'vendor') {
@@ -73,9 +76,6 @@ export default function ExtractPage({
       setUploadMode(user.preferredUploadMode);
     }
   }, [user]);
-
-  const currentExtractionType = extractionTypes.find(type => type.id === selectedExtractionType);
-  const currentTransformationType = transformationTypes.find(type => type.id === selectedTransformationType);
 
   const handlePdfUpload = (file: File, pages: File[]) => {
     setUploadedFile(file);
