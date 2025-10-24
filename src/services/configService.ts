@@ -109,7 +109,8 @@ export async function fetchSftpConfig(): Promise<SftpConfig> {
         password: config.password || '',
         xmlPath: config.remote_path || '/uploads/xml/',
         pdfPath: config.pdf_path || '/uploads/pdf/',
-        jsonPath: config.json_path || '/uploads/json/'
+        jsonPath: config.json_path || '/uploads/json/',
+        csvPath: config.csv_path || '/uploads/csv/'
       };
     }
 
@@ -120,7 +121,8 @@ export async function fetchSftpConfig(): Promise<SftpConfig> {
       password: '',
       xmlPath: '/uploads/xml/',
       pdfPath: '/uploads/pdf/',
-      jsonPath: '/uploads/json/'
+      jsonPath: '/uploads/json/',
+      csvPath: '/uploads/csv/'
     };
   } catch (error) {
     console.error('Error fetching SFTP config:', error);
@@ -143,6 +145,7 @@ export async function updateSftpConfig(config: SftpConfig): Promise<void> {
       remote_path: config.xmlPath,
       pdf_path: config.pdfPath,
       json_path: config.jsonPath,
+      csv_path: config.csvPath,
       updated_at: new Date().toISOString()
     };
 
