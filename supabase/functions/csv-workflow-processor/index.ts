@@ -918,7 +918,29 @@ Deno.serve(async (req: Request) => {
             uploadFileTypes.csv = true
           }
 
-          const sftpUploadPayload = {
+          // Determine if we should use an exact filename (from rename step)
+          // Strip extension from the filename to pass as exactFilename
+          let exactFilenameToPass: string | undefined = undefined
+
+          if (config.uploadType === 'pdf' && contextData.renamedPdfFilename) {
+            exactFilenameToPass = contextData.renamedPdfFilename.replace(/\.(pdf|csv|json|xml)$/i, '')
+            console.log('📤 Passing exact filename for PDF:', exactFilenameToPass)
+          } else if (config.uploadType === 'csv' && contextData.renamedCsvFilename) {
+            exactFilenameToPass = contextData.renamedCsvFilename.replace(/\.(pdf|csv|json|xml)$/i, '')
+            console.log('📤 Passing exact filename for CSV:', exactFilenameToPass)
+          } else if (config.uploadType === 'json' && contextData.renamedJsonFilename) {
+            exactFilenameToPass = contextData.renamedJsonFilename.replace(/\.(pdf|csv|json|xml)$/i, '')
+            console.log('📤 Passing exact filename for JSON:', exactFilenameToPass)
+          } else if (config.uploadType === 'xml' && contextData.renamedXmlFilename) {
+            exactFilenameToPass = contextData.renamedXmlFilename.replace(/\.(pdf|csv|json|xml)$/i, '')
+            console.log('📤 Passing exact filename for XML:', exactFilenameToPass)
+          } else if (contextData.renamedFilename) {
+            // Fallback to generic renamed filename
+            exactFilenameToPass = contextData.renamedFilename.replace(/\.(pdf|csv|json|xml)$/i, '')
+            console.log('📤 Passing exact filename (generic):', exactFilenameToPass)
+          }
+
+          const sftpUploadPayload: any = {
             sftpConfig: {
               host: sftpConfig.host,
               port: sftpConfig.port,
@@ -935,6 +957,12 @@ Deno.serve(async (req: Request) => {
             originalFilename: contextData.originalPdfFilename || filename,
             formatType: formatType,
             uploadFileTypes: uploadFileTypes
+          }
+
+          // Add exactFilename if we have a renamed filename
+          if (exactFilenameToPass) {
+            sftpUploadPayload.exactFilename = exactFilenameToPass
+            console.log('📤 Adding exactFilename to payload:', exactFilenameToPass)
           }
 
           console.log('📤 SFTP upload payload:', JSON.stringify({
