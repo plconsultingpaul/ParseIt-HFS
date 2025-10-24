@@ -1,12 +1,10 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { Buffer } from "node:buffer"
 import { PDFDocument } from "npm:pdf-lib@1.17.1"
-import * as xml2js from "xml2js"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 }
 
 interface UploadRequest {
@@ -42,7 +40,7 @@ interface UploadRequest {
   }
 }
 
-serve(async (req: Request) => {
+Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, {
       status: 200,
@@ -558,7 +556,7 @@ serve(async (req: Request) => {
             pageCount,
             'success',
             null,
-            uploadResults?.parseitId // Use the first page's ParseIt ID for the log
+            uploadResults[0]?.parseitId // Use the first page's ParseIt ID for the log
           )
         } catch (logError) {
           console.warn('Failed to log successful extraction:', logError)
@@ -574,7 +572,7 @@ serve(async (req: Request) => {
           pageCount: uploadResults.length,
           results: uploadResults,
           actualFilenames: uploadResults.map(r => r.actualFilename), // Return the actual filenames used
-          actualFilename: uploadResults?.actualFilename // Return the first page's filename for single responses
+          actualFilename: uploadResults[0]?.actualFilename // Return the first page's filename for single responses
         }),
         {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -621,7 +619,7 @@ serve(async (req: Request) => {
             user_id: userId || null,
             extraction_type_id: extractionTypeId || null,
             transformation_type_id: transformationTypeId || null,
-            pdf_filename: originalFilename || (baseFilename + '.pdf') || 'unknown.pdf',
+            pdf_filename: originalFilename || 'unknown.pdf',
             pdf_pages: 0,
             extraction_status: 'failed',
             error_message: error instanceof Error ? error.message : 'Unknown error',
