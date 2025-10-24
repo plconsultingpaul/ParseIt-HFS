@@ -744,32 +744,25 @@ async function executeRenamePdf(step: WorkflowStep, contextData: any): Promise<a
 
   let newFilename = replaceTemplateVariables(template, contextData)
 
-  // Detect file extension from context data or template
+  // IMPORTANT: Always strip any file extension from the template to prevent double extensions
+  // Users should NOT include extensions in their template, but we handle it defensively
+  const extensionMatch = newFilename.match(/\.(pdf|csv|json|xml)$/i)
+  if (extensionMatch) {
+    console.log('📝 ⚠️  Template contains file extension, stripping it:', extensionMatch[0])
+    newFilename = newFilename.substring(0, newFilename.length - extensionMatch[0].length)
+  }
+
+  // Auto-detect extension based on format type in context
+  const formatType = contextData.formatType || contextData.extractionType?.formatType
+  console.log('📝 Detected format type:', formatType)
+
   let fileExtension = '.pdf' // default
-
-  // Check if template already has an extension
-  const hasExtension = /\.(pdf|csv|json|xml)$/i.test(newFilename)
-
-  if (!hasExtension) {
-    // Auto-detect extension based on format type in context
-    const formatType = contextData.formatType || contextData.extractionType?.formatType
-    console.log('📝 Detected format type:', formatType)
-
-    if (formatType === 'CSV') {
-      fileExtension = '.csv'
-    } else if (formatType === 'JSON') {
-      fileExtension = '.json'
-    } else if (formatType === 'XML') {
-      fileExtension = '.xml'
-    }
-    // else default to .pdf
-  } else {
-    // Extract the extension from the filename
-    const match = newFilename.match(/\.(pdf|csv|json|xml)$/i)
-    if (match) {
-      fileExtension = match[0].toLowerCase()
-      newFilename = newFilename.substring(0, newFilename.length - fileExtension.length)
-    }
+  if (formatType === 'CSV') {
+    fileExtension = '.csv'
+  } else if (formatType === 'JSON') {
+    fileExtension = '.json'
+  } else if (formatType === 'XML') {
+    fileExtension = '.xml'
   }
 
   // Add timestamp if configured

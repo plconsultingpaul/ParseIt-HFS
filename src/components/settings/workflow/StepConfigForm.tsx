@@ -670,7 +670,7 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                     placeholder="e.g., {{invoiceNumber}}_{{customerName}} or BL_{{billNumber}}"
                   />
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Use {`{{fieldName}}`} to reference extracted data. File extension (.pdf, .csv, .json) will be added automatically based on extraction type.
+                    Use {`{{fieldName}}`} to reference extracted data. <strong>DO NOT include file extension</strong> - it will be added automatically based on format type (.pdf, .csv, .json, .xml).
                   </p>
                 </div>
 

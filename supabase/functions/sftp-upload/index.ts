@@ -243,9 +243,11 @@ serve(async (req: Request) => {
         
         // Determine final filename prefix
         let finalFilenamePrefix: string
-        
+
         if (exactFilename) {
-          finalFilenamePrefix = exactFilename.replace(/\.pdf$/i, '')
+          // Strip any file extension (.pdf, .csv, .json, .xml) from the exact filename
+          // to prevent double extension issues
+          finalFilenamePrefix = exactFilename.replace(/\.(pdf|csv|json|xml)$/i, '')
           console.log('🔄 Using exact filename from workflow:', finalFilenamePrefix)
         } else if (customFilenamePart) {
           finalFilenamePrefix = `${baseFilename}${customFilenamePart}`
@@ -423,11 +425,11 @@ serve(async (req: Request) => {
           
           // Determine final filename prefix
           let finalFilenamePrefix: string
-          
+
           if (exactFilename) {
             // Use exact filename from workflow (e.g., from rename_pdf step)
-            // Remove .pdf extension if present since we'll add it back with page number
-            finalFilenamePrefix = exactFilename.replace(/\.pdf$/i, '')
+            // Strip any file extension (.pdf, .csv, .json, .xml) to prevent double extension issues
+            finalFilenamePrefix = exactFilename.replace(/\.(pdf|csv|json|xml)$/i, '')
             console.log(`📄 Page ${pageIndex + 1} using exact filename from workflow:`, finalFilenamePrefix)
           } else if (customFilenamePart) {
             // Combine base filename (e.g., "BL_") with custom part (e.g., "12345") = "BL_12345"
