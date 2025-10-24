@@ -174,3 +174,5 @@ export interface EmailProcessingRule {
   createdAt: string;
   updatedAt: string;
 }
+
+export type ExtractionWorkflow = Workflow;

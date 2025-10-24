@@ -178,19 +178,25 @@ export async function updateWorkflowSteps(workflowId: string, steps: WorkflowSte
     // Then insert the new steps if any
     if (steps.length > 0) {
       console.log('📝 Inserting new steps...');
-      
+
       const stepsToInsert = steps.map(step => {
-        const stepData = {
-          id: step.id.startsWith('temp-') ? undefined : step.id, // Let database generate ID for temp steps
+        // Build the step data object, completely omitting 'id' for temp steps
+        // This allows the database to use its DEFAULT gen_random_uuid() for new steps
+        const stepData: any = {
           workflow_id: workflowId,
           step_order: step.stepOrder,
           step_type: step.stepType,
           step_name: step.stepName,
           config_json: step.configJson || {},
-          next_step_on_success_id: step.nextStepOnSuccessId,
-          next_step_on_failure_id: step.nextStepOnFailureId
+          next_step_on_success_id: step.nextStepOnSuccessId || null,
+          next_step_on_failure_id: step.nextStepOnFailureId || null
         };
-        
+
+        // Only include the id field if it's not a temporary ID
+        if (!step.id.startsWith('temp-')) {
+          stepData.id = step.id;
+        }
+
         console.log('Step to insert:', stepData);
         return stepData;
       });
