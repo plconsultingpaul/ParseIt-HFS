@@ -320,13 +320,18 @@ Deno.serve(async (req: Request) => {
       }
     } else if (requestData.extractedData) {
       console.log('📊 Processing extracted data from request...')
+      console.log('📊 Format type:', formatType)
       try {
         if (typeof requestData.extractedData === 'string') {
           if (requestData.extractedData.trim() === '') {
             console.log('📊 Extracted data is empty string')
             extractedData = {}
+          } else if (formatType === 'CSV') {
+            console.log('📊 CSV format detected - keeping data as string')
+            extractedData = requestData.extractedData
+            console.log('✅ CSV data preserved as string')
           } else {
-            console.log('📊 Parsing extracted data string...')
+            console.log('📊 Parsing extracted data string as JSON...')
             extractedData = JSON.parse(requestData.extractedData)
             console.log('✅ Parsed extracted data from request')
           }
@@ -336,14 +341,23 @@ Deno.serve(async (req: Request) => {
         }
       } catch (parseError) {
         console.error('❌ Failed to parse extracted data:', parseError)
-        extractedData = {}
+        if (formatType === 'CSV' && typeof requestData.extractedData === 'string') {
+          console.log('📊 Parse failed but formatType is CSV - using raw string')
+          extractedData = requestData.extractedData
+        } else {
+          extractedData = {}
+        }
       }
     } else {
       console.log('📊 No extracted data provided, using empty object')
       extractedData = {}
     }
 
-    console.log('📊 Final extracted data keys:', Object.keys(extractedData))
+    if (typeof extractedData === 'string') {
+      console.log('📊 Final extracted data: CSV string with length', extractedData.length)
+    } else {
+      console.log('📊 Final extracted data keys:', Object.keys(extractedData))
+    }
 
     console.log('📋 Fetching workflow steps...')
     const stepsResponse = await fetch(`${supabaseUrl}/rest/v1/workflow_steps?workflow_id=eq.${requestData.workflowId}&order=step_order.asc`, {
@@ -361,15 +375,24 @@ Deno.serve(async (req: Request) => {
       throw new Error('No steps found in workflow')
     }
 
-    let contextData = {
+    let contextData: any = {
       extractedData: extractedData,
       originalExtractedData: requestData.extractedData,
       formatType: formatType,
       pdfFilename: requestData.pdfFilename,
       originalPdfFilename: requestData.originalPdfFilename,
       pdfStoragePath: requestData.pdfStoragePath,
-      pdfBase64: requestData.pdfBase64,
-      ...extractedData
+      pdfBase64: requestData.pdfBase64
+    }
+
+    if (formatType !== 'CSV' && typeof extractedData === 'object' && extractedData !== null) {
+      contextData = {
+        ...contextData,
+        ...extractedData
+      }
+      console.log('📊 Context data merged with extracted data object')
+    } else {
+      console.log('📊 Context data created without spreading (CSV format or non-object data)')
     }
 
     console.log('🔄 Starting workflow execution with', steps.length, 'steps...')
@@ -725,11 +748,23 @@ Deno.serve(async (req: Request) => {
           } else if (config.uploadType === 'csv') {
             console.log('📄 Uploading CSV file')
 
+            let csvData: string | null = null
+
             if (contextData.extractedData && typeof contextData.extractedData === 'string') {
-              fileContent = Buffer.from(contextData.extractedData).toString('base64')
+              console.log('✅ Found CSV data in extractedData (string)')
+              csvData = contextData.extractedData
+            } else if (contextData.originalExtractedData && typeof contextData.originalExtractedData === 'string') {
+              console.log('✅ Found CSV data in originalExtractedData (string)')
+              csvData = contextData.originalExtractedData
             } else {
+              console.error('❌ CSV data not found')
+              console.error('- extractedData type:', typeof contextData.extractedData)
+              console.error('- originalExtractedData type:', typeof contextData.originalExtractedData)
               throw new Error('CSV data not available or not in string format')
             }
+
+            fileContent = Buffer.from(csvData).toString('base64')
+            console.log('✅ CSV data converted to base64, length:', fileContent.length)
 
             if (!filename.toLowerCase().endsWith('.csv')) {
               filename = filename.replace(/\.(pdf|json|xml|csv)$/i, '') + '.csv'
