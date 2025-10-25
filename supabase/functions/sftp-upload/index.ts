@@ -328,10 +328,23 @@ Deno.serve(async (req: Request) => {
           console.log('🔄 dataContent preview (first 400):', dataContent ? dataContent.substring(0, 400) : 'EMPTY')
           console.log('🔄 dataContent preview (last 200):', dataContent ? dataContent.substring(Math.max(0, dataContent.length - 200)) : 'EMPTY')
 
+          if (!dataContent || (typeof dataContent === 'string' && dataContent.trim() === '')) {
+            console.error('❌ CRITICAL: dataContent is empty before Buffer creation!')
+            console.error('❌ formatType:', formatType)
+            console.error('❌ xmlContent type:', typeof xmlContent)
+            console.error('❌ xmlContent length:', xmlContent ? xmlContent.length : 0)
+            throw new Error(`Data content is empty for ${formatType} transformation file upload`)
+          }
+
           const dataBuffer = Buffer.from(dataContent, 'utf8')
           console.log('🔄 Buffer created, length:', dataBuffer.length)
           console.log('🔄 Buffer preview (first 400 bytes):', dataBuffer.toString('utf8', 0, Math.min(400, dataBuffer.length)))
           console.log('🔄 Buffer preview (last 200 bytes):', dataBuffer.toString('utf8', Math.max(0, dataBuffer.length - 200), dataBuffer.length))
+
+          if (dataBuffer.length === 0) {
+            console.error('❌ CRITICAL: Buffer has zero length!')
+            throw new Error('Buffer is empty - no data to upload')
+          }
 
           await sftp.put(dataBuffer, dataPath)
           console.log('✅ Successfully uploaded transformation data file to:', dataPath)
@@ -545,7 +558,17 @@ Deno.serve(async (req: Request) => {
             console.log(`📄 === UPLOADING DATA FILE: ${dataPath} ===`)
             console.log('📄 dataContent type before Buffer:', typeof dataContent)
             console.log('📄 dataContent length before Buffer:', dataContent ? dataContent.length : 0)
+            console.log('📄 dataContent is empty?:', !dataContent || (typeof dataContent === 'string' && dataContent.trim() === ''))
             console.log('📄 dataContent preview (first 300):', dataContent ? dataContent.substring(0, 300) : 'EMPTY')
+            console.log('📄 dataContent preview (last 200):', dataContent ? dataContent.substring(Math.max(0, dataContent.length - 200)) : 'EMPTY')
+
+            if (!dataContent || (typeof dataContent === 'string' && dataContent.trim() === '')) {
+              console.error('❌ CRITICAL: dataContent is empty before Buffer creation!')
+              console.error('❌ formatType:', formatType)
+              console.error('❌ xmlContent type:', typeof xmlContent)
+              console.error('❌ xmlContent length:', xmlContent ? xmlContent.length : 0)
+              throw new Error(`Data content is empty for ${formatType} file upload`)
+            }
 
             const dataBuffer = Buffer.from(dataContent, 'utf8')
             console.log('📄 Buffer created, length:', dataBuffer.length)

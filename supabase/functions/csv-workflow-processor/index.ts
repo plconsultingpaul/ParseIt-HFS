@@ -937,8 +937,15 @@ Deno.serve(async (req: Request) => {
             console.log('📤 Passing exact filename (generic):', exactFilenameToPass)
           }
 
+          console.log('🔍 === PREPARING CONTENT FOR SFTP ===')
+          console.log('🔍 config.uploadType:', config.uploadType)
+          console.log('🔍 fileContent type:', typeof fileContent)
+          console.log('🔍 fileContent length:', fileContent ? fileContent.length : 0)
+          console.log('🔍 formatType:', formatType)
+
           let contentForSftp: string
           if (config.uploadType === 'csv') {
+            console.log('✅ Detected CSV upload type')
             contentForSftp = fileContent
             console.log('📤 === PREPARING CSV FOR SFTP ===')
             console.log('📤 contentForSftp type:', typeof contentForSftp)
@@ -948,13 +955,21 @@ Deno.serve(async (req: Request) => {
 
             if (!contentForSftp || contentForSftp.trim() === '') {
               console.error('❌ CRITICAL: contentForSftp is empty!')
+              console.error('❌ fileContent was:', fileContent)
               throw new Error('CSV content is empty before SFTP upload')
             }
           } else if (contextData.extractedData && typeof contextData.extractedData === 'object') {
+            console.log('✅ Detected object type, converting to JSON')
             contentForSftp = JSON.stringify(contextData.extractedData)
           } else {
+            console.log('⚠️ No valid content found, using empty object')
             contentForSftp = '{}'
           }
+
+          console.log('🔍 === FINAL contentForSftp CHECK ===')
+          console.log('🔍 contentForSftp type:', typeof contentForSftp)
+          console.log('🔍 contentForSftp length:', contentForSftp ? contentForSftp.length : 0)
+          console.log('🔍 contentForSftp is empty?:', !contentForSftp || contentForSftp.trim() === '')
 
           const sftpUploadPayload: any = {
             sftpConfig: {
@@ -1164,6 +1179,6 @@ Deno.serve(async (req: Request) => {
     return new Response(
       JSON.stringify({ error: "Workflow execution failed", details: error instanceof Error ? error.message : "Unknown error", workflowExecutionLogId: workflowExecutionLogId, extractionLogId: extractionLogId }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    )
+    )  
   }
 })
