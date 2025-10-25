@@ -44,6 +44,7 @@ export interface TransformationType {
   fieldMappings?: TransformationFieldMapping[];
   autoDetectInstructions?: string;
   workflowId?: string;
+  defaultUploadMode?: 'manual' | 'auto';
   userId?: string;
   createdAt?: string;
   updatedAt?: string;
