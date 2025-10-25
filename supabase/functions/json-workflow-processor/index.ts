@@ -843,16 +843,49 @@ Deno.serve(async (req: Request) => {
 
           const uploadFileTypes = config.uploadFileTypes || { json: true, pdf: true, xml: true, csv: true }
 
+          // Prepare default paths from SFTP configuration
+          let xmlPath = sftpConfig.remote_path || '/ParseIt_XML'
+          let pdfPath = sftpConfig.pdf_path || '/ParseIt_PDF'
+          let jsonPath = sftpConfig.json_path || '/ParseIt_JSON'
+          let csvPath = sftpConfig.csv_path || '/ParseIt_CSV'
+
+          // Apply SFTP path override if specified
+          if (config.sftpPathOverride) {
+            console.log('🔧 SFTP Path Override detected:', config.sftpPathOverride)
+            console.log('🔧 Upload Type:', config.uploadType)
+
+            // Apply override to the specific upload type
+            if (config.uploadType === 'pdf') {
+              pdfPath = config.sftpPathOverride
+              console.log('📂 PDF path overridden to:', pdfPath)
+            } else if (config.uploadType === 'xml') {
+              xmlPath = config.sftpPathOverride
+              console.log('📂 XML path overridden to:', xmlPath)
+            } else if (config.uploadType === 'json') {
+              jsonPath = config.sftpPathOverride
+              console.log('📂 JSON path overridden to:', jsonPath)
+            } else if (config.uploadType === 'csv') {
+              csvPath = config.sftpPathOverride
+              console.log('📂 CSV path overridden to:', csvPath)
+            }
+          }
+
+          console.log('📂 Final SFTP paths:')
+          console.log('  - XML:', xmlPath)
+          console.log('  - PDF:', pdfPath)
+          console.log('  - JSON:', jsonPath)
+          console.log('  - CSV:', csvPath)
+
           const sftpUploadPayload: any = {
             sftpConfig: {
               host: sftpConfig.host,
               port: sftpConfig.port,
               username: sftpConfig.username,
               password: sftpConfig.password,
-              xmlPath: sftpConfig.remote_path || '/ParseIt_XML',
-              pdfPath: sftpConfig.pdf_path || '/ParseIt_PDF',
-              jsonPath: sftpConfig.json_path || '/ParseIt_JSON',
-              csvPath: sftpConfig.csv_path || '/ParseIt_CSV'
+              xmlPath: xmlPath,
+              pdfPath: pdfPath,
+              jsonPath: jsonPath,
+              csvPath: csvPath
             },
             xmlContent: contentForSftp,
             pdfBase64: contextData.pdfBase64 || '',
