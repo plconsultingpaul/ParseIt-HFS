@@ -673,11 +673,9 @@ Deno.serve(async (req: Request) => {
           const config = step.config_json || {}
           console.log('🔧 Rename config:', JSON.stringify(config, null, 2))
 
-          // Support both 'template' (legacy) and 'filenameTemplate' (new)
           let template = config.filenameTemplate || config.template || 'Remit_{{pdfFilename}}'
           console.log('📄 Original template:', template)
 
-          // Replace placeholders in the template
           const placeholderRegex = /\{\{([^}]+)\}\}/g
           let match
 
@@ -693,11 +691,9 @@ Deno.serve(async (req: Request) => {
             }
           }
 
-          // Remove any existing file extensions from the template
           let baseFilename = template.replace(/\.(pdf|csv|json|xml)$/i, '')
           console.log('📄 Base filename (without extension):', baseFilename)
 
-          // Check if timestamp should be appended
           const appendTimestamp = config.appendTimestamp === true
           const timestampFormat = config.timestampFormat || 'YYYYMMDD'
 
@@ -706,7 +702,6 @@ Deno.serve(async (req: Request) => {
             console.log('⏰ Timestamp format:', timestampFormat)
           }
 
-          // Generate timestamp if required
           let timestamp = ''
           if (appendTimestamp) {
             const now = new Date()
@@ -739,7 +734,6 @@ Deno.serve(async (req: Request) => {
             console.log('📄 Base filename with timestamp:', baseFilename)
           }
 
-          // Determine which file types to rename based on config
           const renamePdf = config.renamePdf === true
           const renameCsv = config.renameCsv === true
           const renameJson = config.renameJson === true
@@ -749,7 +743,6 @@ Deno.serve(async (req: Request) => {
 
           const renamedFilenames: any = {}
 
-          // Generate renamed filenames for each selected file type
           if (renamePdf) {
             contextData.renamedPdfFilename = `${baseFilename}.pdf`
             renamedFilenames.pdf = contextData.renamedPdfFilename
@@ -774,8 +767,6 @@ Deno.serve(async (req: Request) => {
             console.log('✅ Renamed XML filename:', contextData.renamedXmlFilename)
           }
 
-          // For backward compatibility, set renamedFilename and actualFilename to the first enabled type
-          // Priority: CSV > PDF > JSON > XML (based on formatType)
           let primaryFilename = baseFilename
           if (formatType === 'CSV' && renameCsv) {
             primaryFilename = contextData.renamedCsvFilename
@@ -831,7 +822,6 @@ Deno.serve(async (req: Request) => {
           if (config.uploadType === 'pdf') {
             console.log('📄 Uploading PDF file')
 
-            // Use format-specific renamed filename if available
             if (contextData.renamedPdfFilename) {
               filename = contextData.renamedPdfFilename
               console.log('✅ Using renamed PDF filename:', filename)
@@ -848,7 +838,6 @@ Deno.serve(async (req: Request) => {
           } else if (config.uploadType === 'json') {
             console.log('📄 Uploading JSON file')
 
-            // Use format-specific renamed filename if available
             if (contextData.renamedJsonFilename) {
               filename = contextData.renamedJsonFilename
               console.log('✅ Using renamed JSON filename:', filename)
@@ -862,7 +851,6 @@ Deno.serve(async (req: Request) => {
           } else if (config.uploadType === 'xml') {
             console.log('📄 Uploading XML file')
 
-            // Use format-specific renamed filename if available
             if (contextData.renamedXmlFilename) {
               filename = contextData.renamedXmlFilename
               console.log('✅ Using renamed XML filename:', filename)
@@ -874,9 +862,8 @@ Deno.serve(async (req: Request) => {
             fileContent = Buffer.from(JSON.stringify(dataToUpload, null, 2)).toString('base64')
 
           } else if (config.uploadType === 'csv') {
-            console.log('📄 Uploading CSV file')
+            console.log('📄 === UPLOADING CSV FILE ===')
 
-            // Use format-specific renamed filename if available
             if (contextData.renamedCsvFilename) {
               filename = contextData.renamedCsvFilename
               console.log('✅ Using renamed CSV filename:', filename)
@@ -884,25 +871,36 @@ Deno.serve(async (req: Request) => {
               filename = filename.replace(/\.(pdf|json|xml|csv)$/i, '') + '.csv'
             }
 
+            console.log('📊 Searching for CSV data in contextData...')
+            console.log('📊 contextData.extractedData type:', typeof contextData.extractedData)
+            console.log('📊 contextData.originalExtractedData type:', typeof contextData.originalExtractedData)
+
             let csvData: string | null = null
 
             if (contextData.extractedData && typeof contextData.extractedData === 'string') {
               console.log('✅ Found CSV data in extractedData (string)')
               csvData = contextData.extractedData
+              console.log('📊 CSV data length:', csvData.length)
+              console.log('📊 CSV data preview (first 200 chars):', csvData.substring(0, 200))
+              console.log('📊 CSV data preview (last 100 chars):', csvData.substring(Math.max(0, csvData.length - 100)))
             } else if (contextData.originalExtractedData && typeof contextData.originalExtractedData === 'string') {
               console.log('✅ Found CSV data in originalExtractedData (string)')
               csvData = contextData.originalExtractedData
+              console.log('📊 CSV data length:', csvData.length)
+              console.log('📊 CSV data preview (first 200 chars):', csvData.substring(0, 200))
+              console.log('📊 CSV data preview (last 100 chars):', csvData.substring(Math.max(0, csvData.length - 100)))
             } else {
               console.error('❌ CSV data not found')
               console.error('- extractedData type:', typeof contextData.extractedData)
               console.error('- originalExtractedData type:', typeof contextData.originalExtractedData)
+              console.error('- extractedData value:', contextData.extractedData)
+              console.error('- originalExtractedData value:', contextData.originalExtractedData)
               throw new Error('CSV data not available or not in string format')
             }
 
-            // Store raw CSV data for SFTP upload (don't convert to base64 yet)
-            // The SFTP upload function will handle the encoding
             fileContent = csvData
             console.log('✅ CSV data prepared for upload, length:', fileContent.length)
+            console.log('✅ CSV fileContent preview (first 200 chars):', fileContent.substring(0, 200))
           }
 
           console.log('📤 Calling SFTP upload function...')
@@ -920,8 +918,6 @@ Deno.serve(async (req: Request) => {
             uploadFileTypes.csv = true
           }
 
-          // Determine if we should use an exact filename (from rename step)
-          // Strip extension from the filename to pass as exactFilename
           let exactFilenameToPass: string | undefined = undefined
 
           if (config.uploadType === 'pdf' && contextData.renamedPdfFilename) {
@@ -937,19 +933,24 @@ Deno.serve(async (req: Request) => {
             exactFilenameToPass = contextData.renamedXmlFilename.replace(/\.(pdf|csv|json|xml)$/i, '')
             console.log('📤 Passing exact filename for XML:', exactFilenameToPass)
           } else if (contextData.renamedFilename) {
-            // Fallback to generic renamed filename
             exactFilenameToPass = contextData.renamedFilename.replace(/\.(pdf|csv|json|xml)$/i, '')
             console.log('📤 Passing exact filename (generic):', exactFilenameToPass)
           }
 
-          // Prepare the content to send to SFTP upload function
           let contentForSftp: string
           if (config.uploadType === 'csv') {
-            // For CSV, fileContent is already the raw CSV string
             contentForSftp = fileContent
-            console.log('📤 Using raw CSV data for SFTP upload, length:', contentForSftp.length)
+            console.log('📤 === PREPARING CSV FOR SFTP ===')
+            console.log('📤 contentForSftp type:', typeof contentForSftp)
+            console.log('📤 contentForSftp length:', contentForSftp.length)
+            console.log('📤 contentForSftp preview (first 300 chars):', contentForSftp.substring(0, 300))
+            console.log('📤 contentForSftp preview (last 200 chars):', contentForSftp.substring(Math.max(0, contentForSftp.length - 200)))
+
+            if (!contentForSftp || contentForSftp.trim() === '') {
+              console.error('❌ CRITICAL: contentForSftp is empty!')
+              throw new Error('CSV content is empty before SFTP upload')
+            }
           } else if (contextData.extractedData && typeof contextData.extractedData === 'object') {
-            // For JSON/XML objects, stringify them
             contentForSftp = JSON.stringify(contextData.extractedData)
           } else {
             contentForSftp = '{}'
@@ -974,16 +975,20 @@ Deno.serve(async (req: Request) => {
             uploadFileTypes: uploadFileTypes
           }
 
-          // Add exactFilename if we have a renamed filename
           if (exactFilenameToPass) {
             sftpUploadPayload.exactFilename = exactFilenameToPass
             console.log('📤 Adding exactFilename to payload:', exactFilenameToPass)
           }
 
-          console.log('📤 SFTP upload payload:', JSON.stringify({
+          console.log('📤 === SFTP UPLOAD PAYLOAD DEBUG ===')
+          console.log('📤 Payload xmlContent type:', typeof sftpUploadPayload.xmlContent)
+          console.log('📤 Payload xmlContent length:', sftpUploadPayload.xmlContent ? sftpUploadPayload.xmlContent.length : 0)
+          console.log('📤 Payload xmlContent preview (first 300):', sftpUploadPayload.xmlContent ? sftpUploadPayload.xmlContent.substring(0, 300) : 'EMPTY')
+          console.log('📤 Payload xmlContent preview (last 200):', sftpUploadPayload.xmlContent ? sftpUploadPayload.xmlContent.substring(Math.max(0, sftpUploadPayload.xmlContent.length - 200)) : 'EMPTY')
+          console.log('📤 SFTP upload payload structure:', JSON.stringify({
             ...sftpUploadPayload,
             pdfBase64: `[${sftpUploadPayload.pdfBase64.length} chars]`,
-            xmlContent: `[${sftpUploadPayload.xmlContent.length} chars]`
+            xmlContent: `[${sftpUploadPayload.xmlContent ? sftpUploadPayload.xmlContent.length : 0} chars]`
           }, null, 2))
 
           const sftpUploadResponse = await fetch(`${supabaseUrl}/functions/v1/sftp-upload`, {

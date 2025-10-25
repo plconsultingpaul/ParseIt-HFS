@@ -60,8 +60,12 @@ Deno.serve(async (req: Request) => {
     console.log('- sftpConfig.xmlPath:', sftpConfig?.xmlPath || 'MISSING')
     console.log('- sftpConfig.pdfPath:', sftpConfig?.pdfPath || 'MISSING')
     console.log('- sftpConfig.jsonPath:', sftpConfig?.jsonPath || 'MISSING')
+    console.log('- sftpConfig.csvPath:', sftpConfig?.csvPath || 'MISSING')
     console.log('- xmlContent present:', !!xmlContent)
+    console.log('- xmlContent type:', typeof xmlContent)
     console.log('- xmlContent length:', xmlContent?.length || 0)
+    console.log('- xmlContent preview (first 300):', xmlContent ? xmlContent.substring(0, 300) : 'EMPTY')
+    console.log('- xmlContent preview (last 200):', xmlContent ? xmlContent.substring(Math.max(0, xmlContent.length - 200)) : 'EMPTY')
     console.log('- pdfBase64 present:', !!pdfBase64)
     console.log('- pdfBase64 length:', pdfBase64?.length || 0)
     console.log('- baseFilename:', baseFilename || 'MISSING')
@@ -276,13 +280,23 @@ Deno.serve(async (req: Request) => {
             throw new Error(`Failed to process JSON content: ${error.message}`)
           }
         } else if (formatType === 'CSV') {
+          console.log('🔄 === TRANSFORMATION CSV PROCESSING ===')
+          console.log('🔄 xmlContent type:', typeof xmlContent)
+          console.log('🔄 xmlContent length:', xmlContent ? xmlContent.length : 0)
+          console.log('🔄 xmlContent preview (first 300):', xmlContent ? xmlContent.substring(0, 300) : 'EMPTY')
+          console.log('🔄 xmlContent preview (last 200):', xmlContent ? xmlContent.substring(Math.max(0, xmlContent.length - 200)) : 'EMPTY')
+
           dataContent = xmlContent
           dataFilename = `${finalFilenamePrefix}.csv`
           if (!sftpConfig.csvPath) {
             throw new Error('CSV Path is not configured in SFTP settings. Please configure CSV Path before uploading CSV files.')
           }
           dataPath = `${sftpConfig.csvPath}/${dataFilename}`
-          console.log('🔄 Using CSV format, uploading to:', dataPath)
+          console.log('🔄 CSV dataContent assigned from xmlContent')
+          console.log('🔄 CSV dataContent type:', typeof dataContent)
+          console.log('🔄 CSV dataContent length:', dataContent ? dataContent.length : 0)
+          console.log('🔄 CSV file will be uploaded to:', dataPath)
+          console.log('🔄 CSV filename:', dataFilename)
         } else {
           dataContent = xmlContent
           dataContent = dataContent.replace(/{{PARSEIT_ID_PLACEHOLDER}}/g, parseitId.toString())
@@ -307,8 +321,20 @@ Deno.serve(async (req: Request) => {
         }
 
         if (shouldUploadDataFile) {
-          console.log(`🔄 Uploading data file: ${dataPath}`)
-          await sftp.put(Buffer.from(dataContent, 'utf8'), dataPath)
+          console.log(`🔄 === UPLOADING TRANSFORMATION DATA FILE: ${dataPath} ===`)
+          console.log('🔄 dataContent type before Buffer:', typeof dataContent)
+          console.log('🔄 dataContent length before Buffer:', dataContent ? dataContent.length : 0)
+          console.log('🔄 dataContent is empty?:', !dataContent || dataContent.trim() === '')
+          console.log('🔄 dataContent preview (first 400):', dataContent ? dataContent.substring(0, 400) : 'EMPTY')
+          console.log('🔄 dataContent preview (last 200):', dataContent ? dataContent.substring(Math.max(0, dataContent.length - 200)) : 'EMPTY')
+
+          const dataBuffer = Buffer.from(dataContent, 'utf8')
+          console.log('🔄 Buffer created, length:', dataBuffer.length)
+          console.log('🔄 Buffer preview (first 400 bytes):', dataBuffer.toString('utf8', 0, Math.min(400, dataBuffer.length)))
+          console.log('🔄 Buffer preview (last 200 bytes):', dataBuffer.toString('utf8', Math.max(0, dataBuffer.length - 200), dataBuffer.length))
+
+          await sftp.put(dataBuffer, dataPath)
+          console.log('✅ Successfully uploaded transformation data file to:', dataPath)
         }
 
         // Determine PDF content to upload based on strategy
@@ -471,6 +497,11 @@ Deno.serve(async (req: Request) => {
             }
           } else if (formatType === 'CSV') {
             // Handle CSV format
+            console.log(`📄 === PROCESSING CSV FOR PAGE ${pageIndex + 1} ===`)
+            console.log('📄 xmlContent type:', typeof xmlContent)
+            console.log('📄 xmlContent length:', xmlContent ? xmlContent.length : 0)
+            console.log('📄 xmlContent preview (first 300):', xmlContent ? xmlContent.substring(0, 300) : 'EMPTY')
+
             dataContent = xmlContent
             dataFilename = exactFilename && pageCount === 1
               ? `${finalFilenamePrefix}.csv`
@@ -479,7 +510,10 @@ Deno.serve(async (req: Request) => {
               throw new Error('CSV Path is not configured in SFTP settings. Please configure CSV Path before uploading CSV files.')
             }
             dataPath = `${sftpConfig.csvPath}/${dataFilename}`
-            console.log(`📄 Using CSV format, uploading to: ${dataPath}`)
+            console.log('📄 CSV dataContent type:', typeof dataContent)
+            console.log('📄 CSV dataContent length:', dataContent ? dataContent.length : 0)
+            console.log('📄 CSV file will be uploaded to:', dataPath)
+            console.log('📄 CSV dataFilename:', dataFilename)
           } else {
             // Handle XML format (default)
             dataContent = xmlContent
@@ -508,8 +542,17 @@ Deno.serve(async (req: Request) => {
           }
 
           if (shouldUploadDataFileExtraction) {
-            console.log(`📄 Uploading data file: ${dataPath}`)
-            await sftp.put(Buffer.from(dataContent, 'utf8'), dataPath)
+            console.log(`📄 === UPLOADING DATA FILE: ${dataPath} ===`)
+            console.log('📄 dataContent type before Buffer:', typeof dataContent)
+            console.log('📄 dataContent length before Buffer:', dataContent ? dataContent.length : 0)
+            console.log('📄 dataContent preview (first 300):', dataContent ? dataContent.substring(0, 300) : 'EMPTY')
+
+            const dataBuffer = Buffer.from(dataContent, 'utf8')
+            console.log('📄 Buffer created, length:', dataBuffer.length)
+            console.log('📄 Buffer preview (first 300 bytes):', dataBuffer.toString('utf8', 0, Math.min(300, dataBuffer.length)))
+
+            await sftp.put(dataBuffer, dataPath)
+            console.log('✅ Successfully uploaded data file to:', dataPath)
           }
 
           // Upload single page PDF file
