@@ -899,8 +899,10 @@ Deno.serve(async (req: Request) => {
               throw new Error('CSV data not available or not in string format')
             }
 
-            fileContent = Buffer.from(csvData).toString('base64')
-            console.log('✅ CSV data converted to base64, length:', fileContent.length)
+            // Store raw CSV data for SFTP upload (don't convert to base64 yet)
+            // The SFTP upload function will handle the encoding
+            fileContent = csvData
+            console.log('✅ CSV data prepared for upload, length:', fileContent.length)
           }
 
           console.log('📤 Calling SFTP upload function...')
@@ -940,6 +942,19 @@ Deno.serve(async (req: Request) => {
             console.log('📤 Passing exact filename (generic):', exactFilenameToPass)
           }
 
+          // Prepare the content to send to SFTP upload function
+          let contentForSftp: string
+          if (config.uploadType === 'csv') {
+            // For CSV, fileContent is already the raw CSV string
+            contentForSftp = fileContent
+            console.log('📤 Using raw CSV data for SFTP upload, length:', contentForSftp.length)
+          } else if (contextData.extractedData && typeof contextData.extractedData === 'object') {
+            // For JSON/XML objects, stringify them
+            contentForSftp = JSON.stringify(contextData.extractedData)
+          } else {
+            contentForSftp = '{}'
+          }
+
           const sftpUploadPayload: any = {
             sftpConfig: {
               host: sftpConfig.host,
@@ -951,7 +966,7 @@ Deno.serve(async (req: Request) => {
               jsonPath: sftpConfig.json_path || '/ParseIt_JSON',
               csvPath: sftpConfig.csv_path || '/ParseIt_CSV'
             },
-            xmlContent: config.uploadType === 'csv' ? fileContent : (contextData.extractedData && typeof contextData.extractedData === 'object' ? JSON.stringify(contextData.extractedData) : '{}'),
+            xmlContent: contentForSftp,
             pdfBase64: contextData.pdfBase64 || '',
             baseFilename: filename,
             originalFilename: contextData.originalPdfFilename || filename,
