@@ -7,7 +7,6 @@ import TransformPage from './components/TransformPage';
 import SettingsPage from './components/SettingsPage';
 import LogsPage from './components/LogsPage';
 import TypeSetupPage from './components/TypeSetupPage';
-import HelpPage from './components/HelpPage';
 import VendorUploadPage from './components/VendorUploadPage';
 import OrdersPage from './components/OrdersPage';
 import { useSupabaseData } from './hooks/useSupabaseData';
