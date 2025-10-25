@@ -760,15 +760,19 @@ Deno.serve(async (req: Request) => {
           const sftpConfig = sftpConfigs[0]
           console.log('✅ SFTP configuration loaded:', sftpConfig.name || sftpConfig.host)
 
-          let fileContent = ''
+          let contentForSftp = ''
           let filename = contextData.renamedFilename || contextData.actualFilename || contextData.pdfFilename || 'document'
+          let formatType = 'JSON'
+          let exactFilenameToPass = ''
 
           if (config.uploadType === 'pdf') {
             console.log('📄 Uploading PDF file')
+            formatType = 'PDF'
 
             // Use format-specific renamed filename if available
             if (contextData.renamedPdfFilename) {
               filename = contextData.renamedPdfFilename
+              exactFilenameToPass = contextData.renamedPdfFilename
               console.log('✅ Using renamed PDF filename:', filename)
             } else if (!filename.toLowerCase().endsWith('.pdf')) {
               filename = `${filename}.pdf`
@@ -778,49 +782,55 @@ Deno.serve(async (req: Request) => {
               throw new Error('PDF base64 data not available')
             }
 
-            fileContent = contextData.pdfBase64
+            contentForSftp = contextData.pdfBase64
 
           } else if (config.uploadType === 'json') {
             console.log('📄 Uploading JSON file')
+            formatType = 'JSON'
 
             // Use format-specific renamed filename if available
             if (contextData.renamedJsonFilename) {
               filename = contextData.renamedJsonFilename
+              exactFilenameToPass = contextData.renamedJsonFilename
               console.log('✅ Using renamed JSON filename:', filename)
             } else if (!filename.toLowerCase().endsWith('.json')) {
               filename = filename.replace(/\.(pdf|json|xml|csv)$/i, '') + '.json'
             }
 
             const dataToUpload = contextData.extractedData || contextData
-            fileContent = Buffer.from(JSON.stringify(dataToUpload, null, 2)).toString('base64')
+            contentForSftp = JSON.stringify(dataToUpload, null, 2)
 
           } else if (config.uploadType === 'xml') {
             console.log('📄 Uploading XML file')
+            formatType = 'XML'
 
             // Use format-specific renamed filename if available
             if (contextData.renamedXmlFilename) {
               filename = contextData.renamedXmlFilename
+              exactFilenameToPass = contextData.renamedXmlFilename
               console.log('✅ Using renamed XML filename:', filename)
             } else if (!filename.toLowerCase().endsWith('.xml')) {
               filename = filename.replace(/\.(pdf|json|xml|csv)$/i, '') + '.xml'
             }
 
             const dataToUpload = contextData.extractedData || contextData
-            fileContent = Buffer.from(JSON.stringify(dataToUpload, null, 2)).toString('base64')
+            contentForSftp = JSON.stringify(dataToUpload, null, 2)
 
           } else if (config.uploadType === 'csv') {
             console.log('📄 Uploading CSV file')
+            formatType = 'CSV'
 
             // Use format-specific renamed filename if available
             if (contextData.renamedCsvFilename) {
               filename = contextData.renamedCsvFilename
+              exactFilenameToPass = contextData.renamedCsvFilename
               console.log('✅ Using renamed CSV filename:', filename)
             } else if (!filename.toLowerCase().endsWith('.csv')) {
               filename = filename.replace(/\.(pdf|json|xml|csv)$/i, '') + '.csv'
             }
 
             if (contextData.extractedData && typeof contextData.extractedData === 'string') {
-              fileContent = Buffer.from(contextData.extractedData).toString('base64')
+              contentForSftp = contextData.extractedData
             } else {
               throw new Error('CSV data not available or not in string format')
             }
@@ -828,7 +838,34 @@ Deno.serve(async (req: Request) => {
 
           console.log('📤 Calling SFTP upload function...')
           console.log('📄 Filename:', filename)
-          console.log('📏 File content length:', fileContent.length)
+          console.log('📄 Format type:', formatType)
+          console.log('📏 Content length:', contentForSftp.length)
+
+          const uploadFileTypes = config.uploadFileTypes || { json: true, pdf: true, xml: true, csv: true }
+
+          const sftpUploadPayload: any = {
+            sftpConfig: {
+              host: sftpConfig.host,
+              port: sftpConfig.port,
+              username: sftpConfig.username,
+              password: sftpConfig.password,
+              xmlPath: sftpConfig.remote_path || '/ParseIt_XML',
+              pdfPath: sftpConfig.pdf_path || '/ParseIt_PDF',
+              jsonPath: sftpConfig.json_path || '/ParseIt_JSON',
+              csvPath: sftpConfig.csv_path || '/ParseIt_CSV'
+            },
+            xmlContent: contentForSftp,
+            pdfBase64: contextData.pdfBase64 || '',
+            baseFilename: filename,
+            originalFilename: contextData.originalPdfFilename || filename,
+            formatType: formatType,
+            uploadFileTypes: uploadFileTypes
+          }
+
+          if (exactFilenameToPass) {
+            sftpUploadPayload.exactFilename = exactFilenameToPass
+            console.log('📤 Adding exactFilename to payload:', exactFilenameToPass)
+          }
 
           const sftpUploadResponse = await fetch(`${supabaseUrl}/functions/v1/sftp-upload`, {
             method: 'POST',
@@ -836,16 +873,7 @@ Deno.serve(async (req: Request) => {
               'Authorization': `Bearer ${supabaseServiceKey}`,
               'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-              host: sftpConfig.host,
-              port: sftpConfig.port,
-              username: sftpConfig.username,
-              password: sftpConfig.password,
-              remotePath: sftpConfig.remote_path,
-              filename: filename,
-              fileContent: fileContent,
-              fileType: config.uploadType || 'pdf'
-            })
+            body: JSON.stringify(sftpUploadPayload)
           })
 
           console.log('📤 SFTP upload response status:', sftpUploadResponse.status)
