@@ -207,6 +207,9 @@ export default function PageProcessorCard({
     console.log(`[PageProcessorCard] File: ${pageFile.name}, Size: ${pageFile.size} bytes`);
     console.log(`[PageProcessorCard] Format type: ${currentExtractionType?.formatType}`);
     console.log(`[PageProcessorCard] Has extracted data: ${!!pageState.extractedData}`);
+    console.log(`[PageProcessorCard] Extracted data type: ${typeof pageState.extractedData}`);
+    console.log(`[PageProcessorCard] Extracted data length: ${pageState.extractedData?.length || 0}`);
+    console.log(`[PageProcessorCard] Extracted data preview (first 300 chars): ${pageState.extractedData?.substring(0, 300)}`);
 
     if (isCsvType) {
       if (!pageState.extractedData) {
@@ -215,6 +218,12 @@ export default function PageProcessorCard({
         onPreview(pageIndex);
       } else {
         console.log(`[PageProcessorCard] Using cached data - opening CSV preview for page ${pageIndex + 1}`);
+        console.log(`[PageProcessorCard] About to pass to CsvPreviewModal:`, {
+          csvContentType: typeof pageState.extractedData,
+          csvContentLength: pageState.extractedData.length,
+          csvContentIsString: typeof pageState.extractedData === 'string',
+          csvContentPreview: pageState.extractedData.substring(0, 100)
+        });
         setShowCsvPreview(true);
       }
     } else {
@@ -332,8 +341,16 @@ export default function PageProcessorCard({
   };
 
   const handleShowExtractedData = () => {
+    console.log('[PageProcessorCard] ========================================');
+    console.log('[PageProcessorCard] Show Extracted Data clicked');
+    console.log('[PageProcessorCard] - dataLabel:', dataLabel);
+    console.log('[PageProcessorCard] - extractedData type:', typeof pageState.extractedData);
+    console.log('[PageProcessorCard] - extractedData length:', pageState.extractedData?.length || 0);
+    console.log('[PageProcessorCard] - extractedData preview (first 300 chars):', pageState.extractedData?.substring(0, 300));
+    console.log('[PageProcessorCard] ========================================');
+
     setModalTitle(`Page ${pageIndex + 1} - Extracted ${dataLabel} Data`);
-    
+
     // Format JSON data for better display
     let displayData = pageState.extractedData;
     if (isJsonType) {

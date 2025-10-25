@@ -19,6 +19,30 @@ export default function CsvPreviewModal({
   hasHeaders = true,
   pageTitle
 }: CsvPreviewModalProps) {
+  // Log modal initialization
+  React.useEffect(() => {
+    if (isOpen) {
+      console.log('[CsvPreviewModal] ========================================');
+      console.log('[CsvPreviewModal] Modal opened with props:');
+      console.log('[CsvPreviewModal] - csvContent type:', typeof csvContent);
+      console.log('[CsvPreviewModal] - csvContent length:', csvContent?.length || 0);
+      console.log('[CsvPreviewModal] - delimiter:', JSON.stringify(delimiter));
+      console.log('[CsvPreviewModal] - hasHeaders:', hasHeaders);
+      console.log('[CsvPreviewModal] - pageTitle:', pageTitle);
+      console.log('[CsvPreviewModal] - csvContent preview (first 300 chars):', csvContent?.substring(0, 300));
+
+      if (csvContent === '0' || csvContent === 'undefined' || csvContent === 'null') {
+        console.error('[CsvPreviewModal] ❌ CRITICAL: csvContent is invalid:', csvContent);
+      }
+
+      if (!csvContent || csvContent.trim().length === 0) {
+        console.error('[CsvPreviewModal] ❌ CRITICAL: csvContent is empty!');
+      }
+
+      console.log('[CsvPreviewModal] ========================================');
+    }
+  }, [isOpen, csvContent, delimiter, hasHeaders, pageTitle]);
+
   const parsedData = parseCsvContent(csvContent, delimiter);
   const headers = hasHeaders && parsedData.length > 0 ? parsedData[0] : null;
   const rows = hasHeaders ? parsedData.slice(1) : parsedData;
@@ -33,7 +57,37 @@ export default function CsvPreviewModal({
   };
 
   const handleDownload = () => {
-    const blob = new Blob([csvContent], { type: 'text/csv' });
+    console.log('[CsvPreviewModal] ========================================');
+    console.log('[CsvPreviewModal] Download CSV triggered');
+    console.log('[CsvPreviewModal] csvContent type:', typeof csvContent);
+    console.log('[CsvPreviewModal] csvContent length:', csvContent?.length || 0);
+    console.log('[CsvPreviewModal] csvContent preview (first 200 chars):', csvContent?.substring(0, 200));
+    console.log('[CsvPreviewModal] csvContent preview (last 100 chars):', csvContent?.substring(csvContent.length - 100));
+
+    // Validate CSV content before download
+    if (!csvContent || csvContent.trim().length === 0) {
+      console.error('[CsvPreviewModal] ❌ ERROR: CSV content is empty!');
+      alert('Cannot download: CSV content is empty');
+      return;
+    }
+
+    if (csvContent === '0' || csvContent === 'undefined' || csvContent === 'null') {
+      console.error('[CsvPreviewModal] ❌ ERROR: CSV content is invalid:', csvContent);
+      alert('Cannot download: CSV content is corrupted or invalid');
+      return;
+    }
+
+    // Check if content looks like actual CSV data
+    const hasNewlines = csvContent.includes('\n') || csvContent.includes('\r');
+    if (!hasNewlines && csvContent.length < 10) {
+      console.warn('[CsvPreviewModal] ⚠️  WARNING: CSV content suspiciously short and has no newlines');
+      console.warn('[CsvPreviewModal] Content:', csvContent);
+    }
+
+    console.log('[CsvPreviewModal] ✅ CSV content validated, creating blob...');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    console.log('[CsvPreviewModal] Blob created, size:', blob.size, 'bytes');
+
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -42,6 +96,9 @@ export default function CsvPreviewModal({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+
+    console.log('[CsvPreviewModal] ✅ Download initiated successfully');
+    console.log('[CsvPreviewModal] ========================================');
   };
 
   return (
@@ -146,11 +203,27 @@ export default function CsvPreviewModal({
 }
 
 function parseCsvContent(content: string, delimiter: string = ','): string[][] {
+  console.log('[parseCsvContent] ========================================');
+  console.log('[parseCsvContent] Parsing CSV content');
+  console.log('[parseCsvContent] - content type:', typeof content);
+  console.log('[parseCsvContent] - content length:', content?.length || 0);
+  console.log('[parseCsvContent] - delimiter:', JSON.stringify(delimiter));
+  console.log('[parseCsvContent] - content preview (first 200 chars):', content?.substring(0, 200));
+
   if (!content || content.trim().length === 0) {
+    console.warn('[parseCsvContent] ⚠️  WARNING: Content is empty, returning empty array');
+    console.log('[parseCsvContent] ========================================');
+    return [];
+  }
+
+  if (content === '0' || content === 'undefined' || content === 'null') {
+    console.error('[parseCsvContent] ❌ ERROR: Content is invalid:', content);
+    console.log('[parseCsvContent] ========================================');
     return [];
   }
 
   const lines = content.split(/\r?\n/);
+  console.log('[parseCsvContent] - Split into', lines.length, 'lines');
   const result: string[][] = [];
 
   for (const line of lines) {
@@ -184,6 +257,13 @@ function parseCsvContent(content: string, delimiter: string = ','): string[][] {
     row.push(currentCell);
     result.push(row);
   }
+
+  console.log('[parseCsvContent] ✅ Parsed', result.length, 'data rows');
+  if (result.length > 0) {
+    console.log('[parseCsvContent] - Columns per row:', result[0].length);
+    console.log('[parseCsvContent] - First row:', result[0]);
+  }
+  console.log('[parseCsvContent] ========================================');
 
   return result;
 }

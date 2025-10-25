@@ -180,11 +180,33 @@ export default function MultiPageProcessor({
 
       console.log(`[MultiPageProcessor] Extraction completed for page ${pageIndex + 1}`);
       console.log(`[MultiPageProcessor] Extracted data length: ${extractedData.length} characters`);
+      console.log(`[MultiPageProcessor] Extracted data type: ${typeof extractedData}`);
+      console.log(`[MultiPageProcessor] Extracted data preview (first 300 chars): ${extractedData.substring(0, 300)}`);
+      console.log(`[MultiPageProcessor] Extracted data preview (last 200 chars): ${extractedData.substring(extractedData.length - 200)}`);
+
+      // Validate the extracted data before storing in state
+      if (!extractedData || typeof extractedData !== 'string') {
+        console.error(`[MultiPageProcessor] ❌ CRITICAL ERROR: extractedData is not a valid string!`);
+        console.error(`[MultiPageProcessor] extractedData type: ${typeof extractedData}`);
+        console.error(`[MultiPageProcessor] extractedData value:`, extractedData);
+        throw new Error('Extracted data is not a valid string');
+      }
+
+      if (extractedData === '0' || extractedData === 'undefined' || extractedData === 'null') {
+        console.error(`[MultiPageProcessor] ❌ CRITICAL ERROR: extractedData is invalid: "${extractedData}"`);
+        throw new Error(`Invalid extracted data: "${extractedData}"`);
+      }
+
+      console.log(`[MultiPageProcessor] ✅ Extracted data validated successfully`);
+      console.log(`[MultiPageProcessor] Updating page state with extractedData...`);
 
       updatePageState(pageIndex, {
         extractedData,
         isExtracting: false
       });
+
+      console.log(`[MultiPageProcessor] ✅ Page state updated with extractedData`);
+      console.log(`[MultiPageProcessor] Stored data length: ${extractedData.length} characters`);
 
       // If this is a process action, continue with API/SFTP operations
       if (actionType === 'process') { 
