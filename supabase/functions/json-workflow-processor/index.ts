@@ -962,6 +962,98 @@ Deno.serve(async (req: Request) => {
             message: 'Email action executed (actual sending not implemented in this version)'
           }
 
+        } else if (step.step_type === 'conditional_check') {
+          console.log('🔀 === EXECUTING CONDITIONAL CHECK STEP ===')
+          const config = step.config_json || {}
+          console.log('🔧 Conditional check config:', JSON.stringify(config, null, 2))
+
+          const jsonPath = config.jsonPath || ''
+          const conditionType = config.conditionType || 'equals'
+          const expectedValue = config.expectedValue || ''
+
+          console.log('📊 JSON Path to check:', jsonPath)
+          console.log('📊 Condition Type:', conditionType)
+          console.log('📊 Expected Value:', expectedValue)
+
+          // Extract the value from contextData using the JSON path
+          const actualValue = getValueByPath(contextData, jsonPath)
+          console.log('📊 Actual Value extracted from context:', actualValue)
+          console.log('📊 Actual Value type:', typeof actualValue)
+
+          // Evaluate the condition based on conditionType
+          let conditionPassed = false
+
+          switch (conditionType) {
+            case 'is_null':
+              conditionPassed = actualValue === null || actualValue === undefined
+              console.log('🔍 Checking if value is null:', conditionPassed)
+              break
+
+            case 'is_not_null':
+              conditionPassed = actualValue !== null && actualValue !== undefined
+              console.log('🔍 Checking if value is not null:', conditionPassed)
+              break
+
+            case 'equals':
+              conditionPassed = String(actualValue) === String(expectedValue)
+              console.log(`🔍 Checking if "${actualValue}" equals "${expectedValue}":`, conditionPassed)
+              break
+
+            case 'contains':
+              if (actualValue !== null && actualValue !== undefined) {
+                conditionPassed = String(actualValue).includes(String(expectedValue))
+                console.log(`🔍 Checking if "${actualValue}" contains "${expectedValue}":`, conditionPassed)
+              } else {
+                conditionPassed = false
+                console.log('🔍 Cannot check "contains" on null/undefined value')
+              }
+              break
+
+            case 'greater_than':
+              const numActual = Number(actualValue)
+              const numExpected = Number(expectedValue)
+              if (!isNaN(numActual) && !isNaN(numExpected)) {
+                conditionPassed = numActual > numExpected
+                console.log(`🔍 Checking if ${numActual} > ${numExpected}:`, conditionPassed)
+              } else {
+                conditionPassed = false
+                console.log('🔍 Cannot perform numeric comparison on non-numeric values')
+              }
+              break
+
+            case 'less_than':
+              const numActualLt = Number(actualValue)
+              const numExpectedLt = Number(expectedValue)
+              if (!isNaN(numActualLt) && !isNaN(numExpectedLt)) {
+                conditionPassed = numActualLt < numExpectedLt
+                console.log(`🔍 Checking if ${numActualLt} < ${numExpectedLt}:`, conditionPassed)
+              } else {
+                conditionPassed = false
+                console.log('🔍 Cannot perform numeric comparison on non-numeric values')
+              }
+              break
+
+            default:
+              console.warn(`⚠️ Unknown condition type: ${conditionType}, defaulting to false`)
+              conditionPassed = false
+          }
+
+          console.log('✅ Condition evaluation result:', conditionPassed ? 'PASSED' : 'FAILED')
+
+          stepOutputData = {
+            jsonPath,
+            conditionType,
+            expectedValue,
+            actualValue,
+            conditionPassed,
+            result: conditionPassed ? 'success' : 'failure'
+          }
+
+          // If the condition failed, throw an error to trigger the failure path
+          if (!conditionPassed) {
+            throw new Error(`Conditional check failed: ${jsonPath} (value: ${actualValue}) ${conditionType} ${expectedValue}`)
+          }
+
         } else {
           console.log(`⚠️ Unknown step type: ${step.step_type}`)
           stepOutputData = { skipped: true, reason: 'Step type not implemented' }
