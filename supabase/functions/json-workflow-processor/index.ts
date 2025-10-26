@@ -404,8 +404,38 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    for (let i = 0; i < steps.length; i++) {
-      const step = steps[i]
+    // Create a lookup map for steps by ID for efficient routing
+    const stepMap = new Map<string, WorkflowStep>()
+    steps.forEach(step => {
+      stepMap.set(step.id, step)
+    })
+
+    // Start with the first step (step_order = 1)
+    let currentStep: WorkflowStep | undefined = steps.find(s => s.step_order === 1)
+
+    if (!currentStep) {
+      throw new Error('No starting step found (step_order = 1)')
+    }
+
+    console.log('🔄 Starting workflow execution at step:', currentStep.step_name)
+
+    // Track visited steps to prevent infinite loops
+    const visitedSteps = new Set<string>()
+    const maxStepsToExecute = steps.length * 2 // Safety limit
+
+    let stepsExecuted = 0
+
+    while (currentStep && stepsExecuted < maxStepsToExecute) {
+      stepsExecuted++
+
+      // Check for infinite loop
+      if (visitedSteps.has(currentStep.id)) {
+        console.error('❌ Infinite loop detected at step:', currentStep.step_name)
+        throw new Error(`Infinite loop detected at step: ${currentStep.step_name}`)
+      }
+      visitedSteps.add(currentStep.id)
+
+      const step = currentStep
       const stepStartTime = new Date().toISOString()
       const stepStartMs = Date.now()
 
@@ -1081,6 +1111,20 @@ Deno.serve(async (req: Request) => {
           )
         }
 
+        // Determine next step based on success routing
+        if (step.next_step_on_success_id) {
+          console.log('🔀 Routing to next step on SUCCESS:', step.next_step_on_success_id)
+          currentStep = stepMap.get(step.next_step_on_success_id)
+          if (!currentStep) {
+            console.error('❌ Next step on success not found:', step.next_step_on_success_id)
+            throw new Error(`Next step on success not found: ${step.next_step_on_success_id}`)
+          }
+          console.log('✅ Next step:', currentStep.step_name)
+        } else {
+          console.log('✅ No next step defined - workflow complete')
+          currentStep = undefined
+        }
+
       } catch (stepError) {
         const stepEndTime = new Date().toISOString()
         const stepDurationMs = Date.now() - stepStartMs
@@ -1100,24 +1144,53 @@ Deno.serve(async (req: Request) => {
             stepDurationMs,
             stepError.message,
             { config: step.config_json },
-            null
+            stepOutputData
           )
-
-          try {
-            await fetch(`${supabaseUrl}/rest/v1/workflow_execution_logs?id=eq.${workflowExecutionLogId}`, {
-              method: 'PATCH',
-              headers: { 'Authorization': `Bearer ${supabaseServiceKey}`, 'Content-Type': 'application/json', 'apikey': supabaseServiceKey },
-              body: JSON.stringify({ status: 'failed', error_message: stepError.message, context_data: contextData, updated_at: new Date().toISOString() })
-            })
-          } catch (updateError) {
-            console.error('❌ Failed to update workflow log:', updateError)
-          }
         }
 
-        const error: any = new Error(stepError.message)
-        error.workflowExecutionLogId = workflowExecutionLogId
-        error.extractionLogId = extractionLogId
-        throw error
+        // Determine next step based on failure routing
+        if (step.next_step_on_failure_id) {
+          console.log('🔀 Routing to next step on FAILURE:', step.next_step_on_failure_id)
+          currentStep = stepMap.get(step.next_step_on_failure_id)
+          if (!currentStep) {
+            console.error('❌ Next step on failure not found:', step.next_step_on_failure_id)
+            // If failure path is not found, throw error to stop workflow
+            if (workflowExecutionLogId) {
+              try {
+                await fetch(`${supabaseUrl}/rest/v1/workflow_execution_logs?id=eq.${workflowExecutionLogId}`, {
+                  method: 'PATCH',
+                  headers: { 'Authorization': `Bearer ${supabaseServiceKey}`, 'Content-Type': 'application/json', 'apikey': supabaseServiceKey },
+                  body: JSON.stringify({ status: 'failed', error_message: stepError.message, context_data: contextData, updated_at: new Date().toISOString() })
+                })
+              } catch (updateError) {
+                console.error('❌ Failed to update workflow log:', updateError)
+              }
+            }
+            const error: any = new Error(stepError.message)
+            error.workflowExecutionLogId = workflowExecutionLogId
+            error.extractionLogId = extractionLogId
+            throw error
+          }
+          console.log('✅ Next step (failure path):', currentStep.step_name)
+        } else {
+          // No failure path defined - stop workflow execution
+          console.log('❌ No failure path defined - stopping workflow')
+          if (workflowExecutionLogId) {
+            try {
+              await fetch(`${supabaseUrl}/rest/v1/workflow_execution_logs?id=eq.${workflowExecutionLogId}`, {
+                method: 'PATCH',
+                headers: { 'Authorization': `Bearer ${supabaseServiceKey}`, 'Content-Type': 'application/json', 'apikey': supabaseServiceKey },
+                body: JSON.stringify({ status: 'failed', error_message: stepError.message, context_data: contextData, updated_at: new Date().toISOString() })
+              })
+            } catch (updateError) {
+              console.error('❌ Failed to update workflow log:', updateError)
+            }
+          }
+          const error: any = new Error(stepError.message)
+          error.workflowExecutionLogId = workflowExecutionLogId
+          error.extractionLogId = extractionLogId
+          throw error
+        }
       }
     }
 
