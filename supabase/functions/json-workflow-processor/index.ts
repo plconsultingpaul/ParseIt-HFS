@@ -1370,13 +1370,84 @@ Deno.serve(async (req: Request) => {
           contextData[storeResultAs] = conditionMet
           console.log(`✅ Conditional check result stored as "${storeResultAs}": ${conditionMet}`)
 
+          // Determine which next step should be executed based on condition result
+          console.log('🔍 === ROUTING DECISION LOGIC ===')
+          console.log('🔍 next_step_on_success_id:', step.next_step_on_success_id)
+          console.log('🔍 next_step_on_failure_id:', step.next_step_on_failure_id)
+
+          let nextStepOnSuccessName = 'Not configured'
+          let nextStepOnSuccessOrder = null
+          let nextStepOnFailureName = 'Not configured'
+          let nextStepOnFailureOrder = null
+          let selectedNextStepName = 'Sequential (next in order)'
+          let selectedNextStepOrder = step.step_order + 1
+
+          // Look up the success step details
+          if (step.next_step_on_success_id) {
+            const successStep = steps.find(s => s.id === step.next_step_on_success_id)
+            if (successStep) {
+              nextStepOnSuccessName = `${successStep.step_name} (Step ${successStep.step_order})`
+              nextStepOnSuccessOrder = successStep.step_order
+              console.log(`✅ Found success step: ${nextStepOnSuccessName}`)
+            } else {
+              console.log(`⚠️ Success step ID configured but step not found: ${step.next_step_on_success_id}`)
+            }
+          }
+
+          // Look up the failure step details
+          if (step.next_step_on_failure_id) {
+            const failureStep = steps.find(s => s.id === step.next_step_on_failure_id)
+            if (failureStep) {
+              nextStepOnFailureName = `${failureStep.step_name} (Step ${failureStep.step_order})`
+              nextStepOnFailureOrder = failureStep.step_order
+              console.log(`✅ Found failure step: ${nextStepOnFailureName}`)
+            } else {
+              console.log(`⚠️ Failure step ID configured but step not found: ${step.next_step_on_failure_id}`)
+            }
+          }
+
+          // Determine which step SHOULD execute based on condition result
+          if (conditionMet) {
+            if (step.next_step_on_success_id) {
+              selectedNextStepName = nextStepOnSuccessName
+              selectedNextStepOrder = nextStepOnSuccessOrder
+            }
+          } else {
+            if (step.next_step_on_failure_id) {
+              selectedNextStepName = nextStepOnFailureName
+              selectedNextStepOrder = nextStepOnFailureOrder
+            }
+          }
+
+          const routingDecision = conditionMet
+            ? `✅ CONDITION MET (${operator} = TRUE) → Should route to: ${selectedNextStepName}`
+            : `❌ CONDITION NOT MET (${operator} = FALSE) → Should route to: ${selectedNextStepName}`
+
+          console.log('🔍 === ROUTING DECISION ===')
+          console.log(routingDecision)
+          console.log('🔍 Next Step on Success:', nextStepOnSuccessName)
+          console.log('🔍 Next Step on Failure:', nextStepOnFailureName)
+          console.log('🔍 Selected Next Step:', selectedNextStepName)
+
+          if (selectedNextStepOrder && selectedNextStepOrder !== step.step_order + 1) {
+            console.log(`⚠️ WARNING: Configured routing would jump to Step ${selectedNextStepOrder}, but workflow will continue sequentially to Step ${step.step_order + 1}`)
+            console.log(`⚠️ NOTE: Current workflow processor does not support conditional routing - steps execute sequentially regardless of condition results`)
+          }
+
           stepOutputData = {
             conditionMet,
             fieldPath,
             operator,
             actualValue,
             expectedValue,
-            storeResultAs
+            storeResultAs,
+            nextStepOnSuccess: nextStepOnSuccessName,
+            nextStepOnSuccessOrder: nextStepOnSuccessOrder,
+            nextStepOnFailure: nextStepOnFailureName,
+            nextStepOnFailureOrder: nextStepOnFailureOrder,
+            selectedNextStep: selectedNextStepName,
+            selectedNextStepOrder: selectedNextStepOrder,
+            routingDecision: routingDecision
           }
 
         } else {
