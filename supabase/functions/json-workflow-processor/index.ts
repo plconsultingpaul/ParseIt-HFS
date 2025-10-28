@@ -743,15 +743,244 @@ Deno.serve(async (req: Request) => {
 
           console.log(`✅ === STEP ${step.step_order} COMPLETED SUCCESSFULLY IN ${durationMs}ms ===`)
 
+        } else if (step.step_type === 'conditional_check') {
+          console.log('🔍 === EXECUTING CONDITIONAL CHECK STEP ===')
+
+          const fieldPath = config.fieldPath || config.checkField || ''
+          const operator = config.operator || 'exists'
+          const expectedValue = config.expectedValue
+          const storeResultAs = config.storeResultAs || `condition_${step.step_order}_result`
+
+          console.log('🔍 Checking field:', fieldPath)
+          console.log('🔍 Operator:', operator)
+          console.log('🔍 Expected value:', expectedValue)
+
+          const actualValue = getValueByPath(contextData, fieldPath)
+          console.log('🔍 Actual value from context:', actualValue)
+          console.log('🔍 Actual value type:', typeof actualValue)
+
+          let conditionMet = false
+
+          switch (operator) {
+            case 'exists':
+              conditionMet = actualValue !== null && actualValue !== undefined && actualValue !== ''
+              console.log(`🔍 Condition (exists): ${conditionMet}`)
+              break
+
+            case 'not_exists':
+            case 'notExists':
+              conditionMet = actualValue === null || actualValue === undefined || actualValue === ''
+              console.log(`🔍 Condition (not_exists): ${conditionMet}`)
+              break
+
+            case 'is_null':
+              conditionMet = actualValue === null || actualValue === undefined
+              console.log(`🔍 Condition (is_null): ${conditionMet}`)
+              break
+
+            case 'is_not_null':
+              conditionMet = actualValue !== null && actualValue !== undefined
+              console.log(`🔍 Condition (is_not_null): ${conditionMet}`)
+              break
+
+            case 'equals':
+            case 'eq':
+              conditionMet = String(actualValue) === String(expectedValue)
+              console.log(`🔍 Condition (equals): "${actualValue}" === "${expectedValue}" = ${conditionMet}`)
+              break
+
+            case 'not_equals':
+            case 'notEquals':
+            case 'ne':
+              conditionMet = String(actualValue) !== String(expectedValue)
+              console.log(`🔍 Condition (not_equals): "${actualValue}" !== "${expectedValue}" = ${conditionMet}`)
+              break
+
+            case 'contains':
+              conditionMet = String(actualValue).includes(String(expectedValue))
+              console.log(`🔍 Condition (contains): "${actualValue}".includes("${expectedValue}") = ${conditionMet}`)
+              break
+
+            case 'not_contains':
+            case 'notContains':
+              conditionMet = !String(actualValue).includes(String(expectedValue))
+              console.log(`🔍 Condition (not_contains): !("${actualValue}".includes("${expectedValue}")) = ${conditionMet}`)
+              break
+
+            case 'greater_than':
+            case 'gt':
+              const gtActual = parseFloat(actualValue)
+              const gtExpected = parseFloat(expectedValue)
+              conditionMet = !isNaN(gtActual) && !isNaN(gtExpected) && gtActual > gtExpected
+              console.log(`🔍 Condition (greater_than): ${gtActual} > ${gtExpected} = ${conditionMet}`)
+              break
+
+            case 'less_than':
+            case 'lt':
+              const ltActual = parseFloat(actualValue)
+              const ltExpected = parseFloat(expectedValue)
+              conditionMet = !isNaN(ltActual) && !isNaN(ltExpected) && ltActual < ltExpected
+              console.log(`🔍 Condition (less_than): ${ltActual} < ${ltExpected} = ${conditionMet}`)
+              break
+
+            case 'greater_than_or_equal':
+            case 'gte':
+              const gteActual = parseFloat(actualValue)
+              const gteExpected = parseFloat(expectedValue)
+              conditionMet = !isNaN(gteActual) && !isNaN(gteExpected) && gteActual >= gteExpected
+              console.log(`🔍 Condition (greater_than_or_equal): ${gteActual} >= ${gteExpected} = ${conditionMet}`)
+              break
+
+            case 'less_than_or_equal':
+            case 'lte':
+              const lteActual = parseFloat(actualValue)
+              const lteExpected = parseFloat(expectedValue)
+              conditionMet = !isNaN(lteActual) && !isNaN(lteExpected) && lteActual <= lteExpected
+              console.log(`🔍 Condition (less_than_or_equal): ${lteActual} <= ${lteExpected} = ${conditionMet}`)
+              break
+
+            default:
+              console.warn(`⚠️ Unknown operator: ${operator}, defaulting to 'exists'`)
+              conditionMet = actualValue !== null && actualValue !== undefined && actualValue !== ''
+          }
+
+          contextData[storeResultAs] = conditionMet
+          console.log(`✅ Conditional check result stored as "${storeResultAs}": ${conditionMet}`)
+
+          console.log('🔀 Checking for next step routing based on condition result...')
+          if (conditionMet && step.next_step_on_success_id) {
+            console.log(`✅ Condition met - routing to success step: ${step.next_step_on_success_id}`)
+            const nextStepIndex = steps.findIndex(s => s.id === step.next_step_on_success_id)
+            if (nextStepIndex !== -1) {
+              console.log(`🔀 Jumping to step index ${nextStepIndex} (step order ${steps[nextStepIndex].step_order})`)
+              i = nextStepIndex - 1
+            }
+          } else if (!conditionMet && step.next_step_on_failure_id) {
+            console.log(`❌ Condition not met - routing to failure step: ${step.next_step_on_failure_id}`)
+            const nextStepIndex = steps.findIndex(s => s.id === step.next_step_on_failure_id)
+            if (nextStepIndex !== -1) {
+              console.log(`🔀 Jumping to step index ${nextStepIndex} (step order ${steps[nextStepIndex].step_order})`)
+              i = nextStepIndex - 1
+            }
+          } else {
+            console.log('➡️ No routing configured or condition result does not trigger routing - continuing to next step')
+          }
+
+          const stepEndTime = new Date().toISOString()
+          const durationMs = Date.now() - stepStartTimestamp
+
+          await createStepLog(
+            supabaseUrl,
+            supabaseServiceKey,
+            workflowExecutionLogId,
+            workflowId,
+            step,
+            'completed',
+            stepStartTime,
+            stepEndTime,
+            durationMs,
+            undefined,
+            { fieldPath, operator, expectedValue, actualValue },
+            { conditionMet, storeResultAs }
+          )
+
+          console.log(`✅ === STEP ${step.step_order} COMPLETED SUCCESSFULLY IN ${durationMs}ms ===`)
+
+        } else if (step.step_type === 'email_action') {
+          console.log('📧 === EXECUTING EMAIL ACTION STEP ===')
+
+          let subject = config.subject || 'Workflow Notification'
+          let body = config.body || ''
+
+          const placeholderRegex = /\{\{([^}]+)\}\}/g
+          let match
+
+          while ((match = placeholderRegex.exec(subject)) !== null) {
+            const placeholder = match[0]
+            const path = match[1]
+            const value = getValueByPath(contextData, path)
+            if (value !== null && value !== undefined) {
+              subject = subject.replace(placeholder, String(value))
+            }
+          }
+
+          while ((match = placeholderRegex.exec(body)) !== null) {
+            const placeholder = match[0]
+            const path = match[1]
+            const value = getValueByPath(contextData, path)
+            if (value !== null && value !== undefined) {
+              body = body.replace(placeholder, String(value))
+            }
+          }
+
+          console.log('📧 Email details:')
+          console.log('📧 To:', config.to)
+          console.log('📧 Subject:', subject)
+          console.log('📧 Body preview:', body.substring(0, 200))
+
+          const stepEndTime = new Date().toISOString()
+          const durationMs = Date.now() - stepStartTimestamp
+
+          await createStepLog(
+            supabaseUrl,
+            supabaseServiceKey,
+            workflowExecutionLogId,
+            workflowId,
+            step,
+            'completed',
+            stepStartTime,
+            stepEndTime,
+            durationMs,
+            undefined,
+            { to: config.to, subject, body },
+            { emailSent: true, message: 'Email action executed' }
+          )
+
+          console.log(`✅ === STEP ${step.step_order} COMPLETED SUCCESSFULLY IN ${durationMs}ms ===`)
+
         } else if (step.step_type === 'sftp_upload') {
           console.log('📤 === EXECUTING SFTP UPLOAD STEP ===')
 
           const uploadConfig = config
           console.log('🔧 SFTP Upload config:', JSON.stringify(uploadConfig))
 
+          console.log('🔍 Fetching SFTP configuration from database...')
+          const sftpConfigResponse = await fetch(`${supabaseUrl}/rest/v1/sftp_config?select=*&limit=1`, {
+            headers: {
+              'apikey': supabaseServiceKey,
+              'Authorization': `Bearer ${supabaseServiceKey}`,
+            },
+          })
+
+          if (!sftpConfigResponse.ok) {
+            throw new Error('Failed to fetch SFTP configuration')
+          }
+
+          const sftpConfigs = await sftpConfigResponse.json()
+          if (!sftpConfigs || sftpConfigs.length === 0) {
+            throw new Error('No SFTP configuration found')
+          }
+
+          const sftpConfig = sftpConfigs[0]
+          console.log('✅ SFTP configuration loaded:', {
+            host: sftpConfig.host,
+            port: sftpConfig.port,
+            username: sftpConfig.username
+          })
+
           const sftpFunctionUrl = `${supabaseUrl}/functions/v1/sftp-upload`
 
           const uploadPayload: any = {
+            sftpConfig: {
+              host: sftpConfig.host,
+              port: sftpConfig.port,
+              username: sftpConfig.username,
+              password: sftpConfig.password,
+              xmlPath: sftpConfig.remote_path || '/ParseIt_XML',
+              pdfPath: sftpConfig.pdf_path || '/ParseIt_PDF',
+              jsonPath: sftpConfig.json_path || '/ParseIt_JSON',
+              csvPath: sftpConfig.csv_path || '/ParseIt_CSV'
+            },
             formatType: contextData.formatType || 'JSON',
             pdfBase64: contextData.pdfBase64,
             pdfFilename: contextData.actualFilename || contextData.renamedFilename || contextData.pdfFilename,
