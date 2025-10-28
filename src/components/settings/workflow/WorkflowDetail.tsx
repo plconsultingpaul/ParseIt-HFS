@@ -20,25 +20,56 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
 
   // Check if workflow has a temporary ID (not yet saved)
   const isTemporaryWorkflow = workflow.id.startsWith('temp-');
+  const [hasMigrated, setHasMigrated] = React.useState(false);
 
-  // Update local steps when props change
+  // Update local steps when props change and migrate to 100-interval numbering if needed
   React.useEffect(() => {
-    setLocalSteps(steps);
-  }, [steps]);
+    // Check if steps need migration to 100-interval numbering
+    const needsMigration = steps.some(step => step.stepOrder < 100);
+
+    if (needsMigration && steps.length > 0 && !hasMigrated) {
+      console.log('Migrating workflow steps to 100-interval numbering system...');
+
+      // Sort by current order
+      const sortedSteps = [...steps].sort((a, b) => a.stepOrder - b.stepOrder);
+
+      // Multiply existing orders by 100
+      const migratedSteps = sortedSteps.map((step, index) => ({
+        ...step,
+        stepOrder: (index + 1) * 100
+      }));
+
+      console.log('Migrated steps:', migratedSteps.map(s => ({
+        name: s.stepName,
+        oldOrder: steps.find(orig => orig.id === s.id)?.stepOrder,
+        newOrder: s.stepOrder
+      })));
+
+      setLocalSteps(migratedSteps);
+      setHasMigrated(true);
+
+      // Trigger save after state is updated
+      setTimeout(() => {
+        onUpdateSteps(migratedSteps);
+      }, 100);
+    } else if (!needsMigration) {
+      setLocalSteps(steps);
+    }
+  }, [steps, hasMigrated, onUpdateSteps]);
 
   const handleAddStep = () => {
-    // Calculate the next available step order
+    // Calculate the next available step order using 100-unit intervals
     const maxStepOrder = localSteps.length > 0 ? Math.max(...localSteps.map(s => s.stepOrder)) : 0;
-    
+
     const newStep: WorkflowStep = {
       id: `temp-${Date.now()}`,
       workflowId: workflow.id,
-      stepOrder: maxStepOrder + 1,
+      stepOrder: maxStepOrder + 100,
       stepType: 'api_call',
       stepName: 'New Step',
       configJson: {}
     };
-    
+
     setEditingStep(newStep);
     setShowStepForm(true);
   };
@@ -66,11 +97,11 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
       // Updating existing step
       updatedSteps = localSteps.map(s => s.id === step.id ? step : s);
     } else {
-      // Adding new step - assign next available step order
+      // Adding new step - assign next available step order using 100-unit intervals
       const maxStepOrder = localSteps.length > 0 ? Math.max(...localSteps.map(s => s.stepOrder)) : 0;
       const stepWithOrder = {
         ...step,
-        stepOrder: maxStepOrder + 1
+        stepOrder: maxStepOrder + 100
       };
       updatedSteps = [...localSteps, stepWithOrder];
     }
@@ -121,29 +152,94 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
   };
 
   const handleMoveStep = async (stepId: string, direction: 'up' | 'down') => {
-    const stepIndex = localSteps.findIndex(s => s.id === stepId);
+    // Sort steps by order to get correct current positions
+    const sortedSteps = [...localSteps].sort((a, b) => a.stepOrder - b.stepOrder);
+    const stepIndex = sortedSteps.findIndex(s => s.id === stepId);
     if (stepIndex === -1) return;
 
     const newIndex = direction === 'up' ? stepIndex - 1 : stepIndex + 1;
-    if (newIndex < 0 || newIndex >= localSteps.length) return;
+    if (newIndex < 0 || newIndex >= sortedSteps.length) return;
 
-    const updatedSteps = [...localSteps];
-    [updatedSteps[stepIndex], updatedSteps[newIndex]] = [updatedSteps[newIndex], updatedSteps[stepIndex]];
+    // Calculate new step order by placing it between adjacent steps
+    const currentStep = sortedSteps[stepIndex];
+    let newStepOrder: number;
 
-    // Update step orders to match new positions
-    updatedSteps.forEach((step, index) => {
-      step.stepOrder = index + 1;
-    });
+    if (direction === 'up') {
+      // Moving up: place between the step above and two steps above
+      const targetStep = sortedSteps[newIndex];
+      const stepAboveTarget = newIndex > 0 ? sortedSteps[newIndex - 1] : null;
+
+      if (stepAboveTarget) {
+        // Calculate midpoint between stepAboveTarget and targetStep
+        newStepOrder = Math.floor((stepAboveTarget.stepOrder + targetStep.stepOrder) / 2);
+      } else {
+        // Moving to first position
+        newStepOrder = targetStep.stepOrder - 100;
+      }
+    } else {
+      // Moving down: place between the step below and two steps below
+      const targetStep = sortedSteps[newIndex];
+      const stepBelowTarget = newIndex < sortedSteps.length - 1 ? sortedSteps[newIndex + 1] : null;
+
+      if (stepBelowTarget) {
+        // Calculate midpoint between targetStep and stepBelowTarget
+        newStepOrder = Math.floor((targetStep.stepOrder + stepBelowTarget.stepOrder) / 2);
+      } else {
+        // Moving to last position
+        newStepOrder = targetStep.stepOrder + 100;
+      }
+    }
+
+    // Update the moved step's order
+    const updatedSteps = localSteps.map(s =>
+      s.id === stepId ? { ...s, stepOrder: newStepOrder } : s
+    );
 
     setLocalSteps(updatedSteps);
 
     // Immediately save to database
     try {
       await handleSaveStepsToDatabase(updatedSteps);
+
+      // Check if we need to renormalize (if gaps are getting too small)
+      const sortedUpdated = [...updatedSteps].sort((a, b) => a.stepOrder - b.stepOrder);
+      let needsRenormalization = false;
+
+      for (let i = 1; i < sortedUpdated.length; i++) {
+        const gap = sortedUpdated[i].stepOrder - sortedUpdated[i - 1].stepOrder;
+        if (gap < 10) {
+          needsRenormalization = true;
+          break;
+        }
+      }
+
+      if (needsRenormalization) {
+        console.log('Gap too small, renormalizing step orders...');
+        await renormalizeStepOrders(updatedSteps);
+      }
     } catch (error) {
       // Error already handled in handleSaveStepsToDatabase
       console.log('Move failed, steps restored to previous state');
     }
+  };
+
+  const renormalizeStepOrders = async (stepsToRenormalize: WorkflowStep[]) => {
+    // Sort steps by current order
+    const sortedSteps = [...stepsToRenormalize].sort((a, b) => a.stepOrder - b.stepOrder);
+
+    // Reassign orders with 100-unit intervals
+    const renormalizedSteps = sortedSteps.map((step, index) => ({
+      ...step,
+      stepOrder: (index + 1) * 100
+    }));
+
+    console.log('Renormalizing step orders:', renormalizedSteps.map(s => ({ id: s.id, name: s.stepName, order: s.stepOrder })));
+
+    // Update local state
+    setLocalSteps(renormalizedSteps);
+
+    // Save to database
+    await handleSaveStepsToDatabase(renormalizedSteps);
   };
 
   const handleSaveSteps = async () => {
