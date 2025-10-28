@@ -1086,6 +1086,11 @@ Deno.serve(async (req: Request) => {
             console.log('📤 Adding exactFilename to payload:', exactFilenameToPass)
           }
 
+          if (config.sftpPathOverride) {
+            sftpUploadPayload.sftpPathOverride = config.sftpPathOverride
+            console.log('📤 Adding sftpPathOverride to payload:', config.sftpPathOverride)
+          }
+
           console.log('📤 === SFTP UPLOAD PAYLOAD DEBUG ===')
           console.log('📤 Payload xmlContent type:', typeof sftpUploadPayload.xmlContent)
           console.log('📤 Payload xmlContent length:', sftpUploadPayload.xmlContent ? sftpUploadPayload.xmlContent.length : 0)

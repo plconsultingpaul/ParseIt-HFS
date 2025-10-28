@@ -1,6 +1,5 @@
 {
   "imports": {
-    "@google/generative-ai": "npm:@google/generative-ai@0.24.1",
-    "pdf-lib": "npm:pdf-lib@1.17.1"
+    "@google/generative-ai": "npm:@google/generative-ai@0.24.1"
   }
 }

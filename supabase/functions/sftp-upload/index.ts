@@ -32,6 +32,7 @@ interface UploadRequest {
   exactFilename?: string
   pdfUploadStrategy?: 'all_pages_in_group' | 'specific_page_in_group'
   specificPageToUpload?: number
+  sftpPathOverride?: string
   uploadFileTypes?: {
     json?: boolean
     pdf?: boolean
@@ -49,7 +50,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { sftpConfig, xmlContent, pdfBase64, baseFilename, originalFilename, parseitIdMapping, useExistingParseitId, userId, extractionTypeId, transformationTypeId, formatType, customFilenamePart, exactFilename, pdfUploadStrategy, specificPageToUpload, uploadFileTypes }: UploadRequest = await req.json()
+    const { sftpConfig, xmlContent, pdfBase64, baseFilename, originalFilename, parseitIdMapping, useExistingParseitId, userId, extractionTypeId, transformationTypeId, formatType, customFilenamePart, exactFilename, pdfUploadStrategy, specificPageToUpload, sftpPathOverride, uploadFileTypes }: UploadRequest = await req.json()
 
     console.log('=== SFTP UPLOAD DEBUG ===')
     console.log('Request received with fields:')
@@ -61,6 +62,7 @@ Deno.serve(async (req: Request) => {
     console.log('- sftpConfig.pdfPath:', sftpConfig?.pdfPath || 'MISSING')
     console.log('- sftpConfig.jsonPath:', sftpConfig?.jsonPath || 'MISSING')
     console.log('- sftpConfig.csvPath:', sftpConfig?.csvPath || 'MISSING')
+    console.log('- sftpPathOverride:', sftpPathOverride || 'NOT SET')
     console.log('- xmlContent present:', !!xmlContent)
     console.log('- xmlContent type:', typeof xmlContent)
     console.log('- xmlContent length:', xmlContent?.length || 0)
@@ -125,11 +127,22 @@ Deno.serve(async (req: Request) => {
       console.log('✅ SFTP CONNECTION SUCCESSFUL')
 
       console.log('📁 === CREATING/VERIFYING SFTP DIRECTORIES ===')
-      await sftp.mkdir(sftpConfig.xmlPath, true)
-      await sftp.mkdir(sftpConfig.pdfPath, true)
-      await sftp.mkdir(sftpConfig.jsonPath, true)
-      if (sftpConfig.csvPath) {
-        await sftp.mkdir(sftpConfig.csvPath, true)
+
+      const effectivePdfPath = sftpPathOverride || sftpConfig.pdfPath
+      const effectiveJsonPath = sftpPathOverride || sftpConfig.jsonPath
+      const effectiveXmlPath = sftpPathOverride || sftpConfig.xmlPath
+      const effectiveCsvPath = sftpPathOverride || sftpConfig.csvPath
+
+      if (sftpPathOverride) {
+        console.log('🔧 Using SFTP path override:', sftpPathOverride)
+        console.log('🔧 Default pdfPath would have been:', sftpConfig.pdfPath)
+      }
+
+      await sftp.mkdir(effectiveXmlPath, true)
+      await sftp.mkdir(effectivePdfPath, true)
+      await sftp.mkdir(effectiveJsonPath, true)
+      if (effectiveCsvPath) {
+        await sftp.mkdir(effectiveCsvPath, true)
       }
       console.log('✅ ALL DIRECTORIES VERIFIED')
 
@@ -210,7 +223,7 @@ Deno.serve(async (req: Request) => {
 
         if (finalUploadFileTypes.pdf) {
           console.log(`📤 Uploading PDF: ${actualFilename}`)
-          const pdfPath = `${sftpConfig.pdfPath}/${actualFilename}`
+          const pdfPath = `${effectivePdfPath}/${actualFilename}`
 
           try {
             await sftp.put(Buffer.from(singlePageBase64, 'base64'), pdfPath)
@@ -226,7 +239,7 @@ Deno.serve(async (req: Request) => {
 
         if (finalUploadFileTypes.json && formatType === 'JSON') {
           console.log(`📤 Uploading JSON: ${dataFilename}`)
-          const jsonPath = `${sftpConfig.jsonPath}/${dataFilename}`
+          const jsonPath = `${effectiveJsonPath}/${dataFilename}`
 
           try {
             await sftp.put(Buffer.from(xmlContent), jsonPath)
@@ -240,7 +253,7 @@ Deno.serve(async (req: Request) => {
 
         if (finalUploadFileTypes.xml && formatType === 'XML') {
           console.log(`📤 Uploading XML: ${dataFilename}`)
-          const xmlPath = `${sftpConfig.xmlPath}/${dataFilename}`
+          const xmlPath = `${effectiveXmlPath}/${dataFilename}`
 
           try {
             await sftp.put(Buffer.from(xmlContent), xmlPath)
@@ -252,9 +265,9 @@ Deno.serve(async (req: Request) => {
           }
         }
 
-        if (finalUploadFileTypes.csv && formatType === 'CSV' && sftpConfig.csvPath) {
+        if (finalUploadFileTypes.csv && formatType === 'CSV' && effectiveCsvPath) {
           console.log(`📤 Uploading CSV: ${dataFilename}`)
-          const csvPath = `${sftpConfig.csvPath}/${dataFilename}`
+          const csvPath = `${effectiveCsvPath}/${dataFilename}`
 
           try {
             await sftp.put(Buffer.from(xmlContent), csvPath)
