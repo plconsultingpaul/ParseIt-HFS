@@ -64,32 +64,15 @@ Deno.serve(async (req: Request) => {
     console.log('- xmlContent present:', !!xmlContent)
     console.log('- xmlContent type:', typeof xmlContent)
     console.log('- xmlContent length:', xmlContent?.length || 0)
-    console.log('- xmlContent preview (first 300):', xmlContent ? xmlContent.substring(0, 300) : 'EMPTY')
-    console.log('- xmlContent preview (last 200):', xmlContent ? xmlContent.substring(Math.max(0, xmlContent.length - 200)) : 'EMPTY')
     console.log('- pdfBase64 present:', !!pdfBase64)
     console.log('- pdfBase64 length:', pdfBase64?.length || 0)
     console.log('- baseFilename:', baseFilename || 'MISSING')
     console.log('- originalFilename:', originalFilename || 'MISSING')
     console.log('- exactFilename:', exactFilename || 'MISSING')
-    console.log('- customFilenamePart:', customFilenamePart || 'MISSING')
     console.log('- formatType:', formatType || 'MISSING')
-    console.log('- extractionTypeId:', extractionTypeId || 'MISSING')
-    console.log('- transformationTypeId:', transformationTypeId || 'MISSING')
     console.log('- pdfUploadStrategy:', pdfUploadStrategy || 'MISSING')
-    console.log('- specificPageToUpload:', specificPageToUpload || 'MISSING')
     console.log('- uploadFileTypes:', uploadFileTypes || 'MISSING (will default to all types)')
-    
-    console.log('SFTP Upload Request received:')
-    console.log('- useExistingParseitId:', useExistingParseitId)
-    console.log('- parseitIdMapping:', parseitIdMapping)
-    console.log('- userId:', userId)
-    console.log('- extractionTypeId:', extractionTypeId)
-    console.log('- transformationTypeId:', transformationTypeId)
-    console.log('- originalFilename:', originalFilename)
-    console.log('- customFilenamePart:', customFilenamePart)
-    console.log('- exactFilename:', exactFilename)
 
-    // Validate required fields
     if (!sftpConfig.host || !sftpConfig.username || !xmlContent || !pdfBase64 || !baseFilename) {
       console.log('=== VALIDATION FAILED ===')
       console.log('Missing required fields:')
@@ -98,7 +81,7 @@ Deno.serve(async (req: Request) => {
       console.log('- xmlContent:', !xmlContent ? 'MISSING' : 'OK')
       console.log('- pdfBase64:', !pdfBase64 ? 'MISSING' : 'OK')
       console.log('- baseFilename:', !baseFilename ? 'MISSING' : 'OK')
-      
+
       return new Response(
         JSON.stringify({ error: "Missing required fields" }),
         {
@@ -108,170 +91,227 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    // Import SFTP client using the alias from deno.json
     const Client = (await import("ssh2-sftp-client")).default
-    
     const sftp = new Client()
 
     try {
-      // Load and analyze the PDF
       const pdfBuffer = Buffer.from(pdfBase64, 'base64')
       const pdfDoc = await PDFDocument.load(pdfBuffer)
       const pageCount = pdfDoc.getPageCount()
-      
-      console.log(`🔧 === SFTP PDF ANALYSIS RESULTS ===')
+
       console.log(`🔧 PDF received has ${pageCount} pages`)
-      console.log(`🔧 extractionTypeId: ${extractionTypeId || 'NONE'}`)
-      console.log(`🔧 transformationTypeId: ${transformationTypeId || 'NONE'}`)
       console.log(`🔧 pdfUploadStrategy: ${pdfUploadStrategy || 'all_pages_in_group (default)'}`)
-      console.log(`🔧 specificPageToUpload: ${specificPageToUpload || 'N/A'}`)
-      
-      // Get Supabase configuration
+
       const supabaseUrl = Deno.env.get('SUPABASE_URL')
       const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-      
+
       if (!supabaseUrl || !supabaseServiceKey) {
         throw new Error('Supabase configuration missing')
       }
 
-      // Helper function to log extraction
-      const logExtraction = async (
-        extractionTypeIdParam: string | null,
-        transformationTypeIdParam: string | null,
-        pdfFilename: string,
-        pdfPages: number,
-        status: 'success' | 'failed',
-        errorMessage?: string,
-        parseitId?: number
-      ) => {
-        try {
-          const logData: any = {
-            user_id: userId || null,
-            extraction_type_id: extractionTypeIdParam,
-            transformation_type_id: transformationTypeIdParam,
-            pdf_filename: pdfFilename,
-            pdf_pages: pdfPages,
-            extraction_status: status,
-            error_message: errorMessage || null,
-            extracted_data: xmlContent || null,
-            processing_mode: transformationTypeIdParam ? 'transformation' : 'extraction',
-            created_at: new Date().toISOString()
-          }
-          
-          if (parseitId) {
-            logData.parseit_id = parseitId
-          }
-          
-          await fetch(`${supabaseUrl}/rest/v1/extraction_logs`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${supabaseServiceKey}`,
-              'Content-Type': 'application/json',
-              'apikey': supabaseServiceKey
-            },
-            body: JSON.stringify(logData)
-          })
-          
-          console.log('Successfully logged extraction:', logData)
-        } catch (logError) {
-          console.warn('Failed to log extraction:', logError)
-          // Don't throw - logging failure shouldn't break the main process
-        }
-      }
-
-      // Connect to SFTP server with comprehensive logging
       console.log('🔌 === ATTEMPTING SFTP CONNECTION ===')
       console.log('🔌 SFTP Host:', sftpConfig.host)
       console.log('🔌 SFTP Port:', sftpConfig.port)
-      console.log('🔌 SFTP Username:', sftpConfig.username)
-      console.log('🔌 SFTP Password Length:', sftpConfig.password?.length || 0)
-      console.log('🔌 Connection attempt starting at:', new Date().toISOString())
 
-      try {
-        await sftp.connect({
-          host: sftpConfig.host,
-          port: sftpConfig.port,
-          username: sftpConfig.username,
-          password: sftpConfig.password,
-          readyTimeout: 30000,
-          retries: 2,
-          retry_minTimeout: 2000
-        })
-        console.log('✅ SFTP CONNECTION SUCCESSFUL at:', new Date().toISOString())
-        console.log('✅ Connection state:', sftp.client ? 'ACTIVE' : 'UNKNOWN')
-      } catch (connectError) {
-        console.error('❌ SFTP CONNECTION FAILED!')
-        console.error('❌ Error type:', connectError.constructor.name)
-        console.error('❌ Error message:', connectError.message)
-        console.error('❌ Error code:', connectError.code)
-        console.error('❌ Full error:', JSON.stringify(connectError, null, 2))
-        throw new Error(`SFTP Connection Failed: ${connectError.message}`)
-      }
+      await sftp.connect({
+        host: sftpConfig.host,
+        port: sftpConfig.port,
+        username: sftpConfig.username,
+        password: sftpConfig.password,
+        readyTimeout: 30000,
+        retries: 2,
+        retry_minTimeout: 2000
+      })
+      console.log('✅ SFTP CONNECTION SUCCESSFUL')
 
-      // Ensure directories exist with detailed logging
       console.log('📁 === CREATING/VERIFYING SFTP DIRECTORIES ===')
-
-      console.log('📁 Attempting to create XML directory:', sftpConfig.xmlPath)
-      try {
-        await sftp.mkdir(sftpConfig.xmlPath, true)
-        console.log('✅ XML directory ready:', sftpConfig.xmlPath)
-        const xmlDirList = await sftp.list(sftpConfig.xmlPath)
-        console.log('📋 XML directory contains', xmlDirList.length, 'items')
-      } catch (xmlDirError) {
-        console.error('❌ Failed to create XML directory:', xmlDirError.message)
-        throw new Error(`XML directory creation failed: ${xmlDirError.message}`)
-      }
-
-      console.log('📁 Attempting to create PDF directory:', sftpConfig.pdfPath)
-      try {
-        await sftp.mkdir(sftpConfig.pdfPath, true)
-        console.log('✅ PDF directory ready:', sftpConfig.pdfPath)
-        const pdfDirList = await sftp.list(sftpConfig.pdfPath)
-        console.log('📋 PDF directory contains', pdfDirList.length, 'items')
-      } catch (pdfDirError) {
-        console.error('❌ Failed to create PDF directory:', pdfDirError.message)
-        throw new Error(`PDF directory creation failed: ${pdfDirError.message}`)
-      }
-
-      console.log('📁 Attempting to create JSON directory:', sftpConfig.jsonPath)
-      try {
-        await sftp.mkdir(sftpConfig.jsonPath, true)
-        console.log('✅ JSON directory ready:', sftpConfig.jsonPath)
-        const jsonDirList = await sftp.list(sftpConfig.jsonPath)
-        console.log('📋 JSON directory contains', jsonDirList.length, 'items')
-      } catch (jsonDirError) {
-        console.error('❌ Failed to create JSON directory:', jsonDirError.message)
-        throw new Error(`JSON directory creation failed: ${jsonDirError.message}`)
-      }
-
+      await sftp.mkdir(sftpConfig.xmlPath, true)
+      await sftp.mkdir(sftpConfig.pdfPath, true)
+      await sftp.mkdir(sftpConfig.jsonPath, true)
       if (sftpConfig.csvPath) {
-        console.log('📁 Attempting to create CSV directory:', sftpConfig.csvPath)
-        try {
-          await sftp.mkdir(sftpConfig.csvPath, true)
-          console.log('✅ CSV directory ready:', sftpConfig.csvPath)
-          const csvDirList = await sftp.list(sftpConfig.csvPath)
-          console.log('📋 CSV directory contains', csvDirList.length, 'items')
-        } catch (csvDirError) {
-          console.error('❌ Failed to create CSV directory:', csvDirError.message)
-          throw new Error(`CSV directory creation failed: ${csvDirError.message}`)
-        }
+        await sftp.mkdir(sftpConfig.csvPath, true)
+      }
+      console.log('✅ ALL DIRECTORIES VERIFIED')
+
+      const defaultUploadFileTypes = {
+        json: true,
+        pdf: true,
+        xml: false,
+        csv: false
       }
 
-      console.log('✅ === ALL DIRECTORIES VERIFIED ===')
+      const finalUploadFileTypes = uploadFileTypes || defaultUploadFileTypes
+      console.log('📤 Upload file types:', finalUploadFileTypes)
 
-      // ... Rest of the function content continues...
-      // Due to message length limits, I'll deploy using the file directly
-      
+      let parseitId = useExistingParseitId || null
+
+      if (!parseitId) {
+        console.log('🔢 Fetching next ParseIt ID...')
+        const parseitResponse = await fetch(`${supabaseUrl}/rest/v1/rpc/get_next_parseit_id`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+            'Content-Type': 'application/json',
+            'apikey': supabaseServiceKey
+          }
+        })
+
+        if (!parseitResponse.ok) {
+          throw new Error('Failed to get ParseIt ID')
+        }
+
+        parseitId = await parseitResponse.json()
+        console.log('✅ Got ParseIt ID:', parseitId)
+      }
+
+      const results: any[] = []
+      const actualFilenames: string[] = []
+
+      const pagesToProcess = pdfUploadStrategy === 'specific_page_in_group' && specificPageToUpload
+        ? [specificPageToUpload]
+        : Array.from({ length: pageCount }, (_, i) => i + 1)
+
+      console.log(`📄 Processing ${pagesToProcess.length} page(s)...`)
+
+      for (const pageNum of pagesToProcess) {
+        console.log(`\n📄 === PROCESSING PAGE ${pageNum} ===`)
+
+        let singlePagePdfBytes: Uint8Array
+        if (pageCount === 1) {
+          singlePagePdfBytes = pdfBuffer
+        } else {
+          const singlePageDoc = await PDFDocument.create()
+          const [copiedPage] = await singlePageDoc.copyPages(pdfDoc, [pageNum - 1])
+          singlePageDoc.addPage(copiedPage)
+          singlePagePdfBytes = await singlePageDoc.save()
+        }
+
+        const singlePageBase64 = Buffer.from(singlePagePdfBytes).toString('base64')
+
+        let finalFilenameBase: string
+        if (exactFilename) {
+          finalFilenameBase = exactFilename
+        } else if (customFilenamePart) {
+          finalFilenameBase = `${baseFilename}_${customFilenamePart}`
+        } else {
+          finalFilenameBase = baseFilename
+        }
+
+        const actualFilename = `${finalFilenameBase}_${pageNum}.pdf`
+        const dataFilename = formatType === 'CSV'
+          ? `${finalFilenameBase}_${pageNum}.csv`
+          : formatType === 'XML'
+          ? `${finalFilenameBase}_${pageNum}.xml`
+          : `${finalFilenameBase}_${pageNum}.json`
+
+        actualFilenames.push(actualFilename)
+
+        const uploadedFiles: any = {}
+
+        if (finalUploadFileTypes.pdf) {
+          console.log(`📤 Uploading PDF: ${actualFilename}`)
+          const pdfPath = `${sftpConfig.pdfPath}/${actualFilename}`
+
+          try {
+            await sftp.put(Buffer.from(singlePageBase64, 'base64'), pdfPath)
+            console.log(`✅ PDF uploaded successfully: ${pdfPath}`)
+            uploadedFiles.pdf = pdfPath
+          } catch (pdfError) {
+            console.error(`❌ Failed to upload PDF:`, pdfError)
+            throw new Error(`PDF upload failed: ${pdfError.message}`)
+          }
+        } else {
+          console.log('⏭️ Skipping PDF upload (not requested)')
+        }
+
+        if (finalUploadFileTypes.json && formatType === 'JSON') {
+          console.log(`📤 Uploading JSON: ${dataFilename}`)
+          const jsonPath = `${sftpConfig.jsonPath}/${dataFilename}`
+
+          try {
+            await sftp.put(Buffer.from(xmlContent), jsonPath)
+            console.log(`✅ JSON uploaded successfully: ${jsonPath}`)
+            uploadedFiles.data = jsonPath
+          } catch (jsonError) {
+            console.error(`❌ Failed to upload JSON:`, jsonError)
+            throw new Error(`JSON upload failed: ${jsonError.message}`)
+          }
+        }
+
+        if (finalUploadFileTypes.xml && formatType === 'XML') {
+          console.log(`📤 Uploading XML: ${dataFilename}`)
+          const xmlPath = `${sftpConfig.xmlPath}/${dataFilename}`
+
+          try {
+            await sftp.put(Buffer.from(xmlContent), xmlPath)
+            console.log(`✅ XML uploaded successfully: ${xmlPath}`)
+            uploadedFiles.data = xmlPath
+          } catch (xmlError) {
+            console.error(`❌ Failed to upload XML:`, xmlError)
+            throw new Error(`XML upload failed: ${xmlError.message}`)
+          }
+        }
+
+        if (finalUploadFileTypes.csv && formatType === 'CSV' && sftpConfig.csvPath) {
+          console.log(`📤 Uploading CSV: ${dataFilename}`)
+          const csvPath = `${sftpConfig.csvPath}/${dataFilename}`
+
+          try {
+            await sftp.put(Buffer.from(xmlContent), csvPath)
+            console.log(`✅ CSV uploaded successfully: ${csvPath}`)
+            uploadedFiles.data = csvPath
+          } catch (csvError) {
+            console.error(`❌ Failed to upload CSV:`, csvError)
+            throw new Error(`CSV upload failed: ${csvError.message}`)
+          }
+        }
+
+        results.push({
+          page: pageNum,
+          parseitId: parseitId,
+          actualFilename: actualFilename,
+          dataFilename: dataFilename,
+          files: uploadedFiles
+        })
+
+        console.log(`✅ Page ${pageNum} processed successfully`)
+      }
+
+      await sftp.end()
+      console.log('✅ SFTP connection closed')
+
+      const responseData = {
+        success: true,
+        message: `Successfully processed PDF and uploaded ${results.length} file(s) with unique ParseIt IDs`,
+        pageCount: pageCount,
+        results: results,
+        actualFilenames: actualFilenames,
+        actualFilename: actualFilenames[0]
+      }
+
+      console.log('🎉 Upload completed:', responseData)
+
+      return new Response(
+        JSON.stringify(responseData),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      )
+
     } catch (sftpError) {
-      // Error handling
+      try {
+        await sftp.end()
+      } catch (closeError) {
+        console.warn('Failed to close SFTP connection:', closeError)
+      }
       throw sftpError
     }
 
   } catch (error) {
     console.error("SFTP upload error:", error)
     return new Response(
-      JSON.stringify({ 
-        error: "SFTP upload failed", 
+      JSON.stringify({
+        error: "SFTP upload failed",
         details: error instanceof Error ? error.message : "Unknown error"
       }),
       {
