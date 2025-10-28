@@ -88,6 +88,29 @@ async function createStepLog(
   return null
 }
 
+// === DIAGNOSTIC START: Helper Function ===
+function getValueByPath(obj: any, path: string): any {
+  try {
+    if (!obj || !path) return undefined
+
+    const parts = path.split(/[.\[\]]/).filter(Boolean)
+    let current = obj
+
+    for (const part of parts) {
+      if (current === null || current === undefined) {
+        return undefined
+      }
+      current = current[part]
+    }
+
+    return current
+  } catch (error) {
+    console.error('DIAGNOSTIC ERROR: getValueByPath failed:', error)
+    return undefined
+  }
+}
+// === DIAGNOSTIC END: Helper Function ===
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, {
@@ -399,6 +422,27 @@ Deno.serve(async (req: Request) => {
       console.log('📊 Context data created without spreading (CSV format or non-object data)')
     }
 
+    // === DIAGNOSTIC START: Context Initialization ===
+    try {
+      console.log('DIAGNOSTIC: CONTEXT INITIALIZATION')
+      console.log('DIAGNOSTIC: contextData.extractedData exists:', !!contextData.extractedData)
+      console.log('DIAGNOSTIC: contextData.orders exists:', !!contextData.orders)
+
+      if (contextData.extractedData && contextData.orders) {
+        const refCheck = contextData.extractedData.orders === contextData.orders
+        console.log('DIAGNOSTIC: Reference Check:', refCheck ? 'SAME' : 'DIFFERENT')
+      }
+
+      const clientIdFromOrders = getValueByPath(contextData, 'orders[0].consignee.clientId')
+      const clientIdFromExtracted = getValueByPath(contextData, 'extractedData.orders[0].consignee.clientId')
+
+      console.log('DIAGNOSTIC: Initial contextData.orders[0]?.consignee?.clientId:', clientIdFromOrders)
+      console.log('DIAGNOSTIC: Initial contextData.extractedData?.orders?.[0]?.consignee?.clientId:', clientIdFromExtracted)
+    } catch (e) {
+      console.error('DIAGNOSTIC ERROR: Context Initialization', e)
+    }
+    // === DIAGNOSTIC END: Context Initialization ===
+
     console.log('🔄 Starting workflow execution with', steps.length, 'steps...')
     console.log('🔄 DEBUG - About to enter for loop from i=0 to i=' + (steps.length - 1))
     let lastApiResponse: any = null
@@ -609,6 +653,32 @@ Deno.serve(async (req: Request) => {
 
           console.log('🔗 Final URL:', url)
 
+          // === DIAGNOSTIC START: Before Step 400 Execution ===
+          try {
+            if (step.step_order === 400 || step.step_name.includes('Send Updated JSON')) {
+              console.log('DIAGNOSTIC: BEFORE STEP 400 EXECUTION')
+              console.log('DIAGNOSTIC: Step Order:', step.step_order)
+              console.log('DIAGNOSTIC: Step Name:', step.step_name)
+
+              const clientIdFromOrders = getValueByPath(contextData, 'orders[0].consignee.clientId')
+              const clientIdFromExtracted = getValueByPath(contextData, 'extractedData.orders[0].consignee.clientId')
+
+              console.log('DIAGNOSTIC: contextData.orders[0]?.consignee?.clientId:', clientIdFromOrders)
+              console.log('DIAGNOSTIC: contextData.extractedData?.orders?.[0]?.consignee?.clientId:', clientIdFromExtracted)
+
+              if (contextData.extractedData && contextData.orders) {
+                const refCheck = contextData.extractedData.orders === contextData.orders
+                console.log('DIAGNOSTIC: Reference Check:', refCheck ? 'SAME' : 'DIFFERENT')
+              }
+
+              const requestBodyTemplate = config.requestBody || ''
+              console.log('DIAGNOSTIC: Request body contains {{extractedData}}:', requestBodyTemplate.includes('{{extractedData}}'))
+            }
+          } catch (e) {
+            console.error('DIAGNOSTIC ERROR: Before Step 400', e)
+          }
+          // === DIAGNOSTIC END: Before Step 400 Execution ===
+
           let requestBody = config.requestBody || ''
           console.log('📄 Original request body template:', requestBody)
 
@@ -665,6 +735,31 @@ Deno.serve(async (req: Request) => {
           }
 
           console.log('📄 Final request body:', requestBody)
+
+          // === DIAGNOSTIC START: After Placeholder Replacement ===
+          try {
+            if (step.step_order === 400 || step.step_name.includes('Send Updated JSON')) {
+              console.log('DIAGNOSTIC: AFTER PLACEHOLDER REPLACEMENT')
+              console.log('DIAGNOSTIC: Request body (first 1000 chars):', requestBody.substring(0, 1000))
+
+              try {
+                const parsedBody = JSON.parse(requestBody)
+                const clientIdInBody = parsedBody?.orders?.[0]?.consignee?.clientId
+
+                if (clientIdInBody) {
+                  console.log('DIAGNOSTIC: SUCCESS - clientId in request body:', clientIdInBody)
+                } else {
+                  console.log('DIAGNOSTIC: FAILURE - clientId NOT in request body')
+                  console.log('DIAGNOSTIC: parsedBody.orders?.[0]?.consignee:', parsedBody?.orders?.[0]?.consignee)
+                }
+              } catch (parseError) {
+                console.log('DIAGNOSTIC: Could not parse request body as JSON (might be XML or other format)')
+              }
+            }
+          } catch (e) {
+            console.error('DIAGNOSTIC ERROR: After Placeholder Replacement', e)
+          }
+          // === DIAGNOSTIC END: After Placeholder Replacement ===
 
           console.log('🚀 Making API call...')
 
@@ -806,6 +901,29 @@ Deno.serve(async (req: Request) => {
                 console.log('Expected:', responseValue)
                 console.log('Got:', verificationValue)
               }
+
+              // === DIAGNOSTIC START: After Update ===
+              try {
+                console.log('DIAGNOSTIC: AFTER UPDATE STEP', step.step_order)
+                console.log('DIAGNOSTIC: Step Name:', step.step_name)
+                console.log('DIAGNOSTIC: updateJsonPath:', config.updateJsonPath)
+                console.log('DIAGNOSTIC: Response value stored:', responseValue)
+
+                const clientIdFromOrders = getValueByPath(contextData, 'orders[0].consignee.clientId')
+                const clientIdFromExtracted = getValueByPath(contextData, 'extractedData.orders[0].consignee.clientId')
+
+                console.log('DIAGNOSTIC: contextData.orders[0]?.consignee?.clientId:', clientIdFromOrders)
+                console.log('DIAGNOSTIC: contextData.extractedData?.orders?.[0]?.consignee?.clientId:', clientIdFromExtracted)
+                console.log('DIAGNOSTIC: Values Match:', clientIdFromOrders === clientIdFromExtracted)
+
+                if (contextData.extractedData && contextData.orders) {
+                  const refCheck = contextData.extractedData.orders === contextData.orders
+                  console.log('DIAGNOSTIC: Reference Check:', refCheck ? 'SAME' : 'DIFFERENT')
+                }
+              } catch (e) {
+                console.error('DIAGNOSTIC ERROR: After Update', e)
+              }
+              // === DIAGNOSTIC END: After Update ===
             } catch (extractError) {
               console.error('❌ Failed to extract data from API response:', extractError)
               console.error('❌ DEBUG - Full error:', extractError)
