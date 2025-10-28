@@ -403,31 +403,73 @@ Deno.serve(async (req: Request) => {
     console.log('🔄 DEBUG - About to enter for loop from i=0 to i=' + (steps.length - 1))
     let lastApiResponse: any = null
 
-    const getValueByPath = (obj: any, path: string): any => {
+    const getValueByPath = (obj: any, path: string, debugMode = false): any => {
       try {
+        if (debugMode) {
+          console.log(`🔍 [getValueByPath] Starting path resolution for: "${path}"`)
+          console.log(`🔍 [getValueByPath] Input object keys:`, Object.keys(obj || {}))
+        }
+
         const parts = path.split('.')
         let current = obj
 
-        for (const part of parts) {
+        for (let i = 0; i < parts.length; i++) {
+          const part = parts[i]
+          if (debugMode) {
+            console.log(`🔍 [getValueByPath] Step ${i + 1}/${parts.length}: Processing part "${part}"`)
+            console.log(`🔍 [getValueByPath] Current object type:`, typeof current)
+            if (typeof current === 'object' && current !== null) {
+              console.log(`🔍 [getValueByPath] Current object keys:`, Object.keys(current))
+            }
+          }
+
           if (part.includes('[') && part.includes(']')) {
             const arrayName = part.substring(0, part.indexOf('['))
             const arrayIndex = parseInt(part.substring(part.indexOf('[') + 1, part.indexOf(']')))
+            if (debugMode) {
+              console.log(`🔍 [getValueByPath] Array access: ${arrayName}[${arrayIndex}]`)
+              console.log(`🔍 [getValueByPath] Array exists:`, current?.[arrayName] !== undefined)
+              console.log(`🔍 [getValueByPath] Array length:`, current?.[arrayName]?.length)
+            }
             current = current[arrayName]?.[arrayIndex]
+            if (debugMode) {
+              console.log(`🔍 [getValueByPath] After array access, current:`, current)
+            }
           } else if (!isNaN(Number(part))) {
             const arrayIndex = parseInt(part)
+            if (debugMode) {
+              console.log(`🔍 [getValueByPath] Numeric index access: [${arrayIndex}]`)
+            }
             current = current?.[arrayIndex]
+            if (debugMode) {
+              console.log(`🔍 [getValueByPath] After numeric access, current:`, current)
+            }
           } else {
+            if (debugMode) {
+              console.log(`🔍 [getValueByPath] Property access: .${part}`)
+              console.log(`🔍 [getValueByPath] Property exists:`, current?.[part] !== undefined)
+            }
             current = current?.[part]
+            if (debugMode) {
+              console.log(`🔍 [getValueByPath] After property access, current:`, current)
+            }
           }
 
           if (current === undefined || current === null) {
+            if (debugMode) {
+              console.log(`🔍 [getValueByPath] Path resolution stopped at part "${part}" - value is ${current === undefined ? 'undefined' : 'null'}`)
+            }
             return null
           }
         }
 
+        if (debugMode) {
+          console.log(`🔍 [getValueByPath] ✅ Path resolution complete. Final value:`, current)
+          console.log(`🔍 [getValueByPath] Final value type:`, typeof current)
+        }
         return current
       } catch (error) {
-        console.error(`Error getting value by path "${path}":`, error)
+        console.error(`❌ [getValueByPath] Error getting value by path "${path}":`, error)
         return null
       }
     }
@@ -671,66 +713,99 @@ Deno.serve(async (req: Request) => {
           }
 
           if (config.responseDataPath && config.updateJsonPath) {
-            console.log('🔄 Extracting data from API response...')
+            console.log('🔄 === EXTRACTING DATA FROM API RESPONSE ===')
             console.log('🔍 DEBUG - responseDataPath:', JSON.stringify(config.responseDataPath))
             console.log('🔍 DEBUG - updateJsonPath:', JSON.stringify(config.updateJsonPath))
-            console.log('🔍 DEBUG - responseData:', JSON.stringify(responseData))
+            console.log('🔍 DEBUG - Full API responseData:', JSON.stringify(responseData, null, 2))
+            console.log('🔍 DEBUG - contextData BEFORE update:', JSON.stringify(contextData, null, 2))
             try {
-              let responseValue = getValueByPath(responseData, config.responseDataPath)
+              console.log('🔍 === STEP 1: EXTRACTING VALUE FROM API RESPONSE ===')
+              let responseValue = getValueByPath(responseData, config.responseDataPath, true)
 
-              console.log('📊 Extracted value:', responseValue)
+              console.log('✅ Extracted value from API response:', responseValue)
               console.log('📊 DEBUG - Extracted value type:', typeof responseValue)
+              console.log('📊 DEBUG - Extracted value stringified:', JSON.stringify(responseValue))
 
+              console.log('🔍 === STEP 2: STORING VALUE IN CONTEXT DATA ===')
               const updatePathParts = config.updateJsonPath.split('.')
               console.log('🔍 DEBUG - updatePathParts:', JSON.stringify(updatePathParts))
+              console.log('🔍 DEBUG - Will navigate through', updatePathParts.length - 1, 'intermediate parts')
               let current = contextData
 
               for (let j = 0; j < updatePathParts.length - 1; j++) {
                 const part = updatePathParts[j]
+                console.log(`🔍 DEBUG - Processing intermediate part ${j + 1}/${updatePathParts.length - 1}: "${part}"`)
 
                 if (part.includes('[') && part.includes(']')) {
                   const arrayName = part.substring(0, part.indexOf('['))
                   const arrayIndex = parseInt(part.substring(part.indexOf('[') + 1, part.indexOf(']')))
+                  console.log(`🔍 DEBUG - Array navigation: ${arrayName}[${arrayIndex}]`)
 
                   if (!current[arrayName]) {
+                    console.log(`🔍 DEBUG - Creating array: ${arrayName}`)
                     current[arrayName] = []
                   }
 
+                  console.log(`🔍 DEBUG - Current array length: ${current[arrayName].length}, need index: ${arrayIndex}`)
                   while (current[arrayName].length <= arrayIndex) {
+                    console.log(`🔍 DEBUG - Expanding array, adding object at index ${current[arrayName].length}`)
                     current[arrayName].push({})
                   }
 
                   current = current[arrayName][arrayIndex]
+                  console.log(`🔍 DEBUG - Navigated to ${arrayName}[${arrayIndex}]:`, JSON.stringify(current))
                 } else {
-                  if (!current[part]) current[part] = {}
+                  console.log(`🔍 DEBUG - Object navigation: .${part}`)
+                  if (!current[part]) {
+                    console.log(`🔍 DEBUG - Creating object property: ${part}`)
+                    current[part] = {}
+                  }
                   current = current[part]
+                  console.log(`🔍 DEBUG - Navigated to .${part}:`, JSON.stringify(current))
                 }
               }
 
               const finalPart = updatePathParts[updatePathParts.length - 1]
-              console.log('🔍 DEBUG - finalPart to store at:', finalPart)
+              console.log('🔍 === STEP 3: STORING VALUE AT FINAL LOCATION ===')
+              console.log('🔍 DEBUG - Final part to store at:', finalPart)
+              console.log('🔍 DEBUG - Current object before storage:', JSON.stringify(current))
 
               if (finalPart.includes('[') && finalPart.includes(']')) {
                 const arrayName = finalPart.substring(0, finalPart.indexOf('['))
                 const arrayIndex = parseInt(finalPart.substring(finalPart.indexOf('[') + 1, finalPart.indexOf(']')))
+                console.log(`🔍 DEBUG - Storing in array: ${arrayName}[${arrayIndex}]`)
 
                 if (!current[arrayName]) {
+                  console.log(`🔍 DEBUG - Creating final array: ${arrayName}`)
                   current[arrayName] = []
                 }
 
                 while (current[arrayName].length <= arrayIndex) {
+                  console.log(`🔍 DEBUG - Expanding final array, adding object at index ${current[arrayName].length}`)
                   current[arrayName].push({})
                 }
 
                 current[arrayName][arrayIndex] = responseValue
+                console.log(`✅ Stored value at ${arrayName}[${arrayIndex}]:`, current[arrayName][arrayIndex])
               } else {
                 current[finalPart] = responseValue
-                console.log('🔍 DEBUG - Stored value at contextData.' + finalPart + ':', current[finalPart])
+                console.log('✅ Stored value at final property "' + finalPart + '":', current[finalPart])
               }
 
+              console.log('🔍 === STEP 4: VERIFICATION ===')
               console.log('✅ Updated context data with API response')
+              console.log('🔍 DEBUG - Full contextData after update:', JSON.stringify(contextData, null, 2))
               console.log('🔍 DEBUG - contextData keys after update:', Object.keys(contextData))
-              console.log('🔍 DEBUG - contextData["billNumber"]:', contextData['billNumber'])
+              console.log('🔍 DEBUG - Verifying stored value by re-reading path:', config.updateJsonPath)
+              const verificationValue = getValueByPath(contextData, config.updateJsonPath, true)
+              console.log('🔍 DEBUG - Verification read result:', verificationValue)
+              if (verificationValue === responseValue) {
+                console.log('✅✅✅ VERIFICATION PASSED: Value successfully stored and retrieved!')
+              } else {
+                console.log('❌❌❌ VERIFICATION FAILED: Retrieved value does not match stored value!')
+                console.log('Expected:', responseValue)
+                console.log('Got:', verificationValue)
+              }
             } catch (extractError) {
               console.error('❌ Failed to extract data from API response:', extractError)
               console.error('❌ DEBUG - Full error:', extractError)
@@ -1169,19 +1244,41 @@ Deno.serve(async (req: Request) => {
           const config = step.config_json || {}
           console.log('🔧 Conditional check config:', JSON.stringify(config, null, 2))
 
+          console.log('🔍 === STEP INPUT DATA INSPECTION ===')
+          console.log('🔍 Full contextData at start of conditional check:', JSON.stringify(contextData, null, 2))
+          console.log('🔍 contextData keys:', Object.keys(contextData))
+          console.log('🔍 contextData.orders:', contextData.orders)
+          if (contextData.orders && Array.isArray(contextData.orders)) {
+            console.log('🔍 contextData.orders.length:', contextData.orders.length)
+            console.log('🔍 contextData.orders[0]:', JSON.stringify(contextData.orders[0], null, 2))
+            if (contextData.orders[0]?.consignee) {
+              console.log('🔍 contextData.orders[0].consignee:', JSON.stringify(contextData.orders[0].consignee, null, 2))
+              console.log('🔍 contextData.orders[0].consignee.clientId:', contextData.orders[0].consignee.clientId)
+            } else {
+              console.log('⚠️ contextData.orders[0].consignee is undefined')
+            }
+          } else {
+            console.log('⚠️ contextData.orders is not an array or is undefined')
+          }
+
           // Support both old and new field naming conventions for backward compatibility
           const fieldPath = config.fieldPath || config.jsonPath || config.checkField || ''
           const operator = config.operator || config.conditionType || 'exists'
           const expectedValue = config.expectedValue
           const storeResultAs = config.storeResultAs || `condition_${step.step_order}_result`
 
-          console.log('🔍 Checking field:', fieldPath)
+          console.log('🔍 === CONDITIONAL CHECK PARAMETERS ===')
+          console.log('🔍 Checking field path:', fieldPath)
           console.log('🔍 Operator:', operator)
           console.log('🔍 Expected value:', expectedValue)
 
-          const actualValue = getValueByPath(contextData, fieldPath)
-          console.log('🔍 Actual value from context:', actualValue)
-          console.log('🔍 Actual value type:', typeof actualValue)
+          console.log('🔍 === RETRIEVING ACTUAL VALUE ===')
+          const actualValue = getValueByPath(contextData, fieldPath, true)
+          console.log('✅ Actual value from context:', actualValue)
+          console.log('📊 Actual value type:', typeof actualValue)
+          console.log('📊 Actual value === null:', actualValue === null)
+          console.log('📊 Actual value === undefined:', actualValue === undefined)
+          console.log('📊 Actual value stringified:', JSON.stringify(actualValue))
 
           let conditionMet = false
 
@@ -1290,7 +1387,14 @@ Deno.serve(async (req: Request) => {
         const stepEndTime = new Date().toISOString()
         const stepDurationMs = Date.now() - stepStartMs
 
-        console.log(`✅ Step ${step.step_order} completed successfully in ${stepDurationMs}ms`)
+        console.log(`✅ === STEP ${step.step_order} COMPLETED SUCCESSFULLY IN ${stepDurationMs}ms ===`)
+        console.log('📊 === FINAL CONTEXT DATA SNAPSHOT ===')
+        console.log('📊 contextData keys:', Object.keys(contextData))
+        console.log('📊 Full contextData:', JSON.stringify(contextData, null, 2))
+        if (step.step_type === 'api_call') {
+          console.log('📊 Last API response:', JSON.stringify(lastApiResponse, null, 2))
+        }
+        console.log('📊 === END CONTEXT DATA SNAPSHOT ===')
 
         if (workflowExecutionLogId) {
           await createStepLog(
