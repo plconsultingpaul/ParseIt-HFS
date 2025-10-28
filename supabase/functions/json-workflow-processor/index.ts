@@ -395,13 +395,6 @@ Deno.serve(async (req: Request) => {
       console.log('📊 Context data created without spreading (CSV format or non-object data)')
     }
 
-    console.log('📊 === CONTEXT DATA INITIALIZATION COMPLETE ===')
-    console.log('  - pdfBase64 present:', !!contextData.pdfBase64)
-    console.log('  - pdfBase64 length:', contextData.pdfBase64?.length || 0)
-    console.log('  - pdfFilename:', contextData.pdfFilename)
-    console.log('  - originalPdfFilename:', contextData.originalPdfFilename)
-    console.log('  - formatType:', contextData.formatType)
-
     console.log('🔄 Starting workflow execution with', steps.length, 'steps...')
     let lastApiResponse: any = null
 
@@ -609,6 +602,9 @@ Deno.serve(async (req: Request) => {
 
           if (config.responseDataPath && config.updateJsonPath) {
             console.log('🔄 Extracting data from API response...')
+            console.log('🔍 DEBUG - responseDataPath:', JSON.stringify(config.responseDataPath))
+            console.log('🔍 DEBUG - updateJsonPath:', JSON.stringify(config.updateJsonPath))
+            console.log('🔍 DEBUG - responseData:', JSON.stringify(responseData))
             try {
               const pathParts = config.responseDataPath.split('.')
               let responseValue = responseData
@@ -624,8 +620,10 @@ Deno.serve(async (req: Request) => {
               }
 
               console.log('📊 Extracted value:', responseValue)
+              console.log('📊 DEBUG - Extracted value type:', typeof responseValue)
 
               const updatePathParts = config.updateJsonPath.split('.')
+              console.log('🔍 DEBUG - updatePathParts:', JSON.stringify(updatePathParts))
               let current = contextData
 
               for (let j = 0; j < updatePathParts.length - 1; j++) {
@@ -651,6 +649,7 @@ Deno.serve(async (req: Request) => {
               }
 
               const finalPart = updatePathParts[updatePathParts.length - 1]
+              console.log('🔍 DEBUG - finalPart to store at:', finalPart)
 
               if (finalPart.includes('[') && finalPart.includes(']')) {
                 const arrayName = finalPart.substring(0, finalPart.indexOf('['))
@@ -667,18 +666,32 @@ Deno.serve(async (req: Request) => {
                 current[arrayName][arrayIndex] = responseValue
               } else {
                 current[finalPart] = responseValue
+                console.log('🔍 DEBUG - Stored value at contextData.' + finalPart + ':', current[finalPart])
               }
 
               console.log('✅ Updated context data with API response')
+              console.log('🔍 DEBUG - contextData keys after update:', Object.keys(contextData))
+              console.log('🔍 DEBUG - contextData["billNumber"]:', contextData['billNumber'])
             } catch (extractError) {
               console.error('❌ Failed to extract data from API response:', extractError)
+              console.error('❌ DEBUG - Full error:', extractError)
             }
+          } else {
+            console.log('⚠️ DEBUG - Skipping data extraction:')
+            console.log('  - responseDataPath present:', !!config.responseDataPath)
+            console.log('  - updateJsonPath present:', !!config.updateJsonPath)
+            console.log('  - responseDataPath value:', config.responseDataPath)
+            console.log('  - updateJsonPath value:', config.updateJsonPath)
           }
 
         } else if (step.step_type === 'rename_file' || step.step_type === 'rename_pdf') {
           console.log('📝 === EXECUTING RENAME FILE STEP ===')
           const config = step.config_json || {}
           console.log('🔧 Rename config:', JSON.stringify(config, null, 2))
+
+          console.log('🔍 DEBUG - contextData keys at start of rename:', Object.keys(contextData))
+          console.log('🔍 DEBUG - contextData.billNumber:', contextData.billNumber)
+          console.log('🔍 DEBUG - lastApiResponse:', lastApiResponse)
 
           let template = config.filenameTemplate || config.template || 'Remit_{{pdfFilename}}'
           console.log('📄 Original template:', template)
@@ -689,14 +702,26 @@ Deno.serve(async (req: Request) => {
           while ((match = placeholderRegex.exec(template)) !== null) {
             const placeholder = match[0]
             const path = match[1]
-            const value = getValueByPath(contextData, path)
+            let value = getValueByPath(contextData, path)
 
-            console.log(`🔍 Replacing ${placeholder} with value:`, value)
+            console.log(`🔍 Replacing ${placeholder} (path: "${path}")`)
+            console.log(`🔍   - Value from contextData:`, value)
+
+            // Fallback: if value not found in contextData, try lastApiResponse
+            if ((value === null || value === undefined) && lastApiResponse) {
+              value = getValueByPath(lastApiResponse, path)
+              console.log(`🔍   - Fallback value from lastApiResponse:`, value)
+            }
 
             if (value !== null && value !== undefined) {
               template = template.replace(placeholder, String(value))
+              console.log(`🔍   - Replaced with:`, String(value))
+            } else {
+              console.log(`⚠️   - No value found for ${placeholder}`)
             }
           }
+
+          console.log('📄 Template after replacements:', template)
 
           let baseFilename = template.replace(/\.(pdf|csv|json|xml)$/i, '')
           console.log('📄 Base filename (without extension):', baseFilename)
@@ -827,10 +852,7 @@ Deno.serve(async (req: Request) => {
           let filename = contextData.renamedFilename || contextData.actualFilename || contextData.pdfFilename || 'document'
 
           if (config.uploadType === 'pdf') {
-            console.log('📄 === UPLOADING PDF FILE ===')
-            console.log('  - contextData.pdfBase64 present:', !!contextData.pdfBase64)
-            console.log('  - contextData.pdfBase64 length:', contextData.pdfBase64?.length || 0)
-            console.log('  - contextData.pdfBase64 type:', typeof contextData.pdfBase64)
+            console.log('📄 Uploading PDF file')
 
             if (contextData.renamedPdfFilename) {
               filename = contextData.renamedPdfFilename
@@ -839,15 +861,11 @@ Deno.serve(async (req: Request) => {
               filename = `${filename}.pdf`
             }
 
-            if (!contextData.pdfBase64 || contextData.pdfBase64.trim() === '') {
-              console.error('❌ PDF base64 data is missing or empty!')
-              console.error('  - contextData keys:', Object.keys(contextData))
-              console.error('  - pdfBase64 value:', contextData.pdfBase64)
-              throw new Error('PDF base64 data not available or empty')
+            if (!contextData.pdfBase64) {
+              throw new Error('PDF base64 data not available')
             }
 
             fileContent = contextData.pdfBase64
-            console.log('✅ PDF content prepared for upload, length:', fileContent.length)
 
           } else if (config.uploadType === 'json') {
             console.log('📄 Uploading JSON file')
@@ -985,38 +1003,16 @@ Deno.serve(async (req: Request) => {
           console.log('🔍 contentForSftp length:', contentForSftp ? contentForSftp.length : 0)
           console.log('🔍 contentForSftp is empty?:', !contentForSftp || contentForSftp.trim() === '')
 
-          let finalPdfPath = sftpConfig.pdf_path || '/ParseIt_PDF'
-          let finalJsonPath = sftpConfig.json_path || '/ParseIt_JSON'
-          let finalXmlPath = sftpConfig.remote_path || '/ParseIt_XML'
-          let finalCsvPath = sftpConfig.csv_path || '/ParseIt_CSV'
-
-          const pathOverride = config.sftpPathOverride || config.pathOverride
-          if (pathOverride && pathOverride.trim() !== '') {
-            console.log('🔧 === PATH OVERRIDE DETECTED ===')
-            console.log('🔧 Original paths:', { pdf: finalPdfPath, json: finalJsonPath, xml: finalXmlPath, csv: finalCsvPath })
-            console.log('🔧 Override path:', pathOverride)
-
-            finalPdfPath = pathOverride
-            finalJsonPath = pathOverride
-            finalXmlPath = pathOverride
-            finalCsvPath = pathOverride
-
-            console.log('✅ All paths overridden to:', pathOverride)
-          } else {
-            console.log('📁 Using default SFTP paths from configuration')
-            console.log('🔍 Checked for pathOverride fields:', { sftpPathOverride: config.sftpPathOverride, pathOverride: config.pathOverride })
-          }
-
           const sftpUploadPayload: any = {
             sftpConfig: {
               host: sftpConfig.host,
               port: sftpConfig.port,
               username: sftpConfig.username,
               password: sftpConfig.password,
-              xmlPath: finalXmlPath,
-              pdfPath: finalPdfPath,
-              jsonPath: finalJsonPath,
-              csvPath: finalCsvPath
+              xmlPath: sftpConfig.remote_path || '/ParseIt_XML',
+              pdfPath: sftpConfig.pdf_path || '/ParseIt_PDF',
+              jsonPath: sftpConfig.json_path || '/ParseIt_JSON',
+              csvPath: sftpConfig.csv_path || '/ParseIt_CSV'
             },
             xmlContent: contentForSftp,
             pdfBase64: contextData.pdfBase64 || '',
@@ -1032,9 +1028,6 @@ Deno.serve(async (req: Request) => {
           }
 
           console.log('📤 === SFTP UPLOAD PAYLOAD DEBUG ===')
-          console.log('📤 Payload uploadFileTypes:', uploadFileTypes)
-          console.log('📤 Payload pdfBase64 present:', !!sftpUploadPayload.pdfBase64)
-          console.log('📤 Payload pdfBase64 length:', sftpUploadPayload.pdfBase64?.length || 0)
           console.log('📤 Payload xmlContent type:', typeof sftpUploadPayload.xmlContent)
           console.log('📤 Payload xmlContent length:', sftpUploadPayload.xmlContent ? sftpUploadPayload.xmlContent.length : 0)
           console.log('📤 Payload xmlContent preview (first 300):', sftpUploadPayload.xmlContent ? sftpUploadPayload.xmlContent.substring(0, 300) : 'EMPTY')
