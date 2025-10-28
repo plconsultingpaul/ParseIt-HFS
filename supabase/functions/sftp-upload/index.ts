@@ -102,7 +102,7 @@ Deno.serve(async (req: Request) => {
       const pageCount = pdfDoc.getPageCount()
 
       console.log(`🔧 PDF received has ${pageCount} pages`)
-      console.log(`🔧 pdfUploadStrategy: ${pdfUploadStrategy || 'all_pages_in_group (default)'}`)
+      console.log(`🔧 pdfUploadStrategy: ${pdfUploadStrategy || 'all_pages_in_group (default)'})`)
 
       const supabaseUrl = Deno.env.get('SUPABASE_URL')
       const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
@@ -210,12 +210,17 @@ Deno.serve(async (req: Request) => {
           finalFilenameBase = baseFilename
         }
 
-        const actualFilename = `${finalFilenameBase}_${pageNum}.pdf`
+        const shouldAppendPageNumber = pagesToProcess.length > 1
+
+        const actualFilename = shouldAppendPageNumber
+          ? `${finalFilenameBase}_${pageNum}.pdf`
+          : `${finalFilenameBase}.pdf`
+
         const dataFilename = formatType === 'CSV'
-          ? `${finalFilenameBase}_${pageNum}.csv`
+          ? (shouldAppendPageNumber ? `${finalFilenameBase}_${pageNum}.csv` : `${finalFilenameBase}.csv`)
           : formatType === 'XML'
-          ? `${finalFilenameBase}_${pageNum}.xml`
-          : `${finalFilenameBase}_${pageNum}.json`
+          ? (shouldAppendPageNumber ? `${finalFilenameBase}_${pageNum}.xml` : `${finalFilenameBase}.xml`)
+          : (shouldAppendPageNumber ? `${finalFilenameBase}_${pageNum}.json` : `${finalFilenameBase}.json`)
 
         actualFilenames.push(actualFilename)
 
