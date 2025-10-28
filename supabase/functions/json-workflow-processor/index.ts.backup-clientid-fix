@@ -454,16 +454,7 @@ Deno.serve(async (req: Request) => {
           console.log(`🔍 [getValueByPath] Input object keys:`, Object.keys(obj || {}))
         }
 
-        // Strip 'extractedData.' prefix if present since extractedData is spread at contextData root
-        let actualPath = path
-        if (path.startsWith('extractedData.')) {
-          actualPath = path.substring('extractedData.'.length)
-          if (debugMode) {
-            console.log(`🔍 [getValueByPath] Stripped 'extractedData.' prefix. New path: "${actualPath}"`)
-          }
-        }
-
-        const parts = actualPath.split('.')
+        const parts = path.split('.')
         let current = obj
 
         for (let i = 0; i < parts.length; i++) {
@@ -831,16 +822,7 @@ Deno.serve(async (req: Request) => {
               console.log('📊 DEBUG - Extracted value stringified:', JSON.stringify(responseValue))
 
               console.log('🔍 === STEP 2: STORING VALUE IN CONTEXT DATA ===')
-              // Strip 'extractedData.' prefix if present since extractedData is spread at contextData root
-              let actualUpdatePath = config.updateJsonPath
-              if (config.updateJsonPath.startsWith('extractedData.')) {
-                actualUpdatePath = config.updateJsonPath.substring('extractedData.'.length)
-                console.log('🔍 DEBUG - Stripped "extractedData." prefix from updateJsonPath')
-                console.log('🔍 DEBUG - Original path:', config.updateJsonPath)
-                console.log('🔍 DEBUG - New path:', actualUpdatePath)
-              }
-
-              const updatePathParts = actualUpdatePath.split('.')
+              const updatePathParts = config.updateJsonPath.split('.')
               console.log('🔍 DEBUG - updatePathParts:', JSON.stringify(updatePathParts))
               console.log('🔍 DEBUG - Will navigate through', updatePathParts.length - 1, 'intermediate parts')
               let current = contextData
