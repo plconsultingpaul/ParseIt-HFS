@@ -985,16 +985,36 @@ Deno.serve(async (req: Request) => {
           console.log('🔍 contentForSftp length:', contentForSftp ? contentForSftp.length : 0)
           console.log('🔍 contentForSftp is empty?:', !contentForSftp || contentForSftp.trim() === '')
 
+          let finalPdfPath = sftpConfig.pdf_path || '/ParseIt_PDF'
+          let finalJsonPath = sftpConfig.json_path || '/ParseIt_JSON'
+          let finalXmlPath = sftpConfig.remote_path || '/ParseIt_XML'
+          let finalCsvPath = sftpConfig.csv_path || '/ParseIt_CSV'
+
+          if (config.pathOverride && config.pathOverride.trim() !== '') {
+            console.log('🔧 === PATH OVERRIDE DETECTED ===')
+            console.log('🔧 Original paths:', { pdf: finalPdfPath, json: finalJsonPath, xml: finalXmlPath, csv: finalCsvPath })
+            console.log('🔧 Override path:', config.pathOverride)
+
+            finalPdfPath = config.pathOverride
+            finalJsonPath = config.pathOverride
+            finalXmlPath = config.pathOverride
+            finalCsvPath = config.pathOverride
+
+            console.log('✅ All paths overridden to:', config.pathOverride)
+          } else {
+            console.log('📁 Using default SFTP paths from configuration')
+          }
+
           const sftpUploadPayload: any = {
             sftpConfig: {
               host: sftpConfig.host,
               port: sftpConfig.port,
               username: sftpConfig.username,
               password: sftpConfig.password,
-              xmlPath: sftpConfig.remote_path || '/ParseIt_XML',
-              pdfPath: sftpConfig.pdf_path || '/ParseIt_PDF',
-              jsonPath: sftpConfig.json_path || '/ParseIt_JSON',
-              csvPath: sftpConfig.csv_path || '/ParseIt_CSV'
+              xmlPath: finalXmlPath,
+              pdfPath: finalPdfPath,
+              jsonPath: finalJsonPath,
+              csvPath: finalCsvPath
             },
             xmlContent: contentForSftp,
             pdfBase64: contextData.pdfBase64 || '',
