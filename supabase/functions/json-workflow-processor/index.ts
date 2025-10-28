@@ -841,7 +841,6 @@ Deno.serve(async (req: Request) => {
             console.log(`🔍 Replacing ${placeholder} (path: "${path}")`)
             console.log(`🔍   - Value from contextData:`, value)
 
-            // Fallback: if value not found in contextData, try lastApiResponse
             if ((value === null || value === undefined) && lastApiResponse) {
               value = getValueByPath(lastApiResponse, path)
               console.log(`🔍   - Fallback value from lastApiResponse:`, value)
@@ -1028,7 +1027,7 @@ Deno.serve(async (req: Request) => {
             fileContent = Buffer.from(JSON.stringify(dataToUpload, null, 2)).toString('base64')
 
           } else if (config.uploadType === 'csv') {
-            console.log('📄 === UPLOADING CSV FILE ===')
+            console.log('�� === UPLOADING CSV FILE ===')
 
             if (contextData.renamedCsvFilename) {
               filename = contextData.renamedCsvFilename
@@ -1261,7 +1260,6 @@ Deno.serve(async (req: Request) => {
             console.log('⚠️ contextData.orders is not an array or is undefined')
           }
 
-          // Support both old and new field naming conventions for backward compatibility
           const fieldPath = config.fieldPath || config.jsonPath || config.checkField || ''
           const operator = config.operator || config.conditionType || 'exists'
           const expectedValue = config.expectedValue
@@ -1370,7 +1368,6 @@ Deno.serve(async (req: Request) => {
           contextData[storeResultAs] = conditionMet
           console.log(`✅ Conditional check result stored as "${storeResultAs}": ${conditionMet}`)
 
-          // Determine which next step should be executed based on condition result
           console.log('🔍 === ROUTING DECISION LOGIC ===')
           console.log('🔍 next_step_on_success_id:', step.next_step_on_success_id)
           console.log('🔍 next_step_on_failure_id:', step.next_step_on_failure_id)
@@ -1382,7 +1379,6 @@ Deno.serve(async (req: Request) => {
           let selectedNextStepName = 'Sequential (next in order)'
           let selectedNextStepOrder = step.step_order + 1
 
-          // Look up the success step details
           if (step.next_step_on_success_id) {
             const successStep = steps.find(s => s.id === step.next_step_on_success_id)
             if (successStep) {
@@ -1394,7 +1390,6 @@ Deno.serve(async (req: Request) => {
             }
           }
 
-          // Look up the failure step details
           if (step.next_step_on_failure_id) {
             const failureStep = steps.find(s => s.id === step.next_step_on_failure_id)
             if (failureStep) {
@@ -1406,7 +1401,6 @@ Deno.serve(async (req: Request) => {
             }
           }
 
-          // Determine which step SHOULD execute based on condition result
           if (conditionMet) {
             if (step.next_step_on_success_id) {
               selectedNextStepName = nextStepOnSuccessName
@@ -1429,11 +1423,6 @@ Deno.serve(async (req: Request) => {
           console.log('🔍 Next Step on Failure:', nextStepOnFailureName)
           console.log('🔍 Selected Next Step:', selectedNextStepName)
 
-          if (selectedNextStepOrder && selectedNextStepOrder !== step.step_order + 1) {
-            console.log(`⚠️ WARNING: Configured routing would jump to Step ${selectedNextStepOrder}, but workflow will continue sequentially to Step ${step.step_order + 1}`)
-            console.log(`⚠️ NOTE: Current workflow processor does not support conditional routing - steps execute sequentially regardless of condition results`)
-          }
-
           stepOutputData = {
             conditionMet,
             fieldPath,
@@ -1448,6 +1437,18 @@ Deno.serve(async (req: Request) => {
             selectedNextStep: selectedNextStepName,
             selectedNextStepOrder: selectedNextStepOrder,
             routingDecision: routingDecision
+          }
+
+          if (selectedNextStepOrder && selectedNextStepOrder !== step.step_order + 1) {
+            console.log(`🔀 CONDITIONAL ROUTING: Jumping from Step ${step.step_order} to Step ${selectedNextStepOrder}`)
+
+            const targetStepIndex = steps.findIndex(s => s.step_order === selectedNextStepOrder)
+            if (targetStepIndex !== -1) {
+              console.log(`✅ Target step found at index ${targetStepIndex}, adjusting loop counter`)
+              i = targetStepIndex - 1
+            } else {
+              console.log(`❌ Target step ${selectedNextStepOrder} not found, continuing sequentially`)
+            }
           }
 
         } else {
