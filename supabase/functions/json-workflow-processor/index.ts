@@ -370,6 +370,10 @@ Deno.serve(async (req: Request) => {
 
     const steps: WorkflowStep[] = await stepsResponse.json()
     console.log('📊 Found', steps.length, 'workflow steps')
+    console.log('📊 DEBUG - All steps loaded:')
+    steps.forEach((step, index) => {
+      console.log(`  [${index}] Step ${step.step_order}: ${step.step_name} (type: ${step.step_type}, id: ${step.id})`)
+    })
 
     if (steps.length === 0) {
       throw new Error('No steps found in workflow')
@@ -396,6 +400,7 @@ Deno.serve(async (req: Request) => {
     }
 
     console.log('🔄 Starting workflow execution with', steps.length, 'steps...')
+    console.log('🔄 DEBUG - About to enter for loop from i=0 to i=' + (steps.length - 1))
     let lastApiResponse: any = null
 
     const getValueByPath = (obj: any, path: string): any => {
@@ -428,12 +433,16 @@ Deno.serve(async (req: Request) => {
     }
 
     for (let i = 0; i < steps.length; i++) {
+      console.log(`\n🔄 DEBUG - Loop iteration i=${i}, processing step at index ${i}`)
       const step = steps[i]
+      console.log(`🔄 DEBUG - Retrieved step object: order=${step.step_order}, name=${step.step_name}, type=${step.step_type}`)
+
       const stepStartTime = new Date().toISOString()
       const stepStartMs = Date.now()
 
       console.log(`🔄 === EXECUTING STEP ${step.step_order}: ${step.step_name} ===`)
       console.log('🔧 Step type:', step.step_type)
+      console.log('🔧 Step ID:', step.id)
 
       try {
         await fetch(`${supabaseUrl}/rest/v1/workflow_execution_logs?id=eq.${workflowExecutionLogId}`, {
@@ -1163,10 +1172,14 @@ Deno.serve(async (req: Request) => {
         const error: any = new Error(stepError.message)
         error.workflowExecutionLogId = workflowExecutionLogId
         error.extractionLogId = extractionLogId
+        console.log(`🚫 DEBUG - Step ${step.step_order} failed, throwing error and stopping workflow`)
         throw error
       }
+
+      console.log(`✅ DEBUG - Completed iteration i=${i} for step ${step.step_order}. Moving to next iteration.`)
     }
 
+    console.log(`✅ DEBUG - Exited for loop. Total iterations should have been: ${steps.length}`)
     console.log('✅ === WORKFLOW EXECUTION COMPLETED ===')
     if (workflowExecutionLogId) {
       try {
