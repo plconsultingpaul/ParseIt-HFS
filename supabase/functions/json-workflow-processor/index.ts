@@ -990,19 +990,21 @@ Deno.serve(async (req: Request) => {
           let finalXmlPath = sftpConfig.remote_path || '/ParseIt_XML'
           let finalCsvPath = sftpConfig.csv_path || '/ParseIt_CSV'
 
-          if (config.pathOverride && config.pathOverride.trim() !== '') {
+          const pathOverride = config.sftpPathOverride || config.pathOverride
+          if (pathOverride && pathOverride.trim() !== '') {
             console.log('🔧 === PATH OVERRIDE DETECTED ===')
             console.log('🔧 Original paths:', { pdf: finalPdfPath, json: finalJsonPath, xml: finalXmlPath, csv: finalCsvPath })
-            console.log('🔧 Override path:', config.pathOverride)
+            console.log('🔧 Override path:', pathOverride)
 
-            finalPdfPath = config.pathOverride
-            finalJsonPath = config.pathOverride
-            finalXmlPath = config.pathOverride
-            finalCsvPath = config.pathOverride
+            finalPdfPath = pathOverride
+            finalJsonPath = pathOverride
+            finalXmlPath = pathOverride
+            finalCsvPath = pathOverride
 
-            console.log('✅ All paths overridden to:', config.pathOverride)
+            console.log('✅ All paths overridden to:', pathOverride)
           } else {
             console.log('📁 Using default SFTP paths from configuration')
+            console.log('🔍 Checked for pathOverride fields:', { sftpPathOverride: config.sftpPathOverride, pathOverride: config.pathOverride })
           }
 
           const sftpUploadPayload: any = {
