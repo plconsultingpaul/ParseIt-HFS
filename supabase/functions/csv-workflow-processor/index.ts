@@ -664,18 +664,7 @@ Deno.serve(async (req: Request) => {
           if (config.responseDataPath && config.updateJsonPath) {
             console.log('🔄 Extracting data from API response...')
             try {
-              const pathParts = config.responseDataPath.split('.')
-              let responseValue = responseData
-
-              for (const part of pathParts) {
-                if (part.includes('[') && part.includes(']')) {
-                  const arrayName = part.substring(0, part.indexOf('['))
-                  const arrayIndex = parseInt(part.substring(part.indexOf('[') + 1, part.indexOf(']')))
-                  responseValue = responseValue[arrayName][arrayIndex]
-                } else {
-                  responseValue = responseValue[part]
-                }
-              }
+              let responseValue = getValueByPath(responseData, config.responseDataPath)
 
               console.log('📊 Extracted value:', responseValue)
 
