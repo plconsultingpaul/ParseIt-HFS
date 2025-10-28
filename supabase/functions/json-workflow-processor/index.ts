@@ -320,13 +320,18 @@ Deno.serve(async (req: Request) => {
       }
     } else if (requestData.extractedData) {
       console.log('📊 Processing extracted data from request...')
+      console.log('📊 Format type:', formatType)
       try {
         if (typeof requestData.extractedData === 'string') {
           if (requestData.extractedData.trim() === '') {
             console.log('📊 Extracted data is empty string')
             extractedData = {}
+          } else if (formatType === 'CSV') {
+            console.log('📊 CSV format detected - keeping data as string')
+            extractedData = requestData.extractedData
+            console.log('✅ CSV data preserved as string')
           } else {
-            console.log('📊 Parsing extracted data string...')
+            console.log('📊 Parsing extracted data string as JSON...')
             extractedData = JSON.parse(requestData.extractedData)
             console.log('✅ Parsed extracted data from request')
           }
@@ -336,14 +341,23 @@ Deno.serve(async (req: Request) => {
         }
       } catch (parseError) {
         console.error('❌ Failed to parse extracted data:', parseError)
-        extractedData = {}
+        if (formatType === 'CSV' && typeof requestData.extractedData === 'string') {
+          console.log('📊 Parse failed but formatType is CSV - using raw string')
+          extractedData = requestData.extractedData
+        } else {
+          extractedData = {}
+        }
       }
     } else {
       console.log('📊 No extracted data provided, using empty object')
       extractedData = {}
     }
 
-    console.log('📊 Final extracted data keys:', Object.keys(extractedData))
+    if (typeof extractedData === 'string') {
+      console.log('📊 Final extracted data: CSV string with length', extractedData.length)
+    } else {
+      console.log('📊 Final extracted data keys:', Object.keys(extractedData))
+    }
 
     console.log('📋 Fetching workflow steps...')
     const stepsResponse = await fetch(`${supabaseUrl}/rest/v1/workflow_steps?workflow_id=eq.${requestData.workflowId}&order=step_order.asc`, {
@@ -361,16 +375,32 @@ Deno.serve(async (req: Request) => {
       throw new Error('No steps found in workflow')
     }
 
-    let contextData = {
+    let contextData: any = {
       extractedData: extractedData,
       originalExtractedData: requestData.extractedData,
       formatType: formatType,
       pdfFilename: requestData.pdfFilename,
       originalPdfFilename: requestData.originalPdfFilename,
       pdfStoragePath: requestData.pdfStoragePath,
-      pdfBase64: requestData.pdfBase64,
-      ...extractedData
+      pdfBase64: requestData.pdfBase64
     }
+
+    if (formatType !== 'CSV' && typeof extractedData === 'object' && extractedData !== null) {
+      contextData = {
+        ...contextData,
+        ...extractedData
+      }
+      console.log('📊 Context data merged with extracted data object')
+    } else {
+      console.log('📊 Context data created without spreading (CSV format or non-object data)')
+    }
+
+    console.log('📊 === CONTEXT DATA INITIALIZATION COMPLETE ===')
+    console.log('  - pdfBase64 present:', !!contextData.pdfBase64)
+    console.log('  - pdfBase64 length:', contextData.pdfBase64?.length || 0)
+    console.log('  - pdfFilename:', contextData.pdfFilename)
+    console.log('  - originalPdfFilename:', contextData.originalPdfFilename)
+    console.log('  - formatType:', contextData.formatType)
 
     console.log('🔄 Starting workflow execution with', steps.length, 'steps...')
     let lastApiResponse: any = null
@@ -404,38 +434,8 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Create a lookup map for steps by ID for efficient routing
-    const stepMap = new Map<string, WorkflowStep>()
-    steps.forEach(step => {
-      stepMap.set(step.id, step)
-    })
-
-    // Start with the first step (step_order = 1)
-    let currentStep: WorkflowStep | undefined = steps.find(s => s.step_order === 1)
-
-    if (!currentStep) {
-      throw new Error('No starting step found (step_order = 1)')
-    }
-
-    console.log('🔄 Starting workflow execution at step:', currentStep.step_name)
-
-    // Track visited steps to prevent infinite loops
-    const visitedSteps = new Set<string>()
-    const maxStepsToExecute = steps.length * 2 // Safety limit
-
-    let stepsExecuted = 0
-
-    while (currentStep && stepsExecuted < maxStepsToExecute) {
-      stepsExecuted++
-
-      // Check for infinite loop
-      if (visitedSteps.has(currentStep.id)) {
-        console.error('❌ Infinite loop detected at step:', currentStep.step_name)
-        throw new Error(`Infinite loop detected at step: ${currentStep.step_name}`)
-      }
-      visitedSteps.add(currentStep.id)
-
-      const step = currentStep
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i]
       const stepStartTime = new Date().toISOString()
       const stepStartMs = Date.now()
 
@@ -680,11 +680,9 @@ Deno.serve(async (req: Request) => {
           const config = step.config_json || {}
           console.log('🔧 Rename config:', JSON.stringify(config, null, 2))
 
-          // Support both 'template' (legacy) and 'filenameTemplate' (new)
           let template = config.filenameTemplate || config.template || 'Remit_{{pdfFilename}}'
           console.log('📄 Original template:', template)
 
-          // Replace placeholders in the template
           const placeholderRegex = /\{\{([^}]+)\}\}/g
           let match
 
@@ -700,11 +698,49 @@ Deno.serve(async (req: Request) => {
             }
           }
 
-          // Remove any existing file extensions from the template
-          const baseFilename = template.replace(/\.(pdf|csv|json|xml)$/i, '')
+          let baseFilename = template.replace(/\.(pdf|csv|json|xml)$/i, '')
           console.log('📄 Base filename (without extension):', baseFilename)
 
-          // Determine which file types to rename based on config
+          const appendTimestamp = config.appendTimestamp === true
+          const timestampFormat = config.timestampFormat || 'YYYYMMDD'
+
+          console.log('⏰ Append timestamp:', appendTimestamp)
+          if (appendTimestamp) {
+            console.log('⏰ Timestamp format:', timestampFormat)
+          }
+
+          let timestamp = ''
+          if (appendTimestamp) {
+            const now = new Date()
+            const year = now.getFullYear()
+            const month = String(now.getMonth() + 1).padStart(2, '0')
+            const day = String(now.getDate()).padStart(2, '0')
+            const hours = String(now.getHours()).padStart(2, '0')
+            const minutes = String(now.getMinutes()).padStart(2, '0')
+            const seconds = String(now.getSeconds()).padStart(2, '0')
+
+            switch (timestampFormat) {
+              case 'YYYYMMDD':
+                timestamp = `${year}${month}${day}`
+                break
+              case 'YYYY-MM-DD':
+                timestamp = `${year}-${month}-${day}`
+                break
+              case 'YYYYMMDD_HHMMSS':
+                timestamp = `${year}${month}${day}_${hours}${minutes}${seconds}`
+                break
+              case 'YYYY-MM-DD_HH-MM-SS':
+                timestamp = `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`
+                break
+              default:
+                timestamp = `${year}${month}${day}`
+            }
+
+            console.log('⏰ Generated timestamp:', timestamp)
+            baseFilename = `${baseFilename}_${timestamp}`
+            console.log('📄 Base filename with timestamp:', baseFilename)
+          }
+
           const renamePdf = config.renamePdf === true
           const renameCsv = config.renameCsv === true
           const renameJson = config.renameJson === true
@@ -714,7 +750,6 @@ Deno.serve(async (req: Request) => {
 
           const renamedFilenames: any = {}
 
-          // Generate renamed filenames for each selected file type
           if (renamePdf) {
             contextData.renamedPdfFilename = `${baseFilename}.pdf`
             renamedFilenames.pdf = contextData.renamedPdfFilename
@@ -739,23 +774,21 @@ Deno.serve(async (req: Request) => {
             console.log('✅ Renamed XML filename:', contextData.renamedXmlFilename)
           }
 
-          // For backward compatibility, set renamedFilename and actualFilename to the first enabled type
-          // Priority: JSON > XML > CSV > PDF (based on formatType)
           let primaryFilename = baseFilename
-          if (formatType === 'JSON' && renameJson) {
+          if (formatType === 'CSV' && renameCsv) {
+            primaryFilename = contextData.renamedCsvFilename
+          } else if (formatType === 'JSON' && renameJson) {
             primaryFilename = contextData.renamedJsonFilename
           } else if (formatType === 'XML' && renameXml) {
             primaryFilename = contextData.renamedXmlFilename
-          } else if (formatType === 'CSV' && renameCsv) {
-            primaryFilename = contextData.renamedCsvFilename
           } else if (renamePdf) {
             primaryFilename = contextData.renamedPdfFilename
+          } else if (renameCsv) {
+            primaryFilename = contextData.renamedCsvFilename
           } else if (renameJson) {
             primaryFilename = contextData.renamedJsonFilename
           } else if (renameXml) {
             primaryFilename = contextData.renamedXmlFilename
-          } else if (renameCsv) {
-            primaryFilename = contextData.renamedCsvFilename
           }
 
           contextData.renamedFilename = primaryFilename
@@ -794,7 +827,10 @@ Deno.serve(async (req: Request) => {
           let filename = contextData.renamedFilename || contextData.actualFilename || contextData.pdfFilename || 'document'
 
           if (config.uploadType === 'pdf') {
-            console.log('📄 Uploading PDF file')
+            console.log('📄 === UPLOADING PDF FILE ===')
+            console.log('  - contextData.pdfBase64 present:', !!contextData.pdfBase64)
+            console.log('  - contextData.pdfBase64 length:', contextData.pdfBase64?.length || 0)
+            console.log('  - contextData.pdfBase64 type:', typeof contextData.pdfBase64)
 
             if (contextData.renamedPdfFilename) {
               filename = contextData.renamedPdfFilename
@@ -803,11 +839,15 @@ Deno.serve(async (req: Request) => {
               filename = `${filename}.pdf`
             }
 
-            if (!contextData.pdfBase64) {
-              throw new Error('PDF base64 data not available')
+            if (!contextData.pdfBase64 || contextData.pdfBase64.trim() === '') {
+              console.error('❌ PDF base64 data is missing or empty!')
+              console.error('  - contextData keys:', Object.keys(contextData))
+              console.error('  - pdfBase64 value:', contextData.pdfBase64)
+              throw new Error('PDF base64 data not available or empty')
             }
 
             fileContent = contextData.pdfBase64
+            console.log('✅ PDF content prepared for upload, length:', fileContent.length)
 
           } else if (config.uploadType === 'json') {
             console.log('📄 Uploading JSON file')
@@ -836,7 +876,7 @@ Deno.serve(async (req: Request) => {
             fileContent = Buffer.from(JSON.stringify(dataToUpload, null, 2)).toString('base64')
 
           } else if (config.uploadType === 'csv') {
-            console.log('📄 Uploading CSV file')
+            console.log('📄 === UPLOADING CSV FILE ===')
 
             if (contextData.renamedCsvFilename) {
               filename = contextData.renamedCsvFilename
@@ -845,11 +885,36 @@ Deno.serve(async (req: Request) => {
               filename = filename.replace(/\.(pdf|json|xml|csv)$/i, '') + '.csv'
             }
 
+            console.log('📊 Searching for CSV data in contextData...')
+            console.log('📊 contextData.extractedData type:', typeof contextData.extractedData)
+            console.log('📊 contextData.originalExtractedData type:', typeof contextData.originalExtractedData)
+
+            let csvData: string | null = null
+
             if (contextData.extractedData && typeof contextData.extractedData === 'string') {
-              fileContent = contextData.extractedData
+              console.log('✅ Found CSV data in extractedData (string)')
+              csvData = contextData.extractedData
+              console.log('📊 CSV data length:', csvData.length)
+              console.log('📊 CSV data preview (first 200 chars):', csvData.substring(0, 200))
+              console.log('📊 CSV data preview (last 100 chars):', csvData.substring(Math.max(0, csvData.length - 100)))
+            } else if (contextData.originalExtractedData && typeof contextData.originalExtractedData === 'string') {
+              console.log('✅ Found CSV data in originalExtractedData (string)')
+              csvData = contextData.originalExtractedData
+              console.log('📊 CSV data length:', csvData.length)
+              console.log('📊 CSV data preview (first 200 chars):', csvData.substring(0, 200))
+              console.log('📊 CSV data preview (last 100 chars):', csvData.substring(Math.max(0, csvData.length - 100)))
             } else {
+              console.error('❌ CSV data not found')
+              console.error('- extractedData type:', typeof contextData.extractedData)
+              console.error('- originalExtractedData type:', typeof contextData.originalExtractedData)
+              console.error('- extractedData value:', contextData.extractedData)
+              console.error('- originalExtractedData value:', contextData.originalExtractedData)
               throw new Error('CSV data not available or not in string format')
             }
+
+            fileContent = csvData
+            console.log('✅ CSV data prepared for upload, length:', fileContent.length)
+            console.log('✅ CSV fileContent preview (first 200 chars):', fileContent.substring(0, 200))
           }
 
           console.log('📤 Calling SFTP upload function...')
@@ -920,49 +985,16 @@ Deno.serve(async (req: Request) => {
           console.log('🔍 contentForSftp length:', contentForSftp ? contentForSftp.length : 0)
           console.log('🔍 contentForSftp is empty?:', !contentForSftp || contentForSftp.trim() === '')
 
-          // Prepare default paths from SFTP configuration
-          let xmlPath = sftpConfig.remote_path || '/ParseIt_XML'
-          let pdfPath = sftpConfig.pdf_path || '/ParseIt_PDF'
-          let jsonPath = sftpConfig.json_path || '/ParseIt_JSON'
-          let csvPath = sftpConfig.csv_path || '/ParseIt_CSV'
-
-          // Apply SFTP path override if specified
-          if (config.sftpPathOverride) {
-            console.log('🔧 SFTP Path Override detected:', config.sftpPathOverride)
-            console.log('🔧 Upload Type:', config.uploadType)
-
-            // Apply override to the specific upload type
-            if (config.uploadType === 'pdf') {
-              pdfPath = config.sftpPathOverride
-              console.log('📂 PDF path overridden to:', pdfPath)
-            } else if (config.uploadType === 'xml') {
-              xmlPath = config.sftpPathOverride
-              console.log('📂 XML path overridden to:', xmlPath)
-            } else if (config.uploadType === 'json') {
-              jsonPath = config.sftpPathOverride
-              console.log('📂 JSON path overridden to:', jsonPath)
-            } else if (config.uploadType === 'csv') {
-              csvPath = config.sftpPathOverride
-              console.log('📂 CSV path overridden to:', csvPath)
-            }
-          }
-
-          console.log('📂 Final SFTP paths:')
-          console.log('  - XML:', xmlPath)
-          console.log('  - PDF:', pdfPath)
-          console.log('  - JSON:', jsonPath)
-          console.log('  - CSV:', csvPath)
-
           const sftpUploadPayload: any = {
             sftpConfig: {
               host: sftpConfig.host,
               port: sftpConfig.port,
               username: sftpConfig.username,
               password: sftpConfig.password,
-              xmlPath: xmlPath,
-              pdfPath: pdfPath,
-              jsonPath: jsonPath,
-              csvPath: csvPath
+              xmlPath: sftpConfig.remote_path || '/ParseIt_XML',
+              pdfPath: sftpConfig.pdf_path || '/ParseIt_PDF',
+              jsonPath: sftpConfig.json_path || '/ParseIt_JSON',
+              csvPath: sftpConfig.csv_path || '/ParseIt_CSV'
             },
             xmlContent: contentForSftp,
             pdfBase64: contextData.pdfBase64 || '',
@@ -978,6 +1010,9 @@ Deno.serve(async (req: Request) => {
           }
 
           console.log('📤 === SFTP UPLOAD PAYLOAD DEBUG ===')
+          console.log('📤 Payload uploadFileTypes:', uploadFileTypes)
+          console.log('📤 Payload pdfBase64 present:', !!sftpUploadPayload.pdfBase64)
+          console.log('📤 Payload pdfBase64 length:', sftpUploadPayload.pdfBase64?.length || 0)
           console.log('📤 Payload xmlContent type:', typeof sftpUploadPayload.xmlContent)
           console.log('📤 Payload xmlContent length:', sftpUploadPayload.xmlContent ? sftpUploadPayload.xmlContent.length : 0)
           console.log('📤 Payload xmlContent preview (first 300):', sftpUploadPayload.xmlContent ? sftpUploadPayload.xmlContent.substring(0, 300) : 'EMPTY')
@@ -1050,98 +1085,6 @@ Deno.serve(async (req: Request) => {
             message: 'Email action executed (actual sending not implemented in this version)'
           }
 
-        } else if (step.step_type === 'conditional_check') {
-          console.log('🔀 === EXECUTING CONDITIONAL CHECK STEP ===')
-          const config = step.config_json || {}
-          console.log('🔧 Conditional check config:', JSON.stringify(config, null, 2))
-
-          const jsonPath = config.jsonPath || ''
-          const conditionType = config.conditionType || 'equals'
-          const expectedValue = config.expectedValue || ''
-
-          console.log('📊 JSON Path to check:', jsonPath)
-          console.log('📊 Condition Type:', conditionType)
-          console.log('📊 Expected Value:', expectedValue)
-
-          // Extract the value from contextData using the JSON path
-          const actualValue = getValueByPath(contextData, jsonPath)
-          console.log('📊 Actual Value extracted from context:', actualValue)
-          console.log('📊 Actual Value type:', typeof actualValue)
-
-          // Evaluate the condition based on conditionType
-          let conditionPassed = false
-
-          switch (conditionType) {
-            case 'is_null':
-              conditionPassed = actualValue === null || actualValue === undefined
-              console.log('🔍 Checking if value is null:', conditionPassed)
-              break
-
-            case 'is_not_null':
-              conditionPassed = actualValue !== null && actualValue !== undefined
-              console.log('🔍 Checking if value is not null:', conditionPassed)
-              break
-
-            case 'equals':
-              conditionPassed = String(actualValue) === String(expectedValue)
-              console.log(`🔍 Checking if "${actualValue}" equals "${expectedValue}":`, conditionPassed)
-              break
-
-            case 'contains':
-              if (actualValue !== null && actualValue !== undefined) {
-                conditionPassed = String(actualValue).includes(String(expectedValue))
-                console.log(`🔍 Checking if "${actualValue}" contains "${expectedValue}":`, conditionPassed)
-              } else {
-                conditionPassed = false
-                console.log('🔍 Cannot check "contains" on null/undefined value')
-              }
-              break
-
-            case 'greater_than':
-              const numActual = Number(actualValue)
-              const numExpected = Number(expectedValue)
-              if (!isNaN(numActual) && !isNaN(numExpected)) {
-                conditionPassed = numActual > numExpected
-                console.log(`🔍 Checking if ${numActual} > ${numExpected}:`, conditionPassed)
-              } else {
-                conditionPassed = false
-                console.log('🔍 Cannot perform numeric comparison on non-numeric values')
-              }
-              break
-
-            case 'less_than':
-              const numActualLt = Number(actualValue)
-              const numExpectedLt = Number(expectedValue)
-              if (!isNaN(numActualLt) && !isNaN(numExpectedLt)) {
-                conditionPassed = numActualLt < numExpectedLt
-                console.log(`🔍 Checking if ${numActualLt} < ${numExpectedLt}:`, conditionPassed)
-              } else {
-                conditionPassed = false
-                console.log('🔍 Cannot perform numeric comparison on non-numeric values')
-              }
-              break
-
-            default:
-              console.warn(`⚠️ Unknown condition type: ${conditionType}, defaulting to false`)
-              conditionPassed = false
-          }
-
-          console.log('✅ Condition evaluation result:', conditionPassed ? 'PASSED' : 'FAILED')
-
-          stepOutputData = {
-            jsonPath,
-            conditionType,
-            expectedValue,
-            actualValue,
-            conditionPassed,
-            result: conditionPassed ? 'success' : 'failure'
-          }
-
-          // If the condition failed, throw an error to trigger the failure path
-          if (!conditionPassed) {
-            throw new Error(`Conditional check failed: ${jsonPath} (value: ${actualValue}) ${conditionType} ${expectedValue}`)
-          }
-
         } else {
           console.log(`⚠️ Unknown step type: ${step.step_type}`)
           stepOutputData = { skipped: true, reason: 'Step type not implemented' }
@@ -1169,20 +1112,6 @@ Deno.serve(async (req: Request) => {
           )
         }
 
-        // Determine next step based on success routing
-        if (step.next_step_on_success_id) {
-          console.log('🔀 Routing to next step on SUCCESS:', step.next_step_on_success_id)
-          currentStep = stepMap.get(step.next_step_on_success_id)
-          if (!currentStep) {
-            console.error('❌ Next step on success not found:', step.next_step_on_success_id)
-            throw new Error(`Next step on success not found: ${step.next_step_on_success_id}`)
-          }
-          console.log('✅ Next step:', currentStep.step_name)
-        } else {
-          console.log('✅ No next step defined - workflow complete')
-          currentStep = undefined
-        }
-
       } catch (stepError) {
         const stepEndTime = new Date().toISOString()
         const stepDurationMs = Date.now() - stepStartMs
@@ -1202,53 +1131,24 @@ Deno.serve(async (req: Request) => {
             stepDurationMs,
             stepError.message,
             { config: step.config_json },
-            stepOutputData
+            null
           )
+
+          try {
+            await fetch(`${supabaseUrl}/rest/v1/workflow_execution_logs?id=eq.${workflowExecutionLogId}`, {
+              method: 'PATCH',
+              headers: { 'Authorization': `Bearer ${supabaseServiceKey}`, 'Content-Type': 'application/json', 'apikey': supabaseServiceKey },
+              body: JSON.stringify({ status: 'failed', error_message: stepError.message, context_data: contextData, updated_at: new Date().toISOString() })
+            })
+          } catch (updateError) {
+            console.error('❌ Failed to update workflow log:', updateError)
+          }
         }
 
-        // Determine next step based on failure routing
-        if (step.next_step_on_failure_id) {
-          console.log('🔀 Routing to next step on FAILURE:', step.next_step_on_failure_id)
-          currentStep = stepMap.get(step.next_step_on_failure_id)
-          if (!currentStep) {
-            console.error('❌ Next step on failure not found:', step.next_step_on_failure_id)
-            // If failure path is not found, throw error to stop workflow
-            if (workflowExecutionLogId) {
-              try {
-                await fetch(`${supabaseUrl}/rest/v1/workflow_execution_logs?id=eq.${workflowExecutionLogId}`, {
-                  method: 'PATCH',
-                  headers: { 'Authorization': `Bearer ${supabaseServiceKey}`, 'Content-Type': 'application/json', 'apikey': supabaseServiceKey },
-                  body: JSON.stringify({ status: 'failed', error_message: stepError.message, context_data: contextData, updated_at: new Date().toISOString() })
-                })
-              } catch (updateError) {
-                console.error('❌ Failed to update workflow log:', updateError)
-              }
-            }
-            const error: any = new Error(stepError.message)
-            error.workflowExecutionLogId = workflowExecutionLogId
-            error.extractionLogId = extractionLogId
-            throw error
-          }
-          console.log('✅ Next step (failure path):', currentStep.step_name)
-        } else {
-          // No failure path defined - stop workflow execution
-          console.log('❌ No failure path defined - stopping workflow')
-          if (workflowExecutionLogId) {
-            try {
-              await fetch(`${supabaseUrl}/rest/v1/workflow_execution_logs?id=eq.${workflowExecutionLogId}`, {
-                method: 'PATCH',
-                headers: { 'Authorization': `Bearer ${supabaseServiceKey}`, 'Content-Type': 'application/json', 'apikey': supabaseServiceKey },
-                body: JSON.stringify({ status: 'failed', error_message: stepError.message, context_data: contextData, updated_at: new Date().toISOString() })
-              })
-            } catch (updateError) {
-              console.error('❌ Failed to update workflow log:', updateError)
-            }
-          }
-          const error: any = new Error(stepError.message)
-          error.workflowExecutionLogId = workflowExecutionLogId
-          error.extractionLogId = extractionLogId
-          throw error
-        }
+        const error: any = new Error(stepError.message)
+        error.workflowExecutionLogId = workflowExecutionLogId
+        error.extractionLogId = extractionLogId
+        throw error
       }
     }
 
@@ -1296,6 +1196,6 @@ Deno.serve(async (req: Request) => {
     return new Response(
       JSON.stringify({ error: "Workflow execution failed", details: error instanceof Error ? error.message : "Unknown error", workflowExecutionLogId: workflowExecutionLogId, extractionLogId: extractionLogId }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    )
+    )  
   }
 })
