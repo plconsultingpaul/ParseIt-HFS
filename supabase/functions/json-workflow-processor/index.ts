@@ -1169,8 +1169,9 @@ Deno.serve(async (req: Request) => {
           const config = step.config_json || {}
           console.log('🔧 Conditional check config:', JSON.stringify(config, null, 2))
 
-          const fieldPath = config.fieldPath || config.checkField || ''
-          const operator = config.operator || 'exists'
+          // Support both old and new field naming conventions for backward compatibility
+          const fieldPath = config.fieldPath || config.jsonPath || config.checkField || ''
+          const operator = config.operator || config.conditionType || 'exists'
           const expectedValue = config.expectedValue
           const storeResultAs = config.storeResultAs || `condition_${step.step_order}_result`
 
@@ -1188,6 +1189,18 @@ Deno.serve(async (req: Request) => {
             case 'exists':
               conditionMet = actualValue !== null && actualValue !== undefined && actualValue !== ''
               console.log(`🔍 Condition (exists): ${conditionMet}`)
+              break
+
+            case 'is_not_null':
+            case 'isNotNull':
+              conditionMet = actualValue !== null && actualValue !== undefined
+              console.log(`🔍 Condition (is_not_null): ${conditionMet}`)
+              break
+
+            case 'is_null':
+            case 'isNull':
+              conditionMet = actualValue === null || actualValue === undefined
+              console.log(`🔍 Condition (is_null): ${conditionMet}`)
               break
 
             case 'not_exists':

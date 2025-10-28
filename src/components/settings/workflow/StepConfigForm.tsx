@@ -130,9 +130,9 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
         // SFTP Upload configuration
         setSftpPath(config.sftpPath || config.sftp_path || '/uploads/xml/');
 
-        // Conditional Check configuration
-        setConditionalField(config.jsonPath || config.conditional_field || '');
-        setConditionalOperator(config.conditionType || config.conditional_operator || 'equals');
+        // Conditional Check configuration - support both old and new field names
+        setConditionalField(config.jsonPath || config.fieldPath || config.checkField || config.conditional_field || '');
+        setConditionalOperator(config.conditionType || config.operator || config.conditional_operator || 'equals');
         setConditionalValue(config.expectedValue || config.conditional_value || '');
 
         // Email Action configuration
@@ -214,8 +214,11 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
         break;
       case 'conditional_check':
         config = {
+          // Save both naming conventions for backward compatibility
           jsonPath: conditionalField,
+          fieldPath: conditionalField,
           conditionType: conditionalOperator,
+          operator: conditionalOperator,
           expectedValue: conditionalValue
         };
         break;
