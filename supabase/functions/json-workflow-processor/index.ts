@@ -191,8 +191,9 @@ Deno.serve(async (req: Request) => {
     const executionLogPayload = {
       workflow_id: workflowId,
       status: 'running',
+      context_data: {},
       started_at: workflowExecutionLogStartTime,
-      input_data: requestData
+      updated_at: workflowExecutionLogStartTime
     }
 
     console.log('📝 Creating workflow execution log...')
@@ -879,7 +880,8 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({
         status: 'completed',
         completed_at: workflowEndTime,
-        output_data: contextData
+        context_data: contextData,
+        updated_at: workflowEndTime
       })
     })
 
