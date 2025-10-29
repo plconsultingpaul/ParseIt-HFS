@@ -742,16 +742,16 @@ Deno.serve(async (req: Request) => {
               }
             }
 
-            if (contextData.originalExtractedData && typeof contextData.originalExtractedData === 'string') {
-              requestBody = requestBody.replace(/\{\{extractedData\}\}/g, contextData.originalExtractedData)
-              console.log('✅ Replaced {{extractedData}} with original extracted data string')
-            } else if (contextData.extractedData && typeof contextData.extractedData === 'object') {
+            if (contextData.extractedData && typeof contextData.extractedData === 'object') {
               const stringifiedData = JSON.stringify(contextData.extractedData)
               requestBody = requestBody.replace(/\{\{extractedData\}\}/g, stringifiedData)
-              console.log('✅ Replaced {{extractedData}} with stringified extracted data object')
+              console.log('✅ Replaced {{extractedData}} with enriched extracted data object')
               console.log('🔍 Stringified data length:', stringifiedData.length)
               console.log('🔍 Stringified data contains "clientId":"10921":', stringifiedData.includes('"clientId":"10921"'))
               console.log('🔍 Stringified data preview (first 500 chars):', stringifiedData.substring(0, 500))
+            } else if (contextData.originalExtractedData && typeof contextData.originalExtractedData === 'string') {
+              requestBody = requestBody.replace(/\{\{extractedData\}\}/g, contextData.originalExtractedData)
+              console.log('⚠️ Fallback: Replaced {{extractedData}} with original extracted data string')
             }
           }
 
