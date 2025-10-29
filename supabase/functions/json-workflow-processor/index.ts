@@ -726,12 +726,32 @@ Deno.serve(async (req: Request) => {
 
           if (requestBody.includes('{{extractedData}}')) {
             console.log('🔧 Found {{extractedData}} placeholder - handling as JSON object')
+
+            // === DIAGNOSTIC: Verify clientId before replacement ===
+            console.log('🔍 PRE-REPLACEMENT DIAGNOSTIC:')
+            if (contextData.extractedData && typeof contextData.extractedData === 'object') {
+              const clientIdCheck = getValueByPath(contextData.extractedData, 'orders[0].consignee.clientId')
+              console.log('  - contextData.extractedData.orders[0]?.consignee?.clientId:', clientIdCheck)
+              console.log('  - extractedData type:', typeof contextData.extractedData)
+              console.log('  - extractedData.orders exists:', !!contextData.extractedData.orders)
+              if (contextData.extractedData.orders && Array.isArray(contextData.extractedData.orders)) {
+                console.log('  - extractedData.orders length:', contextData.extractedData.orders.length)
+                if (contextData.extractedData.orders[0]) {
+                  console.log('  - extractedData.orders[0].consignee:', JSON.stringify(contextData.extractedData.orders[0].consignee))
+                }
+              }
+            }
+
             if (contextData.originalExtractedData && typeof contextData.originalExtractedData === 'string') {
               requestBody = requestBody.replace(/\{\{extractedData\}\}/g, contextData.originalExtractedData)
               console.log('✅ Replaced {{extractedData}} with original extracted data string')
             } else if (contextData.extractedData && typeof contextData.extractedData === 'object') {
-              requestBody = requestBody.replace(/\{\{extractedData\}\}/g, JSON.stringify(contextData.extractedData))
+              const stringifiedData = JSON.stringify(contextData.extractedData)
+              requestBody = requestBody.replace(/\{\{extractedData\}\}/g, stringifiedData)
               console.log('✅ Replaced {{extractedData}} with stringified extracted data object')
+              console.log('🔍 Stringified data length:', stringifiedData.length)
+              console.log('🔍 Stringified data contains "clientId":"10921":', stringifiedData.includes('"clientId":"10921"'))
+              console.log('🔍 Stringified data preview (first 500 chars):', stringifiedData.substring(0, 500))
             }
           }
 
@@ -953,6 +973,39 @@ Deno.serve(async (req: Request) => {
             console.log('  - responseDataPath value:', config.responseDataPath)
             console.log('  - updateJsonPath value:', config.updateJsonPath)
           }
+
+          // === SYNC FIX: Ensure extractedData stays synchronized with top-level properties ===
+          console.log('🔄 === SYNCHRONIZING CONTEXT DATA ===')
+          if (contextData.extractedData && typeof contextData.extractedData === 'object') {
+            console.log('🔄 Syncing top-level properties back to extractedData...')
+            const keysToSync = Object.keys(contextData).filter(key =>
+              key !== 'extractedData' &&
+              key !== 'originalExtractedData' &&
+              key !== 'formatType' &&
+              key !== 'pdfFilename' &&
+              key !== 'originalPdfFilename' &&
+              key !== 'pdfStoragePath' &&
+              key !== 'pdfBase64'
+            )
+
+            console.log('🔄 Keys to sync:', keysToSync)
+
+            for (const key of keysToSync) {
+              if (contextData.hasOwnProperty(key)) {
+                contextData.extractedData[key] = contextData[key]
+                console.log(`🔄 Synced ${key} to extractedData`)
+              }
+            }
+
+            // Diagnostic verification
+            const clientIdFromOrders = getValueByPath(contextData, 'orders[0].consignee.clientId')
+            const clientIdFromExtracted = getValueByPath(contextData, 'extractedData.orders[0].consignee.clientId')
+            console.log('🔍 SYNC VERIFICATION:')
+            console.log('  - contextData.orders[0]?.consignee?.clientId:', clientIdFromOrders)
+            console.log('  - contextData.extractedData.orders[0]?.consignee?.clientId:', clientIdFromExtracted)
+            console.log('  - Values match:', clientIdFromOrders === clientIdFromExtracted)
+          }
+          console.log('✅ === CONTEXT DATA SYNCHRONIZED ===')
 
         } else if (step.step_type === 'rename_file' || step.step_type === 'rename_pdf') {
           console.log('📝 === EXECUTING RENAME FILE STEP ===')
