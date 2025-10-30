@@ -34,12 +34,14 @@ export default function TransformPage({
   const [workflowExecutionLog, setWorkflowExecutionLog] = useState<WorkflowExecutionLog | null>(null);
   const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
 
-  // Initialize upload mode from user preference
+  // Apply default upload mode when transformation type changes
   React.useEffect(() => {
-    if (user?.preferredUploadMode) {
-      setUploadMode(user.preferredUploadMode);
+    const currentType = transformationTypes?.find(type => type.id === selectedTransformationType);
+
+    if (currentType?.defaultUploadMode) {
+      setUploadMode(currentType.defaultUploadMode);
     }
-  }, [user?.preferredUploadMode]);
+  }, [selectedTransformationType, transformationTypes]);
 
   const currentTransformationType = transformationTypes?.find(type => type.id === selectedTransformationType);
 
@@ -51,16 +53,16 @@ export default function TransformPage({
   };
 
   const handleAutoDetectionComplete = (
-    file: File, 
-    pages: File[], 
-    detectedTypeId: string | null, 
+    file: File,
+    pages: File[],
+    detectedTypeId: string | null,
     result: DetectionResult
   ) => {
     setUploadedFile(file);
     setPdfPages(pages);
     setDetectionResult(result);
     setWorkflowExecutionLog(null);
-    
+
     if (detectedTypeId) {
       setSelectedTransformationType(detectedTypeId);
     }
