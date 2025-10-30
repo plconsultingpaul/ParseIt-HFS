@@ -230,7 +230,8 @@ export async function fetchTransformationTypes(): Promise<TransformationType[]> 
       updatedAt: type.updated_at,
       pagesPerGroup: type.pages_per_group || 1,
       documentStartPattern: type.document_start_pattern,
-      documentStartDetectionEnabled: type.document_start_detection_enabled || false
+      documentStartDetectionEnabled: type.document_start_detection_enabled || false,
+      defaultUploadMode: type.default_upload_mode as 'manual' | 'auto' | undefined
     }));
   } catch (error) {
     console.error('Error fetching transformation types:', error);
@@ -300,6 +301,7 @@ export async function updateTransformationTypes(types: TransformationType[]): Pr
           pages_per_group: type.pagesPerGroup || 1,
           document_start_pattern: type.documentStartPattern,
           document_start_detection_enabled: type.documentStartDetectionEnabled || false,
+          default_upload_mode: type.defaultUploadMode || null,
           updated_at: new Date().toISOString()
         })
         .eq('id', type.id);
@@ -326,9 +328,10 @@ export async function updateTransformationTypes(types: TransformationType[]): Pr
           userId: type.userId,
           pagesPerGroup: type.pagesPerGroup,
           documentStartPattern: type.documentStartPattern,
-          documentStartDetectionEnabled: type.documentStartDetectionEnabled
+          documentStartDetectionEnabled: type.documentStartDetectionEnabled,
+          defaultUploadMode: type.defaultUploadMode
         });
-        
+
         const mappedData = {
           name: type.name,
           default_instructions: type.defaultInstructions || '',
@@ -339,7 +342,8 @@ export async function updateTransformationTypes(types: TransformationType[]): Pr
           user_id: type.userId || null,
           pages_per_group: type.pagesPerGroup || 1,
           document_start_pattern: type.documentStartPattern || null,
-          document_start_detection_enabled: type.documentStartDetectionEnabled || false
+          document_start_detection_enabled: type.documentStartDetectionEnabled || false,
+          default_upload_mode: type.defaultUploadMode || null
         };
         
         console.log('  Mapped data for database:', mappedData);
