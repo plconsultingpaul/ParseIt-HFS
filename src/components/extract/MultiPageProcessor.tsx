@@ -508,31 +508,100 @@ export default function MultiPageProcessor({
           });
         }
 
-        // Upload to SFTP if configured
-        if (sftpConfig && sftpConfig.host) {
+        // Check if workflow is configured
+        if (currentExtractionType.workflowId) {
           try {
-            // Use the first page file for SFTP upload (filename reference)
-            await uploadToSftp({
-              sftpConfig,
-              xmlContent: extractedData,
-              pdfFile: pdfPages[0],
-              baseFilename: currentExtractionType.filename || 'combined',
-              formatType: 'CSV'
+            // Convert first PDF page to base64 for workflow
+            const pdfBase64 = await fileToBase64(pdfPages[0]);
+
+            const workflowResult = await executeWorkflow({
+              extractedData,
+              workflowId: currentExtractionType.workflowId,
+              userId: user?.id,
+              extractionTypeId: currentExtractionType.id,
+              pdfFilename: pdfPages[0].name,
+              pdfPages: pdfPages.length,
+              pdfBase64: pdfBase64,
+              originalPdfFilename: pdfPages[0].name,
+              formatType: currentExtractionType.formatType
             });
+
+            // Fetch the complete workflow execution log
+            const workflowLog = workflowResult.workflowExecutionLogId
+              ? await fetchWorkflowExecutionLog(workflowResult.workflowExecutionLogId)
+              : null;
 
             // Mark all pages as successful
             for (let i = 0; i < pdfPages.length; i++) {
               updatePageState(i, {
+                apiResponse: workflowResult.lastApiResponse ? JSON.stringify(workflowResult.lastApiResponse, null, 2) : JSON.stringify(workflowResult.finalData, null, 2),
+                apiError: null,
                 success: true,
-                isProcessing: false
+                isProcessing: false,
+                workflowExecutionLog: workflowLog,
+                workflowExecutionLogId: workflowResult.workflowExecutionLogId
               });
             }
-          } catch (sftpError) {
-            const errorMessage = sftpError instanceof Error ? sftpError.message : 'Unknown SFTP error';
+          } catch (workflowError) {
+            console.error('Workflow execution failed:', workflowError);
+            const errorMessage = workflowError instanceof Error ? workflowError.message : 'Unknown workflow error';
+
+            // Check if the error contains a workflow execution log ID
+            let workflowLog = null;
+            if ((workflowError as any).workflowExecutionLogId) {
+              try {
+                workflowLog = await fetchWorkflowExecutionLog((workflowError as any).workflowExecutionLogId);
+              } catch (fetchError) {
+                console.error('Failed to fetch workflow execution log on error:', fetchError);
+              }
+            }
+
             // Mark all pages with error
             for (let i = 0; i < pdfPages.length; i++) {
               updatePageState(i, {
-                extractionError: `Failed to upload to SFTP: ${errorMessage}`,
+                extractionError: `Workflow execution failed: ${errorMessage}`,
+                isProcessing: false,
+                workflowExecutionLog: workflowLog
+              });
+            }
+          }
+        } else {
+          // No workflow configured - upload directly to SFTP if configured
+          if (sftpConfig && sftpConfig.host) {
+            try {
+              // Use the first page file for SFTP upload (filename reference)
+              await uploadToSftp({
+                sftpConfig,
+                xmlContent: extractedData,
+                pdfFile: pdfPages[0],
+                baseFilename: currentExtractionType.filename || 'combined',
+                formatType: 'CSV',
+                userId: user?.id,
+                extractionTypeId: currentExtractionType.id
+              });
+
+              // Mark all pages as successful
+              for (let i = 0; i < pdfPages.length; i++) {
+                updatePageState(i, {
+                  success: true,
+                  isProcessing: false
+                });
+              }
+            } catch (sftpError) {
+              const errorMessage = sftpError instanceof Error ? sftpError.message : 'Unknown SFTP error';
+              // Mark all pages with error
+              for (let i = 0; i < pdfPages.length; i++) {
+                updatePageState(i, {
+                  extractionError: `Failed to upload to SFTP: ${errorMessage}`,
+                  isProcessing: false
+                });
+              }
+            }
+          } else {
+            // No workflow and no SFTP - just mark as complete with data available
+            for (let i = 0; i < pdfPages.length; i++) {
+              updatePageState(i, {
+                success: true,
                 isProcessing: false
               });
             }
