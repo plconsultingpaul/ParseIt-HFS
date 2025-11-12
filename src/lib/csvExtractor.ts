@@ -416,6 +416,13 @@ ${rowDetectionInstructions || 'Extract each logical record as a separate row'}
 
 ⚠️ IMPORTANT: Process ALL pages together. Extract rows from ALL pages in the order they appear. Do not stop after processing just one page.
 
+⚠️ CROSS-PAGE ROW HANDLING: In tabular data, a row may span across pages where:
+- The reference number appears only on the first page where the row starts
+- Additional field values (like TOTAL_AMT or PAYMENT_AMOUNT) may appear on subsequent pages WITHOUT repeating the reference number
+- Use visual table structure and column positions to match values across pages
+- If a row has null values, check the SAME COLUMN POSITION on the next page to find the missing value
+- Complete ALL fields for each row before moving to the next row, even if values appear on different pages
+
 EXTRACTION INSTRUCTIONS:
 ${combinedInstructions}
 
