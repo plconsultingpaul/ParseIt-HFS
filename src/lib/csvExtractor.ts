@@ -1,6 +1,47 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { FieldMapping } from '../types';
 
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  operationName: string,
+  maxRetries: number = 3
+): Promise<T> {
+  let lastError: Error | undefined;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`[csvExtractor] Attempt ${attempt}/${maxRetries} for ${operationName}`);
+      const result = await fn();
+      if (attempt > 1) {
+        console.log(`[csvExtractor] ✅ ${operationName} succeeded on attempt ${attempt}`);
+      }
+      return result;
+    } catch (error: any) {
+      lastError = error;
+      const errorMessage = error?.message || String(error);
+      const isNetworkError = errorMessage.includes('fetch') ||
+                            errorMessage.includes('network') ||
+                            errorMessage.includes('ECONNRESET') ||
+                            errorMessage.includes('Connection reset');
+
+      console.error(`[csvExtractor] ❌ Attempt ${attempt}/${maxRetries} failed:`, errorMessage);
+
+      if (attempt < maxRetries && isNetworkError) {
+        const delay = Math.pow(2, attempt) * 1000;
+        console.log(`[csvExtractor] ⏳ Waiting ${delay/1000}s before retry...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else if (attempt === maxRetries) {
+        console.error(`[csvExtractor] ❌ All ${maxRetries} attempts failed for ${operationName}`);
+        throw new Error(`Failed after ${maxRetries} attempts: ${errorMessage}`);
+      } else if (!isNetworkError) {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError || new Error(`${operationName} failed after ${maxRetries} attempts`);
+}
+
 interface CsvExtractionRequest {
   pdfFile: File;
   defaultInstructions: string;
@@ -206,7 +247,10 @@ Please analyze the PDF and return the extracted data as a JSON array.`;
     prompt
   ];
 
-  const result = await model.generateContent(contentParts);
+  const result = await retryWithBackoff(
+    async () => await model.generateContent(contentParts),
+    'Gemini API call'
+  );
   const geminiEndTime = performance.now();
   const fetchDuration = ((geminiEndTime - geminiStartTime) / 1000).toFixed(2);
   console.log(`[csvExtractor] ✅ Gemini API responded in ${fetchDuration}s`);
@@ -426,7 +470,10 @@ Please analyze ALL PDF pages and return the extracted data as a JSON array.`;
 
   contentParts.push(prompt);
 
-  const result = await model.generateContent(contentParts);
+  const result = await retryWithBackoff(
+    async () => await model.generateContent(contentParts),
+    'Gemini API call (multi-page)'
+  );
   const geminiEndTime = performance.now();
   const fetchDuration = ((geminiEndTime - geminiStartTime) / 1000).toFixed(2);
   console.log(`[csvExtractor] ✅ Gemini API responded in ${fetchDuration}s`);
