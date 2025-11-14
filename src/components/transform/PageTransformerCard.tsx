@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { FileText, Send, Loader2, Copy, CheckCircle, XCircle, Eye, Database, AlertTriangle, X } from 'lucide-react';
-import type { TransformationType, SftpConfig, SettingsConfig, ApiConfig, User, WorkflowStep, WorkflowExecutionLog } from '../../types';
+import type { TransformationType, SftpConfig, SettingsConfig, ApiConfig, User, WorkflowStep, WorkflowExecutionLog, PageGroupConfig } from '../../types';
 import Modal from '../common/Modal';
 import { supabase } from '../../lib/supabase';
 
@@ -15,6 +15,7 @@ interface PageTransformerCardProps {
   user: User | null;
   workflowSteps: WorkflowStep[];
   isTransformingAll: boolean;
+  pageGroupConfig?: PageGroupConfig;
   onProcessStart: (pageIndex: number) => void;
   onProcessComplete: (pageIndex: number, result: any) => void;
   hidePreview?: boolean;
@@ -31,6 +32,7 @@ export default function PageTransformerCard({
   user,
   workflowSteps,
   isTransformingAll,
+  pageGroupConfig,
   onProcessStart,
   onProcessComplete,
   hidePreview = false
@@ -156,7 +158,15 @@ export default function PageTransformerCard({
       const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
       
       const pdfBase64 = await fileToBase64(pageFile);
-      
+
+      const effectiveTransformationType = pageGroupConfig
+        ? {
+            ...transformationType,
+            ...(pageGroupConfig.fieldMappings && { fieldMappings: pageGroupConfig.fieldMappings }),
+            ...(pageGroupConfig.filenameTemplate && { filenameTemplate: pageGroupConfig.filenameTemplate })
+          }
+        : transformationType;
+
       const response = await fetch(`${supabaseUrl}/functions/v1/pdf-transformer`, {
         method: 'POST',
         headers: {
@@ -165,7 +175,7 @@ export default function PageTransformerCard({
         },
         body: JSON.stringify({
           pdfBase64,
-          transformationType: transformationType,
+          transformationType: effectiveTransformationType,
           additionalInstructions,
           apiKey: apiConfig.googleApiKey || settingsConfig.geminiApiKey
         })
@@ -221,19 +231,28 @@ export default function PageTransformerCard({
 
   const handleTransformAndUpload = async () => {
     if (!pageFile || !transformationType) return;
-    
+
     onProcessStart(pageIndex);
     setIsTransforming(true);
-    
+
     try {
       let resultToUse = transformResult;
-      
+      let pdfBase64: string;
+
       if (!resultToUse?.success) {
         const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
         const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-        
-        const pdfBase64 = await fileToBase64(pageFile);
-        
+
+        pdfBase64 = await fileToBase64(pageFile);
+
+        const effectiveTransformationType = pageGroupConfig
+          ? {
+              ...transformationType,
+              ...(pageGroupConfig.fieldMappings && { fieldMappings: pageGroupConfig.fieldMappings }),
+              ...(pageGroupConfig.filenameTemplate && { filenameTemplate: pageGroupConfig.filenameTemplate })
+            }
+          : transformationType;
+
         const response = await fetch(`${supabaseUrl}/functions/v1/pdf-transformer`, {
           method: 'POST',
           headers: {
@@ -242,7 +261,7 @@ export default function PageTransformerCard({
           },
           body: JSON.stringify({
             pdfBase64,
-            transformationType: transformationType,
+            transformationType: effectiveTransformationType,
             additionalInstructions,
             apiKey: apiConfig.googleApiKey || settingsConfig.geminiApiKey
           })
@@ -283,11 +302,13 @@ export default function PageTransformerCard({
         };
         
         setTransformResult(resultToUse);
+      } else {
+        pdfBase64 = await fileToBase64(pageFile);
       }
-      
+
       if (transformationType.workflowId) {
         const fileName = `workflow-pdfs/${Date.now()}-${pageFile.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
-        const { data: uploadData, error: uploadError } = await supabase.storage.from('pdfs').upload(fileName, pageFile);
+        const { data: uploadData, error: uploadError } = await supabase.storage.from('pdfs').upload(fileName, pageFile, { upsert: true });
 
         if (uploadError) {
           throw new Error(`Failed to upload PDF to storage: ${uploadError.message}`);
@@ -304,7 +325,7 @@ export default function PageTransformerCard({
         
         const { data: extractedDataUpload, error: extractedDataError } = await supabase.storage
           .from('pdfs')
-          .upload(extractedDataFileName, new Blob([extractedDataToUpload], { type: 'application/json' }));
+          .upload(extractedDataFileName, new Blob([extractedDataToUpload], { type: 'application/json' }), { upsert: true });
 
         if (extractedDataError) {
           throw new Error(`Failed to upload extracted data to storage: ${extractedDataError.message}`);
@@ -320,9 +341,12 @@ export default function PageTransformerCard({
           userId: user?.id,
           transformationTypeId: transformationType.id,
           pdfFilename: resultToUse.newFilename,
+          extractionTypeFilename: transformationType.filenameTemplate,
+          pageGroupFilenameTemplate: pageGroupConfig?.filenameTemplate,
           pdfPages: 1,
           pdfStoragePath: uploadData.path,
           originalPdfFilename: pageFile.name,
+          pdfBase64: pdfBase64,
           formatType: 'JSON' // Transformations are always JSON-based
         };
         
@@ -333,8 +357,8 @@ export default function PageTransformerCard({
           throw new Error('Cannot send invalid JSON to workflow processor');
         }
 
-        // Transformations are always JSON-based, so always use json-workflow-processor
-        const workflowResponse = await fetch(`${supabaseUrl}/functions/v1/json-workflow-processor`, {
+        // Transformations use the dedicated transform-workflow-processor
+        const workflowResponse = await fetch(`${supabaseUrl}/functions/v1/transform-workflow-processor`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
