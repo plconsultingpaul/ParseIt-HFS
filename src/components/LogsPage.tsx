@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { FileText, Clock, GitBranch, Server, Mail } from 'lucide-react';
+import { FileText, Clock, GitBranch, Server, Mail, Truck } from 'lucide-react';
 import type { ExtractionLog, ExtractionType, TransformationType, User, EmailPollingLog, WorkflowExecutionLog, ExtractionWorkflow, WorkflowStep, SftpPollingLog, ProcessedEmail } from '../types';
 import ExtractionLogsSettings from './settings/ExtractionLogsSettings';
 import EmailPollingLogsSettings from './settings/EmailPollingLogsSettings';
 import WorkflowExecutionLogsSettings from './settings/WorkflowExecutionLogsSettings';
 import ProcessedEmailsSettings from './settings/ProcessedEmailsSettings';
+import DriverCheckinLogsSettings from './settings/DriverCheckinLogsSettings';
 
 interface LogsPageProps {
   extractionLogs: ExtractionLog[];
@@ -25,7 +26,7 @@ interface LogsPageProps {
   onRefreshProcessedEmails: () => Promise<any>;
 }
 
-type LogsTab = 'extraction' | 'polling' | 'workflow' | 'sftp' | 'processed';
+type LogsTab = 'extraction' | 'polling' | 'workflow' | 'sftp' | 'processed' | 'checkin';
 
 export default function LogsPage({
   extractionLogs,
@@ -52,7 +53,8 @@ export default function LogsPage({
     { id: 'workflow' as LogsTab, label: 'Workflow Logs', icon: GitBranch, description: 'Workflow execution logs' },
     { id: 'polling' as LogsTab, label: 'Email Polling', icon: Clock, description: 'Email monitoring activity' },
     { id: 'processed' as LogsTab, label: 'Processed Emails', icon: Mail, description: 'Processed email history' },
-    { id: 'sftp' as LogsTab, label: 'SFTP Polling', icon: Server, description: 'SFTP folder monitoring logs' }
+    { id: 'sftp' as LogsTab, label: 'SFTP Polling', icon: Server, description: 'SFTP folder monitoring logs' },
+    { id: 'checkin' as LogsTab, label: 'Check-In Logs', icon: Truck, description: 'Driver check-in activity logs' }
   ];
 
   const renderTabContent = () => {
@@ -108,6 +110,8 @@ export default function LogsPage({
             </div>
           </div>
         );
+      case 'checkin':
+        return <DriverCheckinLogsSettings />;
       default:
         return null;
     }

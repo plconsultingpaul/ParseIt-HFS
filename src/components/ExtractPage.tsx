@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, Brain, FileText, CheckCircle } from 'lucide-react';
+import { Settings, Brain, FileText, CheckCircle, Lock } from 'lucide-react';
 import type { ExtractionType, TransformationType, SftpConfig, SettingsConfig, ApiConfig } from '../types';
 import { useAuth } from '../hooks/useAuth';
 import PdfUploadSection from './extract/PdfUploadSection';
@@ -18,16 +18,17 @@ interface ExtractPageProps {
   onNavigateToSettings: () => void;
 }
 
-export default function ExtractPage({ 
-  extractionTypes, 
+export default function ExtractPage({
+  extractionTypes,
   transformationTypes,
-  sftpConfig, 
-  settingsConfig, 
-  apiConfig, 
-  onNavigateToSettings 
+  sftpConfig,
+  settingsConfig,
+  apiConfig,
+  onNavigateToSettings
 }: ExtractPageProps) {
-  const { user } = useAuth();
+  const { user, getUserExtractionTypes } = useAuth();
   const { workflowSteps } = useSupabaseData();
+  const [allowedExtractionTypes, setAllowedExtractionTypes] = useState<ExtractionType[]>([]);
   const [selectedExtractionType, setSelectedExtractionType] = useState<string>(
     extractionTypes[0]?.id || ''
   );
@@ -44,6 +45,31 @@ export default function ExtractPage({
 
   const currentExtractionType = extractionTypes.find(type => type.id === selectedExtractionType);
   const currentTransformationType = transformationTypes.find(type => type.id === selectedTransformationType);
+
+  // Filter extraction types based on user permissions
+  React.useEffect(() => {
+    const filterExtractionTypes = async () => {
+      if (!user) {
+        setAllowedExtractionTypes([]);
+        return;
+      }
+
+      if (user.isAdmin || user.role === 'admin') {
+        // Admins see all extraction types
+        setAllowedExtractionTypes(extractionTypes);
+      } else if (user.role === 'user') {
+        // Regular users see only their assigned extraction types
+        const userTypeIds = await getUserExtractionTypes(user.id);
+        const filtered = extractionTypes.filter(type => userTypeIds.includes(type.id));
+        setAllowedExtractionTypes(filtered);
+      } else {
+        // Vendors and others see all (existing behavior)
+        setAllowedExtractionTypes(extractionTypes);
+      }
+    };
+
+    filterExtractionTypes();
+  }, [extractionTypes, user?.id, user?.role, user?.isAdmin, getUserExtractionTypes]);
 
   // Initialize upload mode from extraction type default, then user preference
   React.useEffect(() => {
@@ -137,7 +163,7 @@ export default function ExtractPage({
                 onChange={(e) => handleSelectExtractionType(e.target.value)}
                 className="w-full px-4 py-3 bg-purple-50 dark:bg-gray-700 border border-purple-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-gray-100 font-medium focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
               >
-                {extractionTypes.map((type) => (
+                {allowedExtractionTypes.map((type) => (
                   <option key={type.id} value={type.id}>
                     {type.name}
                   </option>
@@ -184,27 +210,37 @@ export default function ExtractPage({
                   </label>
                   <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
                     <button
-                      onClick={() => setUploadMode('manual')}
+                      onClick={() => !currentExtractionType?.lockUploadMode && setUploadMode('manual')}
+                      disabled={currentExtractionType?.lockUploadMode}
                       className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
                         uploadMode === 'manual'
                           ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
                           : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                      }`}
+                      } ${currentExtractionType?.lockUploadMode ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       Manual Selection
                     </button>
                     <button
-                      onClick={() => setUploadMode('auto')}
+                      onClick={() => !currentExtractionType?.lockUploadMode && setUploadMode('auto')}
+                      disabled={currentExtractionType?.lockUploadMode}
                       className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
                         uploadMode === 'auto'
                           ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
                           : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                      }`}
+                      } ${currentExtractionType?.lockUploadMode ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       AI Auto-Detect
                     </button>
                   </div>
-                  {uploadMode === 'auto' && (
+                  {currentExtractionType?.lockUploadMode && (
+                    <div className="mt-2 p-2 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700 rounded-lg flex items-center space-x-2">
+                      <Lock className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                      <p className="text-xs text-purple-700 dark:text-purple-400">
+                        Upload mode is locked for this extraction type
+                      </p>
+                    </div>
+                  )}
+                  {uploadMode === 'auto' && !currentExtractionType?.lockUploadMode && (
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
                       Each page will be analyzed individually to determine the best extraction type
                     </p>

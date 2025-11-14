@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { FileText, Server, Key, Mail, Filter, Database, Settings as SettingsIcon, Users, GitBranch, RefreshCw } from 'lucide-react';
-import type { ExtractionType, SftpConfig, SettingsConfig, ApiConfig, EmailMonitoringConfig, EmailProcessingRule, ProcessedEmail, User } from '../types';
+import { FileText, Server, Key, Mail, Filter, Database, Settings as SettingsIcon, Users, GitBranch, RefreshCw, Sliders } from 'lucide-react';
+import type { ExtractionType, SftpConfig, SettingsConfig, ApiConfig, EmailMonitoringConfig, EmailProcessingRule, ProcessedEmail, User, FeatureFlag } from '../types';
 import type { TransformationType } from '../types';
 import type { CompanyBranding } from '../types';
 
@@ -11,10 +11,9 @@ import EmailMonitoringSettings from './settings/EmailMonitoringSettings';
 import EmailRulesSettings from './settings/EmailRulesSettings';
 import ProcessedEmailsSettings from './settings/ProcessedEmailsSettings';
 import UserManagementSettings from './settings/UserManagementSettings';
-import SftpPollingSettings from './settings/SftpPollingSettings';
-import VendorManagementSettings from './settings/VendorManagementSettings';
 import { Building } from 'lucide-react';
 import CompanyBrandingSettings from './settings/CompanyBrandingSettings';
+import FeatureManagementSettings from './settings/FeatureManagementSettings';
 
 interface SettingsPageProps {
   extractionTypes: ExtractionType[];
@@ -30,10 +29,16 @@ interface SettingsPageProps {
   workflows: any[];
   workflowSteps: any[];
   companyBranding: CompanyBranding;
+  featureFlags: FeatureFlag[];
   getAllUsers: () => Promise<User[]>;
   createUser: (username: string, password: string, isAdmin: boolean) => Promise<{ success: boolean; message: string }>;
   updateUser: (userId: string, updates: { isAdmin?: boolean; isActive?: boolean }) => Promise<{ success: boolean; message: string }>;
   deleteUser: (userId: string) => Promise<{ success: boolean; message: string }>;
+  updateUserPassword: (userId: string, newPassword: string) => Promise<{ success: boolean; message: string }>;
+  getUserExtractionTypes: (userId: string) => Promise<string[]>;
+  updateUserExtractionTypes: (userId: string, extractionTypeIds: string[]) => Promise<{ success: boolean; message: string }>;
+  getUserTransformationTypes: (userId: string) => Promise<string[]>;
+  updateUserTransformationTypes: (userId: string, transformationTypeIds: string[]) => Promise<{ success: boolean; message: string }>;
   onUpdateExtractionTypes: (types: ExtractionType[]) => Promise<void>;
   onDeleteExtractionType: (id: string) => Promise<void>;
   onUpdateTransformationTypes: (types: TransformationType[]) => Promise<void>;
@@ -47,9 +52,10 @@ interface SettingsPageProps {
   onUpdateEmailRules: (rules: EmailProcessingRule[]) => Promise<void>;
   onUpdateSftpPollingConfigs: (configs: any[]) => Promise<void>;
   onUpdateCompanyBranding: (branding: CompanyBranding) => Promise<void>;
+  onUpdateFeatureFlags: (flags: FeatureFlag[]) => Promise<void>;
 }
 
-type SettingsTab = 'sftp' | 'sftp-polling' | 'api' | 'email' | 'rules' | 'vendors' | 'users' | 'branding';
+type SettingsTab = 'sftp' | 'api' | 'email' | 'users' | 'branding' | 'features';
 
 export default function SettingsPage({
   extractionTypes,
@@ -65,10 +71,16 @@ export default function SettingsPage({
   workflows,
   workflowSteps,
   companyBranding,
+  featureFlags,
   getAllUsers,
   createUser,
   updateUser,
   deleteUser,
+  updateUserPassword,
+  getUserExtractionTypes,
+  updateUserExtractionTypes,
+  getUserTransformationTypes,
+  updateUserTransformationTypes,
   onUpdateExtractionTypes,
   onDeleteExtractionType,
   onUpdateTransformationTypes,
@@ -80,18 +92,17 @@ export default function SettingsPage({
   onUpdateEmailRules,
   onUpdateSftpPollingConfigs,
   onUpdateCompanyBranding,
+  onUpdateFeatureFlags,
 }: SettingsPageProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>('sftp');
 
   const tabs = [
     ...(currentUser.permissions.sftp ? [{ id: 'sftp' as SettingsTab, label: 'SFTP Settings', icon: Server, description: 'Configure file upload server' }] : []),
-    ...(currentUser.permissions.sftp ? [{ id: 'sftp-polling' as SettingsTab, label: 'SFTP Polling', icon: Server, description: 'Monitor SFTP folders for PDFs' }] : []),
     ...(currentUser.permissions.api ? [{ id: 'api' as SettingsTab, label: 'API Settings', icon: Key, description: 'Configure API endpoints and keys' }] : []),
     ...(currentUser.permissions.emailMonitoring ? [{ id: 'email' as SettingsTab, label: 'Email Monitoring', icon: Mail, description: 'Configure email automation' }] : []),
-    ...(currentUser.permissions.emailRules ? [{ id: 'rules' as SettingsTab, label: 'Email Rules', icon: Filter, description: 'Manage email processing rules' }] : []),
-    ...(currentUser.isAdmin ? [{ id: 'vendors' as SettingsTab, label: 'Vendor Management', icon: Users, description: 'Manage vendor accounts and rules' }] : []),
     ...(currentUser.permissions.userManagement ? [{ id: 'users' as SettingsTab, label: 'User Management', icon: Users, description: 'Manage users and permissions' }] : []),
-    ...(currentUser.isAdmin ? [{ id: 'branding' as SettingsTab, label: 'Company Branding', icon: Building, description: 'Customize company branding' }] : [])
+    ...(currentUser.isAdmin ? [{ id: 'branding' as SettingsTab, label: 'Company Branding', icon: Building, description: 'Customize company branding' }] : []),
+    ...(currentUser.isAdmin ? [{ id: 'features' as SettingsTab, label: 'Feature Management', icon: Sliders, description: 'Enable/disable system features' }] : [])
   ];
 
   const renderTabContent = () => {
@@ -101,17 +112,10 @@ export default function SettingsPage({
           <SftpSettings
             sftpConfig={sftpConfig}
             onUpdateSftpConfig={onUpdateSftpConfig}
-          />
-        ) : <PermissionDenied />;
-      case 'sftp-polling':
-        return currentUser.permissions.sftp ? (
-          <SftpPollingSettings
             extractionTypes={extractionTypes}
             transformationTypes={transformationTypes}
             workflows={workflows}
-            onUpdateSftpPollingConfigs={async (configs) => {
-              await onUpdateSftpPollingConfigs(configs);
-            }}
+            onUpdateSftpPollingConfigs={onUpdateSftpPollingConfigs}
             onRefreshSftpPollingLogs={async () => {
               console.log('Refreshing SFTP polling logs');
               return [];
@@ -129,15 +133,10 @@ export default function SettingsPage({
         return currentUser.permissions.emailMonitoring ? (
           <EmailMonitoringSettings
             emailConfig={emailConfig}
-            onUpdateEmailConfig={onUpdateEmailConfig}
-          />
-        ) : <PermissionDenied />;
-      case 'rules':
-        return currentUser.permissions.emailRules ? (
-          <EmailRulesSettings
             emailRules={emailRules}
             extractionTypes={extractionTypes}
             transformationTypes={transformationTypes}
+            onUpdateEmailConfig={onUpdateEmailConfig}
             onUpdateEmailRules={onUpdateEmailRules}
           />
         ) : <PermissionDenied />;
@@ -149,18 +148,12 @@ export default function SettingsPage({
             createUser={createUser}
             updateUser={updateUser}
             deleteUser={deleteUser}
-          />
-        ) : <PermissionDenied />;
-      case 'vendors':
-        return currentUser.isAdmin ? (
-          <VendorManagementSettings
-            currentUser={currentUser}
             extractionTypes={extractionTypes}
+            getUserExtractionTypes={getUserExtractionTypes}
+            updateUserExtractionTypes={updateUserExtractionTypes}
             transformationTypes={transformationTypes}
-            getAllUsers={getAllUsers}
-            createUser={createUser}
-            updateUser={updateUser}
-            deleteUser={deleteUser}
+            getUserTransformationTypes={getUserTransformationTypes}
+            updateUserTransformationTypes={updateUserTransformationTypes}
           />
         ) : <PermissionDenied />;
       case 'branding':
@@ -168,6 +161,13 @@ export default function SettingsPage({
           <CompanyBrandingSettings
             companyBranding={companyBranding}
             onUpdateCompanyBranding={onUpdateCompanyBranding}
+          />
+        ) : <PermissionDenied />;
+      case 'features':
+        return currentUser.isAdmin ? (
+          <FeatureManagementSettings
+            featureFlags={featureFlags}
+            onUpdateFeatureFlags={onUpdateFeatureFlags}
           />
         ) : <PermissionDenied />;
       default:

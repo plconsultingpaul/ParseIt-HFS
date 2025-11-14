@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Settings, Brain, FileText } from 'lucide-react';
-import type { TransformationType, SftpConfig, SettingsConfig, ApiConfig, User, WorkflowStep, WorkflowExecutionLog } from '../types';
+import { Settings, Brain, FileText, Lock } from 'lucide-react';
+import type { TransformationType, SftpConfig, SettingsConfig, ApiConfig, User, WorkflowStep, WorkflowExecutionLog, PageGroupConfig } from '../types';
 import { useAuth } from '../hooks/useAuth';
 import PdfUploadSection from './extract/PdfUploadSection';
 import AutoDetectPdfUploadSection from './extract/AutoDetectPdfUploadSection';
@@ -13,16 +13,19 @@ interface TransformPageProps {
   settingsConfig: SettingsConfig;
   apiConfig: ApiConfig;
   onNavigateToSettings: () => void;
+  getUserTransformationTypes: (userId: string) => Promise<string[]>;
 }
 
-export default function TransformPage({ 
-  transformationTypes = [], 
-  sftpConfig, 
-  settingsConfig, 
-  apiConfig, 
-  onNavigateToSettings
+export default function TransformPage({
+  transformationTypes = [],
+  sftpConfig,
+  settingsConfig,
+  apiConfig,
+  onNavigateToSettings,
+  getUserTransformationTypes
 }: TransformPageProps) {
   const { user } = useAuth();
+  const [allowedTransformationTypes, setAllowedTransformationTypes] = useState<TransformationType[]>([]);
   const [selectedTransformationType, setSelectedTransformationType] = useState<string>(
     transformationTypes?.[0]?.id || ''
   );
@@ -33,35 +36,85 @@ export default function TransformPage({
   const [detectionResult, setDetectionResult] = useState<DetectionResult | null>(null);
   const [workflowExecutionLog, setWorkflowExecutionLog] = useState<WorkflowExecutionLog | null>(null);
   const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
+  const [usedPageGroupConfigs, setUsedPageGroupConfigs] = useState<PageGroupConfig[] | undefined>(undefined);
+  const [pageRangeInfo, setPageRangeInfo] = useState<{ totalPages: number; usedPages: number[]; unusedPages: number[] } | undefined>(undefined);
+  const [originalPdfFile, setOriginalPdfFile] = useState<File | null>(null);
+
+  // Filter transformation types based on user permissions
+  React.useEffect(() => {
+    const filterTransformationTypes = async () => {
+      if (!user) {
+        setAllowedTransformationTypes([]);
+        return;
+      }
+
+      if (user.isAdmin || user.role === 'admin') {
+        setAllowedTransformationTypes(transformationTypes);
+      } else if (user.role === 'user') {
+        const userTypeIds = await getUserTransformationTypes(user.id);
+        const filtered = transformationTypes.filter(type => userTypeIds.includes(type.id));
+        setAllowedTransformationTypes(filtered);
+      } else {
+        setAllowedTransformationTypes(transformationTypes);
+      }
+    };
+
+    filterTransformationTypes();
+  }, [transformationTypes, user, getUserTransformationTypes]);
+
+  // Update selected type when allowed types change
+  React.useEffect(() => {
+    if (allowedTransformationTypes.length > 0 && !selectedTransformationType) {
+      setSelectedTransformationType(allowedTransformationTypes[0].id);
+    }
+  }, [allowedTransformationTypes]);
 
   // Apply default upload mode when transformation type changes
   React.useEffect(() => {
-    const currentType = transformationTypes?.find(type => type.id === selectedTransformationType);
+    const currentType = allowedTransformationTypes?.find(type => type.id === selectedTransformationType);
 
     if (currentType?.defaultUploadMode) {
       setUploadMode(currentType.defaultUploadMode);
     }
-  }, [selectedTransformationType, transformationTypes]);
+  }, [selectedTransformationType, allowedTransformationTypes]);
 
-  const currentTransformationType = transformationTypes?.find(type => type.id === selectedTransformationType);
+  const currentTransformationType = allowedTransformationTypes?.find(type => type.id === selectedTransformationType);
 
   const handlePdfUpload = (file: File, pages: File[]) => {
     setUploadedFile(file);
     setPdfPages(pages);
     setDetectionResult(null);
     setWorkflowExecutionLog(null);
+    setUsedPageGroupConfigs(undefined);
+    setPageRangeInfo(undefined);
   };
 
   const handleAutoDetectionComplete = (
     file: File,
     pages: File[],
     detectedTypeId: string | null,
-    result: DetectionResult
+    result: DetectionResult,
+    pageGroupConfigs?: PageGroupConfig[],
+    pageRangeInfoParam?: { totalPages: number; usedPages: number[]; unusedPages: number[] },
+    originalPdf?: File
   ) => {
     setUploadedFile(file);
     setPdfPages(pages);
     setDetectionResult(result);
     setWorkflowExecutionLog(null);
+    setUsedPageGroupConfigs(pageGroupConfigs);
+    setPageRangeInfo(pageRangeInfoParam);
+    setOriginalPdfFile(originalPdf || file);
+
+    console.log('📊 TransformPage: Auto-detection complete');
+    console.log('📊 Detected type ID:', detectedTypeId);
+    console.log('📊 Page group configs received:', pageGroupConfigs ? 'YES' : 'NO');
+    if (pageGroupConfigs) {
+      console.log('📊 Page group configs count:', pageGroupConfigs.length);
+    }
+    if (pageRangeInfoParam) {
+      console.log('📊 Page range info:', pageRangeInfoParam);
+    }
 
     if (detectedTypeId) {
       setSelectedTransformationType(detectedTypeId);
@@ -93,7 +146,7 @@ export default function TransformPage({
                 onChange={(e) => handleSelectTransformationType(e.target.value)}
                 className="w-full px-4 py-3 bg-purple-50 dark:bg-gray-700 border border-purple-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-gray-100 font-medium focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
               >
-                {transformationTypes.map((type) => (
+                {allowedTransformationTypes.map((type) => (
                   <option key={type.id} value={type.id}>
                     {type.name}
                   </option>
@@ -115,7 +168,7 @@ export default function TransformPage({
                   {detectionResult.detectedTypeId ? (
                     <div>
                       <p className="text-sm text-blue-700 dark:text-blue-300">
-                        <strong>Detected:</strong> {transformationTypes.find(t => t.id === detectionResult.detectedTypeId)?.name}
+                        <strong>Detected:</strong> {allowedTransformationTypes.find(t => t.id === detectionResult.detectedTypeId)?.name}
                       </p>
                       <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
                         <strong>Confidence:</strong> {detectionResult.confidence} • <strong>Reason:</strong> {detectionResult.reasoning}
@@ -126,6 +179,38 @@ export default function TransformPage({
                       Could not determine type automatically. {detectionResult.reasoning}
                     </p>
                   )}
+                </div>
+              )}
+
+              {/* Page Group Config Indicator */}
+              {usedPageGroupConfigs && usedPageGroupConfigs.length > 0 && uploadMode === 'auto' && (
+                <div className="mt-3 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg">
+                  <div className="flex items-center space-x-2 mb-1">
+                    <FileText className="h-4 w-4 text-green-600 dark:text-green-400" />
+                    <span className="text-sm font-medium text-green-800 dark:text-green-300">Page Group Configuration Active</span>
+                  </div>
+                  <p className="text-xs text-green-700 dark:text-green-400 mt-1">
+                    Using {usedPageGroupConfigs.length} manually configured page group{usedPageGroupConfigs.length !== 1 ? 's' : ''} instead of the main Pages Per Group setting.
+                  </p>
+                  {pageRangeInfo && (
+                    <p className="text-xs text-green-700 dark:text-green-400 mt-1">
+                      Processing {pageRangeInfo.usedPages.length} of {pageRangeInfo.totalPages} pages
+                      {pageRangeInfo.usedPages.length > 0 && ` (Pages: ${pageRangeInfo.usedPages.join(', ')})`}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Unused Pages Warning - Only show when Manual Page Group Configuration is used */}
+              {pageRangeInfo && pageRangeInfo.unusedPages.length > 0 && uploadMode === 'auto' && usedPageGroupConfigs && usedPageGroupConfigs.length > 0 && (
+                <div className="mt-3 p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded-lg">
+                  <div className="flex items-center space-x-2 mb-1">
+                    <Brain className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+                    <span className="text-sm font-medium text-orange-800 dark:text-orange-300">Unused Pages Detected</span>
+                  </div>
+                  <p className="text-xs text-orange-700 dark:text-orange-400 mt-1">
+                    {pageRangeInfo.unusedPages.length} page{pageRangeInfo.unusedPages.length !== 1 ? 's' : ''} will not be processed: Page{pageRangeInfo.unusedPages.length !== 1 ? 's' : ''} {pageRangeInfo.unusedPages.join(', ')}
+                  </p>
                 </div>
               )}
             </div>
@@ -140,27 +225,37 @@ export default function TransformPage({
                   </label>
                   <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
                     <button
-                      onClick={() => setUploadMode('manual')}
+                      onClick={() => !currentTransformationType?.lockUploadMode && setUploadMode('manual')}
+                      disabled={currentTransformationType?.lockUploadMode}
                       className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
                         uploadMode === 'manual'
                           ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
                           : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                      }`}
+                      } ${currentTransformationType?.lockUploadMode ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       Manual Selection
                     </button>
                     <button
-                      onClick={() => setUploadMode('auto')}
+                      onClick={() => !currentTransformationType?.lockUploadMode && setUploadMode('auto')}
+                      disabled={currentTransformationType?.lockUploadMode}
                       className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
                         uploadMode === 'auto'
                           ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
                           : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                      }`}
+                      } ${currentTransformationType?.lockUploadMode ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       AI Auto-Detect
                     </button>
                   </div>
-                  {uploadMode === 'auto' && (
+                  {currentTransformationType?.lockUploadMode && (
+                    <div className="mt-2 p-2 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded-lg flex items-center space-x-2">
+                      <Lock className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+                      <p className="text-xs text-orange-700 dark:text-orange-400">
+                        Upload mode is locked for this transformation type
+                      </p>
+                    </div>
+                  )}
+                  {uploadMode === 'auto' && !currentTransformationType?.lockUploadMode && (
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
                       Each page will be analyzed individually to determine the best transformation type
                     </p>
@@ -172,7 +267,7 @@ export default function TransformPage({
                   <PdfUploadSection onPdfUpload={handlePdfUpload} />
                 ) : (
                   <AutoDetectPdfUploadSection
-                    extractionTypes={transformationTypes}
+                    extractionTypes={allowedTransformationTypes}
                     apiKey={apiConfig.googleApiKey || settingsConfig.geminiApiKey}
                     onDetectionComplete={handleAutoDetectionComplete}
                   />
@@ -185,23 +280,26 @@ export default function TransformPage({
       </div>
 
       {/* No Transformation Types Message */}
-      {transformationTypes.length === 0 && (
-        <div className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm rounded-2xl shadow-xl border border-purple-100 dark:border-gray-700 p-8 text-center">
+      {allowedTransformationTypes.length === 0 && (
+        <div className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm rounded-2xl shadow-xl border border-orange-100 dark:border-gray-700 p-8 text-center">
           <div className="bg-orange-100 dark:bg-orange-900/50 p-4 rounded-full w-20 h-20 mx-auto mb-6 flex items-center justify-center">
             <Settings className="h-10 w-10 text-orange-600 dark:text-orange-400" />
           </div>
-          <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">No Transformation Types</h3>
+          <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">No Transformation Types Available</h3>
           <p className="text-gray-600 dark:text-gray-400 mb-6 max-w-md mx-auto">
-            You need to create transformation types before you can transform PDFs. 
-            Transformation types define how to extract data and generate new filenames.
+            {user?.isAdmin || user?.role === 'admin'
+              ? 'You need to create transformation types before you can transform PDFs. Transformation types define how to extract data and generate new filenames.'
+              : 'You do not have access to any transformation types. Please contact your administrator to request access to specific transformation types.'}
           </p>
-          <button
-            onClick={onNavigateToSettings}
-            className="px-6 py-3 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2 mx-auto"
-          >
-            <Settings className="h-5 w-5" />
-            <span>Go to Type Setup</span>
-          </button>
+          {(user?.isAdmin || user?.role === 'admin') && (
+            <button
+              onClick={onNavigateToSettings}
+              className="px-6 py-3 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2 mx-auto"
+            >
+              <Settings className="h-5 w-5" />
+              <span>Go to Type Setup</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -210,7 +308,7 @@ export default function TransformPage({
         <MultiPageTransformer
           pdfPages={pdfPages}
           fallbackTransformationType={currentTransformationType}
-          allTransformationTypes={transformationTypes}
+          allTransformationTypes={allowedTransformationTypes}
           uploadMode={uploadMode}
           geminiApiKey={apiConfig.googleApiKey || settingsConfig.geminiApiKey}
           additionalInstructions={additionalInstructions}
@@ -219,6 +317,9 @@ export default function TransformPage({
           apiConfig={apiConfig}
           user={user}
           workflowSteps={workflowSteps}
+          pageGroupConfigs={usedPageGroupConfigs}
+          pageRangeInfo={pageRangeInfo}
+          originalPdfFile={originalPdfFile}
         />
       )}
 

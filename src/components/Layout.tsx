@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
-import { Settings, FileText, LogOut, User, HelpCircle, Menu, X, BarChart3, RefreshCw, Database, Building } from 'lucide-react';
+import { Settings, FileText, LogOut, User, HelpCircle, Menu, X, BarChart3, RefreshCw, Database, Building, Package, ClipboardCheck, Building2, DollarSign, Users as UsersIcon, BookUser } from 'lucide-react';
 import type { User as UserType } from '../types';
 import type { CompanyBranding } from '../types';
 import DarkModeToggle from './DarkModeToggle';
+import PermissionDeniedModal from './common/PermissionDeniedModal';
 
 interface LayoutProps {
   children: React.ReactNode;
-  currentPage: 'extract' | 'vendor' | 'orders' | 'transform' | 'types' | 'settings' | 'logs';
-  onNavigate: (page: 'extract' | 'vendor' | 'orders' | 'transform' | 'types' | 'settings' | 'logs') => void;
+  currentPage: 'extract' | 'vendor-setup' | 'checkin-setup' | 'client-setup' | 'transform' | 'types' | 'settings' | 'logs' | 'order-entry' | 'rate-quote' | 'client-users' | 'address-book';
+  onNavigate: (page: 'extract' | 'vendor-setup' | 'checkin-setup' | 'client-setup' | 'transform' | 'types' | 'settings' | 'logs' | 'order-entry' | 'rate-quote' | 'client-users' | 'address-book') => void;
   user: UserType;
   companyBranding?: CompanyBranding;
   onLogout: () => void;
@@ -16,6 +17,14 @@ interface LayoutProps {
 export default function Layout({ children, currentPage, onNavigate, user, companyBranding, onLogout }: LayoutProps) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isSidebarHovered, setIsSidebarHovered] = useState(false);
+  const [permissionDenied, setPermissionDenied] = useState<{
+    isOpen: boolean;
+    message: string;
+    title?: string;
+  }>({
+    isOpen: false,
+    message: ''
+  });
 
   // Debug logging to track user state changes
   React.useEffect(() => {
@@ -42,9 +51,13 @@ export default function Layout({ children, currentPage, onNavigate, user, compan
       userManagement: user.permissions.userManagement
     };
     const hasAnyPermission = Object.values(nonTypePermissions).some(permission => permission === true);
-    
+
     if (!hasAnyPermission) {
-      alert('You do not have permission to access settings. Contact your administrator to request access.');
+      setPermissionDenied({
+        isOpen: true,
+        message: 'You do not have permission to access the Settings page. This section requires administrative privileges to configure system settings, manage users, or adjust integrations.',
+        title: 'Settings Access Denied'
+      });
       return;
     }
     onNavigate('settings');
@@ -52,6 +65,39 @@ export default function Layout({ children, currentPage, onNavigate, user, compan
 
   // Memoize navigation items to prevent recreation on every render
   const navigationItems = React.useMemo(() => [
+    // Client user navigation items
+    {
+      id: 'order-entry',
+      label: 'Order Entry',
+      icon: FileText,
+      onClick: () => onNavigate('order-entry'),
+      requiresPermission: true,
+      roles: ['client']
+    },
+    {
+      id: 'rate-quote',
+      label: 'Rate Quote',
+      icon: DollarSign,
+      onClick: () => onNavigate('rate-quote'),
+      requiresPermission: true,
+      roles: ['client']
+    },
+    {
+      id: 'address-book',
+      label: 'Address Book',
+      icon: BookUser,
+      onClick: () => onNavigate('address-book'),
+      requiresPermission: true,
+      roles: ['client']
+    },
+    {
+      id: 'client-users',
+      label: 'Users',
+      icon: UsersIcon,
+      onClick: () => onNavigate('client-users'),
+      requiresPermission: true,
+      roles: ['client']
+    },
     {
       id: 'extract',
       label: 'Extract',
@@ -59,22 +105,6 @@ export default function Layout({ children, currentPage, onNavigate, user, compan
       onClick: () => onNavigate('extract'),
       requiresPermission: false,
       roles: ['admin', 'user']
-    },
-    {
-      id: 'vendor',
-      label: 'Upload PDFs',
-      icon: FileText,
-      onClick: () => onNavigate('vendor'),
-      requiresPermission: false,
-      roles: ['vendor']
-    },
-    {
-      id: 'orders',
-      label: 'Orders',
-      icon: Database,
-      onClick: () => onNavigate('orders'),
-      requiresPermission: false,
-      roles: ['vendor']
     },
     {
       id: 'transform',
@@ -89,6 +119,30 @@ export default function Layout({ children, currentPage, onNavigate, user, compan
       label: 'Type Setup',
       icon: Database,
       onClick: () => onNavigate('types'),
+      requiresPermission: true,
+      roles: ['admin', 'user']
+    },
+    {
+      id: 'vendor-setup',
+      label: 'Vendor Setup',
+      icon: Package,
+      onClick: () => onNavigate('vendor-setup'),
+      requiresPermission: true,
+      roles: ['admin', 'user']
+    },
+    {
+      id: 'client-setup',
+      label: 'Client Setup',
+      icon: Building2,
+      onClick: () => onNavigate('client-setup'),
+      requiresPermission: true,
+      roles: ['admin', 'user']
+    },
+    {
+      id: 'checkin-setup',
+      label: 'Check-In Setup',
+      icon: ClipboardCheck,
+      onClick: () => onNavigate('checkin-setup'),
       requiresPermission: true,
       roles: ['admin', 'user']
     },
@@ -118,32 +172,81 @@ export default function Layout({ children, currentPage, onNavigate, user, compan
     }
   ], [user.role]);
 
-  // Filter navigation items based on user role
+  // Filter navigation items based on user role and permissions
   const filteredNavigationItems = React.useMemo(() => {
     console.log('Filtering navigation items for user:', user);
-    
+
     // Wait for user to be fully loaded with role
     if (!user || !user.role) {
       console.log('User or role not available yet, returning empty navigation');
       return [];
     }
-    
+
     console.log('User role confirmed:', user.role);
-    
-    // Filter items based on role inclusion
+
+    // Filter items based on role inclusion and permissions
     const filteredItems = navigationItems.filter(item => {
       // Check if user role is included in item's allowed roles
-      return item.roles.includes(user.role);
+      if (!item.roles.includes(user.role)) {
+        return false;
+      }
+
+      // For vendor-setup, check userManagement permission
+      if (item.id === 'vendor-setup' && !user.permissions.userManagement) {
+        return false;
+      }
+
+      // For client-setup, check userManagement permission
+      if (item.id === 'client-setup' && !user.permissions.userManagement) {
+        return false;
+      }
+
+      // For checkin-setup, only admin users can access
+      if (item.id === 'checkin-setup' && !user.isAdmin) {
+        return false;
+      }
+
+      // For order-entry, check if client user has access
+      if (item.id === 'order-entry' && (!user.hasOrderEntryAccess || user.role !== 'client')) {
+        return false;
+      }
+
+      // For rate-quote, check if client user has access
+      if (item.id === 'rate-quote' && (!user.hasRateQuoteAccess || user.role !== 'client')) {
+        return false;
+      }
+
+      // For address-book, check if client user has access (Client Admins always have access)
+      if (item.id === 'address-book' && user.role !== 'client') {
+        return false;
+      }
+      if (item.id === 'address-book' && user.role === 'client' && !user.isClientAdmin && !user.hasAddressBookAccess) {
+        return false;
+      }
+
+      // For client-users, check if user is a client admin
+      if (item.id === 'client-users' && (!user.isClientAdmin || user.role !== 'client')) {
+        return false;
+      }
+
+      return true;
     });
-    
+
     console.log('Filtered navigation items:', filteredItems);
     return filteredItems;
   }, [user, navigationItems]);
 
   return (
-    <div className="h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-indigo-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex overflow-hidden transition-colors duration-300">
-      {/* Sidebar */}
-      <div className={`bg-white/90 backdrop-blur-sm border-r border-purple-100 flex flex-col transition-all duration-300 ease-in-out h-full ${
+    <>
+      <PermissionDeniedModal
+        isOpen={permissionDenied.isOpen}
+        onClose={() => setPermissionDenied({ isOpen: false, message: '' })}
+        message={permissionDenied.message}
+        title={permissionDenied.title}
+      />
+      <div className="h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-indigo-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex overflow-hidden transition-colors duration-300">
+        {/* Sidebar */}
+        <div className={`bg-white/90 backdrop-blur-sm border-r border-purple-100 flex flex-col transition-all duration-300 ease-in-out h-full ${
         isSidebarExpanded ? 'w-64' : 'w-16'
       } dark:bg-gray-800/90 dark:border-gray-700`}
       onMouseEnter={() => setIsSidebarHovered(true)}
@@ -309,12 +412,17 @@ export default function Layout({ children, currentPage, onNavigate, user, compan
                   <div className="flex items-center space-x-2">
                     <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
                       {currentPage === 'extract' && 'Upload & Extract'}
-                      {currentPage === 'vendor' && 'Upload PDFs'}
-                      {currentPage === 'orders' && 'Orders Dashboard'}
+                      {currentPage === 'vendor-setup' && 'Vendor Setup'}
+                      {currentPage === 'checkin-setup' && 'Check-In Setup'}
+                      {currentPage === 'client-setup' && 'Client Setup'}
                       {currentPage === 'transform' && 'Transform & Rename'}
                       {currentPage === 'types' && 'Type Setup'}
                       {currentPage === 'settings' && 'Settings'}
                       {currentPage === 'logs' && 'Activity Logs'}
+                      {currentPage === 'order-entry' && 'Order Entry'}
+                      {currentPage === 'rate-quote' && 'Rate Quote'}
+                      {currentPage === 'address-book' && 'Address Book'}
+                      {currentPage === 'client-users' && 'User Management'}
                     </h2>
                     {companyBranding?.showCompanyName && companyBranding?.companyName && (
                       <span className="text-lg font-medium text-gray-600 dark:text-gray-400">
@@ -324,12 +432,17 @@ export default function Layout({ children, currentPage, onNavigate, user, compan
                   </div>
                   <p className="text-gray-600 dark:text-gray-400 mt-1">
                     {currentPage === 'extract' && (user.role === 'vendor' ? 'Upload your PDF documents for automated processing' : 'Upload PDFs and extract structured data')}
-                    {currentPage === 'vendor' && 'Upload your PDF documents for intelligent processing and renaming'}
-                    {currentPage === 'orders' && 'View and manage your orders from the system'}
+                    {currentPage === 'vendor-setup' && 'Manage vendor accounts and configure orders display settings'}
+                    {currentPage === 'checkin-setup' && 'Configure driver check-in system and manage driver information'}
+                    {currentPage === 'client-setup' && 'Manage client companies and their users'}
                     {currentPage === 'transform' && 'Extract data from PDFs to intelligently rename files'}
                     {currentPage === 'types' && 'Configure extraction types, transformation types, and workflows'}
                     {currentPage === 'settings' && 'Configure ParseIt settings and preferences'}
                     {currentPage === 'logs' && 'Monitor system activity and processing logs'}
+                    {currentPage === 'order-entry' && 'Create and manage orders for your organization'}
+                    {currentPage === 'rate-quote' && 'Request and manage pricing quotes'}
+                    {currentPage === 'address-book' && 'Manage customer shipping and receiving addresses'}
+                    {currentPage === 'client-users' && 'Manage users in your organization'}
                   </p>
                 </div>
               </div>
@@ -345,6 +458,7 @@ export default function Layout({ children, currentPage, onNavigate, user, compan
           {children}
         </main>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
