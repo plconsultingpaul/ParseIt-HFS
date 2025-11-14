@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Save, FileText, Code, Database, Map, Brain, RefreshCw, Copy } from 'lucide-react';
-import type { TransformationType, TransformationFieldMapping } from '../../types';
+import type { TransformationType, TransformationFieldMapping, PageGroupConfig } from '../../types';
 import { useSupabaseData } from '../../hooks/useSupabaseData';
 import MappingPage from '../MappingPage';
+import PageGroupConfigEditor from './PageGroupConfigEditor';
 
 interface TransformationTypesSettingsProps {
   transformationTypes: TransformationType[];
@@ -851,13 +852,71 @@ export default function TransformationTypesSettings({
               </div>
             </div>
 
+            {/* Workflow Assignment */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Assigned Workflow (Optional)
+              </label>
+              <select
+                value={selectedType.workflowId || ''}
+                onChange={(e) => updateTransformationType(selectedTypeIndex, 'workflowId', e.target.value || undefined)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+              >
+                <option value="">No workflow assigned</option>
+                {workflows
+                  .filter(w => w.isActive)
+                  .map((workflow) => (
+                    <option key={workflow.id} value={workflow.id}>
+                      {workflow.name}
+                    </option>
+                  ))}
+              </select>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                When a workflow is assigned, it will be executed after data extraction for additional processing steps.
+              </p>
+            </div>
+
+            {/* Default Upload Mode */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Default Upload Mode (Optional)
+                </label>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id={`lockUploadMode-${selectedTypeIndex}`}
+                    checked={selectedType.lockUploadMode || false}
+                    onChange={(e) => updateTransformationType(selectedTypeIndex, 'lockUploadMode', e.target.checked)}
+                    className="w-4 h-4 text-orange-600 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded focus:ring-orange-500"
+                  />
+                  <label htmlFor={`lockUploadMode-${selectedTypeIndex}`} className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Lock Mode
+                  </label>
+                </div>
+              </div>
+              <select
+                value={selectedType.defaultUploadMode || ''}
+                onChange={(e) => updateTransformationType(selectedTypeIndex, 'defaultUploadMode', e.target.value || undefined)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+              >
+                <option value="">No default (use user preference)</option>
+                <option value="manual">Manual Selection</option>
+                <option value="auto">AI Auto-Detect</option>
+              </select>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                When set, the Transform page will automatically default to this upload mode when this transformation type is selected.
+                {selectedType.lockUploadMode && ' Lock Mode prevents users from changing the upload mode.'}
+              </p>
+            </div>
+
             {/* PDF Grouping Configuration */}
             <div className="mb-4">
               <h5 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center space-x-2">
                 <FileText className="h-5 w-5 text-orange-600" />
                 <span>PDF Document Grouping</span>
               </h5>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -899,14 +958,14 @@ export default function TransformationTypesSettings({
                     />
                   )}
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    {selectedType.documentStartDetectionEnabled 
+                    {selectedType.documentStartDetectionEnabled
                       ? 'Text pattern that indicates the start of a new document'
                       : 'Automatically detect document boundaries based on text patterns'
                     }
                   </p>
                 </div>
               </div>
-              
+
               <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded-lg p-3">
                 <h6 className="font-medium text-orange-800 dark:text-orange-300 mb-2">How Document Grouping Works</h6>
                 <ul className="text-sm text-orange-700 dark:text-orange-400 space-y-1">
@@ -918,47 +977,14 @@ export default function TransformationTypesSettings({
               </div>
             </div>
 
-            {/* Workflow Assignment */}
+            {/* Page Group Configuration */}
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Assigned Workflow (Optional)
-              </label>
-              <select
-                value={selectedType.workflowId || ''}
-                onChange={(e) => updateTransformationType(selectedTypeIndex, 'workflowId', e.target.value || undefined)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-              >
-                <option value="">No workflow assigned</option>
-                {workflows
-                  .filter(w => w.isActive)
-                  .map((workflow) => (
-                    <option key={workflow.id} value={workflow.id}>
-                      {workflow.name}
-                    </option>
-                  ))}
-              </select>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                When a workflow is assigned, it will be executed after data extraction for additional processing steps.
-              </p>
-            </div>
-
-            {/* Default Upload Mode */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Default Upload Mode (Optional)
-              </label>
-              <select
-                value={selectedType.defaultUploadMode || ''}
-                onChange={(e) => updateTransformationType(selectedTypeIndex, 'defaultUploadMode', e.target.value || undefined)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-              >
-                <option value="">No default (use user preference)</option>
-                <option value="manual">Manual Selection</option>
-                <option value="auto">AI Auto-Detect</option>
-              </select>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                When set, the Transform page will automatically default to this upload mode when this transformation type is selected.
-              </p>
+              <PageGroupConfigEditor
+                transformationTypeId={selectedType.id}
+                pageGroupConfigs={selectedType.pageGroupConfigs || []}
+                workflows={workflows}
+                onChange={(configs) => updateTransformationType(selectedTypeIndex, 'pageGroupConfigs', configs)}
+              />
             </div>
 
             <div className="mb-4">

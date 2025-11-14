@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Save, Users, Shield, User as UserIcon, Eye, EyeOff, Settings, FileText, Server, Key, Mail, Filter, Database, GitBranch, Brain, RefreshCw, ArrowUp, ArrowDown, Copy } from 'lucide-react';
+import { Plus, Trash2, Save, Users, Shield, User as UserIcon, Eye, EyeOff, Settings, FileText, Server, Key, Mail, Filter, Database, GitBranch, Brain, RefreshCw, ArrowUp, ArrowDown, Copy, Edit } from 'lucide-react';
 import type { User, VendorExtractionRule, ExtractionType, TransformationType } from '../../types';
 
 interface VendorManagementSettingsProps {
@@ -8,32 +8,41 @@ interface VendorManagementSettingsProps {
   transformationTypes: TransformationType[];
   getAllUsers: () => Promise<User[]>;
   createUser: (username: string, password: string, isAdmin: boolean, role: 'admin' | 'user' | 'vendor') => Promise<{ success: boolean; message: string }>;
-  updateUser: (userId: string, updates: { isAdmin?: boolean; isActive?: boolean; permissions?: any; role?: 'admin' | 'user' | 'vendor' }) => Promise<{ success: boolean; message: string }>;
+  updateUser: (userId: string, updates: { isAdmin?: boolean; isActive?: boolean; permissions?: any; role?: 'admin' | 'user' | 'vendor'; currentZone?: string }) => Promise<{ success: boolean; message: string }>;
   deleteUser: (userId: string) => Promise<{ success: boolean; message: string }>;
+  updateUserPassword: (userId: string, newPassword: string) => Promise<{ success: boolean; message: string }>;
 }
 
-export default function VendorManagementSettings({ 
+export default function VendorManagementSettings({
   currentUser,
   extractionTypes,
   transformationTypes,
   getAllUsers,
   createUser,
   updateUser,
-  deleteUser
+  deleteUser,
+  updateUserPassword
 }: VendorManagementSettingsProps) {
   const [vendors, setVendors] = useState<User[]>([]);
   const [vendorRules, setVendorRules] = useState<Record<string, VendorExtractionRule[]>>({});
   const [loading, setLoading] = useState(true);
   const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
   const [showAddVendorModal, setShowAddVendorModal] = useState(false);
+  const [showEditVendorModal, setShowEditVendorModal] = useState(false);
   const [showAddRuleModal, setShowAddRuleModal] = useState(false);
   const [showDeleteVendorModal, setShowDeleteVendorModal] = useState(false);
   const [showDeleteRuleModal, setShowDeleteRuleModal] = useState(false);
   const [vendorToDelete, setVendorToDelete] = useState<User | null>(null);
+  const [vendorToEdit, setVendorToEdit] = useState<User | null>(null);
   const [ruleToDelete, setRuleToDelete] = useState<{ rule: VendorExtractionRule; vendorId: string } | null>(null);
   const [newVendor, setNewVendor] = useState({
     username: '',
-    password: ''
+    password: '',
+    currentZone: ''
+  });
+  const [editVendor, setEditVendor] = useState({
+    password: '',
+    currentZone: ''
   });
   const [newRule, setNewRule] = useState({
     ruleName: '',
@@ -44,6 +53,7 @@ export default function VendorManagementSettings({
     isEnabled: true
   });
   const [showPassword, setShowPassword] = useState(false);
+  const [showEditPassword, setShowEditPassword] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isCreating, setIsCreating] = useState(false);
@@ -109,8 +119,8 @@ export default function VendorManagementSettings({
   };
 
   const handleAddVendor = async () => {
-    if (!newVendor.username.trim() || !newVendor.password.trim() || !newVendor.currentZone.trim()) {
-      setError('Username, password, and current zone are required');
+    if (!newVendor.username.trim() || !newVendor.password.trim()) {
+      setError('Username and password are required');
       return;
     }
 
@@ -132,7 +142,7 @@ export default function VendorManagementSettings({
         
         setSuccess(result.message);
         setShowAddVendorModal(false);
-        setNewVendor({ username: '', password: '' });
+        setNewVendor({ username: '', password: '', currentZone: '' });
         await loadVendors();
         setTimeout(() => setSuccess(''), 3000);
       } else {
@@ -142,6 +152,78 @@ export default function VendorManagementSettings({
       setError('Failed to create vendor. Please try again.');
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const handleEditVendor = (vendor: User) => {
+    if (vendor.id === currentUser.id) {
+      setError('You cannot edit your own account here');
+      setTimeout(() => setError(''), 3000);
+      return;
+    }
+
+    setVendorToEdit(vendor);
+    setEditVendor({
+      password: '',
+      currentZone: vendor.currentZone || ''
+    });
+    setShowEditVendorModal(true);
+    setError('');
+  };
+
+  const handleUpdateVendor = async () => {
+    if (!vendorToEdit) return;
+
+    if (!editVendor.password.trim() && editVendor.currentZone === vendorToEdit.currentZone) {
+      setError('No changes to save');
+      return;
+    }
+
+    if (editVendor.password.trim() && editVendor.password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+
+    setIsSaving(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      let passwordUpdateSuccess = true;
+      let passwordMessage = '';
+
+      if (editVendor.password.trim()) {
+        const passwordResult = await updateUserPassword(vendorToEdit.id, editVendor.password);
+        passwordUpdateSuccess = passwordResult.success;
+        passwordMessage = passwordResult.message;
+      }
+
+      let zoneUpdateSuccess = true;
+      let zoneMessage = '';
+
+      if (editVendor.currentZone !== vendorToEdit.currentZone) {
+        const zoneResult = await updateUser(vendorToEdit.id, { currentZone: editVendor.currentZone });
+        zoneUpdateSuccess = zoneResult.success;
+        zoneMessage = zoneResult.message;
+      }
+
+      if (passwordUpdateSuccess && zoneUpdateSuccess) {
+        setSuccess(`Vendor "${vendorToEdit.username}" has been updated successfully`);
+        setShowEditVendorModal(false);
+        setVendorToEdit(null);
+        setEditVendor({ password: '', currentZone: '' });
+        await loadVendors();
+        setTimeout(() => setSuccess(''), 3000);
+      } else {
+        const errorMessages = [];
+        if (!passwordUpdateSuccess) errorMessages.push(passwordMessage);
+        if (!zoneUpdateSuccess) errorMessages.push(zoneMessage);
+        setError(errorMessages.join('. '));
+      }
+    } catch (error) {
+      setError('Failed to update vendor. Please try again.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -449,7 +531,20 @@ export default function VendorManagementSettings({
                   </button>
                 </div>
               </div>
-              
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Current Zone (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={newVendor.currentZone}
+                  onChange={(e) => setNewVendor(prev => ({ ...prev, currentZone: e.target.value }))}
+                  placeholder="Enter current zone"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                />
+              </div>
+
               <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded-lg p-3">
                 <p className="text-orange-700 dark:text-orange-400 text-sm">
                   <strong>Note:</strong> Vendors have limited access and can only upload PDFs for processing. They cannot access settings or other administrative features.
@@ -473,8 +568,95 @@ export default function VendorManagementSettings({
                 <button
                   onClick={() => {
                     setShowAddVendorModal(false);
-                    setNewVendor({ username: '', password: '' });
+                    setNewVendor({ username: '', password: '', currentZone: '' });
                     setError('');
+                  }}
+                  className="flex-1 px-4 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-semibold rounded-lg transition-colors duration-200"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Vendor Modal */}
+      {showEditVendorModal && vendorToEdit && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 pt-20">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+            <div className="text-center mb-6">
+              <div className="bg-blue-100 dark:bg-blue-900/50 p-3 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                <Edit className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">Edit Vendor</h3>
+              <p className="text-gray-600 dark:text-gray-400">Update password or current zone for "{vendorToEdit.username}"</p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  New Password (Optional)
+                </label>
+                <div className="relative">
+                  <input
+                    type={showEditPassword ? 'text' : 'password'}
+                    value={editVendor.password}
+                    onChange={(e) => setEditVendor(prev => ({ ...prev, password: e.target.value }))}
+                    placeholder="Leave blank to keep current password"
+                    className="w-full px-4 py-3 pr-12 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowEditPassword(!showEditPassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                  >
+                    {showEditPassword ? (
+                      <EyeOff className="h-5 w-5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300" />
+                    ) : (
+                      <Eye className="h-5 w-5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300" />
+                    )}
+                  </button>
+                </div>
+                {editVendor.password && editVendor.password.length < 6 && (
+                  <p className="text-xs text-red-600 dark:text-red-400 mt-1">Password must be at least 6 characters</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Current Zone
+                </label>
+                <input
+                  type="text"
+                  value={editVendor.currentZone}
+                  onChange={(e) => setEditVendor(prev => ({ ...prev, currentZone: e.target.value }))}
+                  placeholder="Enter current zone"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              {error && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-3">
+                  <p className="text-red-700 dark:text-red-400 text-sm">{error}</p>
+                </div>
+              )}
+
+              <div className="flex space-x-3">
+                <button
+                  onClick={handleUpdateVendor}
+                  disabled={isSaving}
+                  className="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200"
+                >
+                  {isSaving ? 'Updating...' : 'Update Vendor'}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowEditVendorModal(false);
+                    setVendorToEdit(null);
+                    setEditVendor({ password: '', currentZone: '' });
+                    setError('');
+                    setShowEditPassword(false);
                   }}
                   className="flex-1 px-4 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-semibold rounded-lg transition-colors duration-200"
                 >
@@ -788,17 +970,29 @@ export default function VendorManagementSettings({
                         </p>
                       </div>
                     </div>
-                    
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteVendor(vendor);
-                      }}
-                      className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors duration-200 opacity-0 group-hover:opacity-100"
-                      title="Delete vendor"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
+
+                    <div className="flex items-center space-x-1">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEditVendor(vendor);
+                        }}
+                        className="p-1 text-blue-500 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors duration-200 opacity-0 group-hover:opacity-100"
+                        title="Edit vendor"
+                      >
+                        <Edit className="h-3 w-3" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteVendor(vendor);
+                        }}
+                        className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors duration-200 opacity-0 group-hover:opacity-100"
+                        title="Delete vendor"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}

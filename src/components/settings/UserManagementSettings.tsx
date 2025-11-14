@@ -1,21 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Save, Users, Shield, User as UserIcon, Eye, EyeOff, Settings, FileText, Server, Key, Mail, Filter, Database, GitBranch, Brain, RefreshCw } from 'lucide-react';
-import type { User } from '../../types';
+import type { User, ExtractionType, TransformationType } from '../../types';
 
 interface UserManagementSettingsProps {
   currentUser: User;
   getAllUsers: () => Promise<User[]>;
-  createUser: (username: string, password: string, isAdmin: boolean) => Promise<{ success: boolean; message: string }>;
+  createUser: (username: string, password: string, isAdmin: boolean, role: 'admin' | 'user' | 'vendor', email?: string) => Promise<{ success: boolean; message: string }>;
   updateUser: (userId: string, updates: { isAdmin?: boolean; isActive?: boolean; permissions?: any }) => Promise<{ success: boolean; message: string }>;
   deleteUser: (userId: string) => Promise<{ success: boolean; message: string }>;
+  extractionTypes: ExtractionType[];
+  getUserExtractionTypes: (userId: string) => Promise<string[]>;
+  updateUserExtractionTypes: (userId: string, extractionTypeIds: string[]) => Promise<{ success: boolean; message: string }>;
+  transformationTypes: TransformationType[];
+  getUserTransformationTypes: (userId: string) => Promise<string[]>;
+  updateUserTransformationTypes: (userId: string, transformationTypeIds: string[]) => Promise<{ success: boolean; message: string }>;
 }
 
-export default function UserManagementSettings({ 
+export default function UserManagementSettings({
   currentUser,
   getAllUsers,
   createUser,
   updateUser,
-  deleteUser
+  deleteUser,
+  extractionTypes,
+  getUserExtractionTypes,
+  updateUserExtractionTypes,
+  transformationTypes,
+  getUserTransformationTypes,
+  updateUserTransformationTypes
 }: UserManagementSettingsProps) {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,6 +37,7 @@ export default function UserManagementSettings({
   const [newUser, setNewUser] = useState({
     username: '',
     password: '',
+    email: '',
     isAdmin: false,
     role: 'user' as 'admin' | 'user' | 'vendor'
   });
@@ -43,6 +56,18 @@ export default function UserManagementSettings({
   const [userForCurrentZone, setUserForCurrentZone] = useState<User | null>(null);
   const [isUpdatingCurrentZone, setIsUpdatingCurrentZone] = useState(false);
   const [newCurrentZone, setNewCurrentZone] = useState('');
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [userForEmail, setUserForEmail] = useState<User | null>(null);
+  const [isUpdatingEmail, setIsUpdatingEmail] = useState(false);
+  const [newEmail, setNewEmail] = useState('');
+  const [showExtractionTypesModal, setShowExtractionTypesModal] = useState(false);
+  const [userForExtractionTypes, setUserForExtractionTypes] = useState<User | null>(null);
+  const [selectedExtractionTypeIds, setSelectedExtractionTypeIds] = useState<string[]>([]);
+  const [isUpdatingExtractionTypes, setIsUpdatingExtractionTypes] = useState(false);
+  const [showTransformationTypesModal, setShowTransformationTypesModal] = useState(false);
+  const [userForTransformationTypes, setUserForTransformationTypes] = useState<User | null>(null);
+  const [selectedTransformationTypeIds, setSelectedTransformationTypeIds] = useState<string[]>([]);
+  const [isUpdatingTransformationTypes, setIsUpdatingTransformationTypes] = useState(false);
 
   const permissionOptions = [
     { key: 'extractionTypes', label: 'Extraction Types', icon: FileText, description: 'Manage PDF extraction templates and configurations' },
@@ -84,12 +109,12 @@ export default function UserManagementSettings({
     setSuccess('');
 
     try {
-      const result = await createUser(newUser.username.trim(), newUser.password, newUser.isAdmin, newUser.role);
+      const result = await createUser(newUser.username.trim(), newUser.password, newUser.isAdmin, newUser.role, newUser.email.trim() || undefined);
       
       if (result.success) {
         setSuccess(result.message);
         setShowAddModal(false);
-        setNewUser({ username: '', password: '', isAdmin: false, role: 'user' });
+        setNewUser({ username: '', password: '', email: '', isAdmin: false, role: 'user' });
         await loadUsers(); // Refresh the user list
         setTimeout(() => setSuccess(''), 3000);
       } else {
@@ -295,10 +320,10 @@ export default function UserManagementSettings({
     setSuccess('');
 
     try {
-      const result = await updateUser(userForCurrentZone.id, { 
-        currentZone: newCurrentZone.trim() 
+      const result = await updateUser(userForCurrentZone.id, {
+        currentZone: newCurrentZone.trim()
       });
-      
+
       if (result.success) {
         setSuccess(`Current zone updated to "${newCurrentZone.trim() || 'None'}"`);
         setShowCurrentZoneModal(false);
@@ -317,6 +342,151 @@ export default function UserManagementSettings({
       setIsUpdatingCurrentZone(false);
     }
   };
+
+  const handleManageEmail = (user: User) => {
+    setUserForEmail(user);
+    setNewEmail(user.email || '');
+    setShowEmailModal(true);
+  };
+
+  const handleUpdateEmail = async () => {
+    if (!userForEmail) return;
+
+    setIsUpdatingEmail(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const result = await updateUser(userForEmail.id, {
+        email: newEmail.trim() || undefined
+      });
+
+      if (result.success) {
+        setSuccess(`Email updated successfully`);
+        setShowEmailModal(false);
+        setUserForEmail(null);
+        setNewEmail('');
+        await loadUsers(); // Refresh the user list
+        setTimeout(() => setSuccess(''), 3000);
+      } else {
+        setError(result.message);
+        setTimeout(() => setError(''), 3000);
+      }
+    } catch (error) {
+      setError('Failed to update email. Please try again.');
+      setTimeout(() => setError(''), 3000);
+    } finally {
+      setIsUpdatingEmail(false);
+    }
+  };
+
+  const handleManageExtractionTypes = async (user: User) => {
+    setUserForExtractionTypes(user);
+    setIsUpdatingExtractionTypes(true);
+
+    // Fetch current extraction types for this user
+    const currentTypes = await getUserExtractionTypes(user.id);
+    setSelectedExtractionTypeIds(currentTypes);
+    setIsUpdatingExtractionTypes(false);
+    setShowExtractionTypesModal(true);
+  };
+
+  const handleUpdateExtractionTypes = async () => {
+    if (!userForExtractionTypes) return;
+
+    setIsUpdatingExtractionTypes(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const result = await updateUserExtractionTypes(userForExtractionTypes.id, selectedExtractionTypeIds);
+
+      if (result.success) {
+        setSuccess('Extraction type permissions updated successfully');
+        setShowExtractionTypesModal(false);
+        setUserForExtractionTypes(null);
+        setSelectedExtractionTypeIds([]);
+        await loadUsers();
+        setTimeout(() => setSuccess(''), 3000);
+      } else {
+        setError(result.message);
+        setTimeout(() => setError(''), 3000);
+      }
+    } catch (error) {
+      setError('Failed to update extraction type permissions. Please try again.');
+      setTimeout(() => setError(''), 3000);
+    } finally {
+      setIsUpdatingExtractionTypes(false);
+    }
+  };
+
+  const toggleExtractionType = (extractionTypeId: string) => {
+    setSelectedExtractionTypeIds(prev => {
+      if (prev.includes(extractionTypeId)) {
+        return prev.filter(id => id !== extractionTypeId);
+      } else {
+        return [...prev, extractionTypeId];
+      }
+    });
+  };
+
+  const handleManageTransformationTypes = async (user: User) => {
+    setUserForTransformationTypes(user);
+    setIsUpdatingTransformationTypes(true);
+
+    const currentTypes = await getUserTransformationTypes(user.id);
+    setSelectedTransformationTypeIds(currentTypes);
+    setIsUpdatingTransformationTypes(false);
+    setShowTransformationTypesModal(true);
+  };
+
+  const handleUpdateTransformationTypes = async () => {
+    if (!userForTransformationTypes) return;
+
+    setIsUpdatingTransformationTypes(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const result = await updateUserTransformationTypes(userForTransformationTypes.id, selectedTransformationTypeIds);
+
+      if (result.success) {
+        setSuccess('Transformation type permissions updated successfully');
+        setShowTransformationTypesModal(false);
+        setUserForTransformationTypes(null);
+        setSelectedTransformationTypeIds([]);
+        await loadUsers();
+        setTimeout(() => setSuccess(''), 3000);
+      } else {
+        setError(result.message);
+        setTimeout(() => setError(''), 3000);
+      }
+    } catch (error) {
+      setError('Failed to update transformation type permissions. Please try again.');
+      setTimeout(() => setError(''), 3000);
+    } finally {
+      setIsUpdatingTransformationTypes(false);
+    }
+  };
+
+  const toggleTransformationType = (transformationTypeId: string) => {
+    setSelectedTransformationTypeIds(prev => {
+      if (prev.includes(transformationTypeId)) {
+        return prev.filter(id => id !== transformationTypeId);
+      } else {
+        return [...prev, transformationTypeId];
+      }
+    });
+  };
+
+  const selectAllTransformationTypes = () => {
+    setSelectedTransformationTypeIds(transformationTypes.map(type => type.id));
+  };
+
+  const deselectAllTransformationTypes = () => {
+    setSelectedTransformationTypeIds([]);
+  };
+
   const togglePermission = (permissionKey: string) => {
     if (!selectedUser) return;
     
@@ -392,6 +562,285 @@ export default function UserManagementSettings({
                   setShowCurrentZoneModal(false);
                   setUserForCurrentZone(null);
                   setNewCurrentZone('');
+                  setError('');
+                }}
+                className="flex-1 px-4 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-semibold rounded-lg transition-colors duration-200"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Email Edit Modal */}
+      {showEmailModal && userForEmail && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+            <div className="text-center mb-6">
+              <div className="bg-blue-100 dark:bg-blue-900/50 p-3 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                <Mail className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">Update Email Address</h3>
+              <p className="text-gray-600 dark:text-gray-400">Update email for <strong>{userForEmail.username}</strong></p>
+            </div>
+
+            <div className="space-y-4 mb-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  placeholder="user@example.com"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Leave blank to remove email address
+                </p>
+              </div>
+            </div>
+
+            {error && (
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-3 mb-4">
+                <p className="text-red-700 dark:text-red-400 text-sm">{error}</p>
+              </div>
+            )}
+
+            <div className="flex space-x-3">
+              <button
+                onClick={handleUpdateEmail}
+                disabled={isUpdatingEmail}
+                className="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200"
+              >
+                {isUpdatingEmail ? 'Updating...' : 'Update Email'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowEmailModal(false);
+                  setUserForEmail(null);
+                  setNewEmail('');
+                  setError('');
+                }}
+                className="flex-1 px-4 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-semibold rounded-lg transition-colors duration-200"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Extraction Types Modal */}
+      {showExtractionTypesModal && userForExtractionTypes && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-2xl w-full mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="text-center mb-6">
+              <div className="bg-green-100 dark:bg-green-900/50 p-3 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                <FileText className="h-8 w-8 text-green-600 dark:text-green-400" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">Manage Extraction Types</h3>
+              <p className="text-gray-600 dark:text-gray-400">Select which extraction types <strong>{userForExtractionTypes.username}</strong> can access</p>
+            </div>
+
+            {extractionTypes.length === 0 ? (
+              <div className="text-center py-8">
+                <FileText className="h-12 w-12 text-gray-400 dark:text-gray-500 mx-auto mb-4" />
+                <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No Extraction Types Available</h4>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Create extraction types in the Extraction Types settings first.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4 mb-6">
+                {extractionTypes.map((type) => {
+                  const isSelected = selectedExtractionTypeIds.includes(type.id);
+
+                  return (
+                    <div
+                      key={type.id}
+                      className={`p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 ${
+                        isSelected
+                          ? 'border-green-300 dark:border-green-600 bg-green-50 dark:bg-green-900/20'
+                          : 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-500'
+                      }`}
+                      onClick={() => toggleExtractionType(type.id)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <div className={`p-2 rounded-lg ${
+                            isSelected ? 'bg-green-100 dark:bg-green-800' : 'bg-gray-100 dark:bg-gray-600'
+                          }`}>
+                            <FileText className={`h-5 w-5 ${
+                              isSelected ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'
+                            }`} />
+                          </div>
+                          <div>
+                            <h4 className={`font-semibold ${
+                              isSelected ? 'text-green-900 dark:text-green-200' : 'text-gray-700 dark:text-gray-200'
+                            }`}>
+                              {type.name}
+                            </h4>
+                            <p className={`text-sm ${
+                              isSelected ? 'text-green-600 dark:text-green-300' : 'text-gray-500 dark:text-gray-400'
+                            }`}>
+                              {type.formatType} Format
+                            </p>
+                          </div>
+                        </div>
+                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
+                          isSelected
+                            ? 'border-green-500 bg-green-500'
+                            : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700'
+                        }`}>
+                          {isSelected && (
+                            <div className="w-2 h-2 bg-white rounded-full"></div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {error && (
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-3 mb-4">
+                <p className="text-red-700 dark:text-red-400 text-sm">{error}</p>
+              </div>
+            )}
+
+            <div className="flex space-x-3">
+              <button
+                onClick={handleUpdateExtractionTypes}
+                disabled={isUpdatingExtractionTypes || extractionTypes.length === 0}
+                className="flex-1 px-4 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200"
+              >
+                {isUpdatingExtractionTypes ? 'Updating...' : 'Update Permissions'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowExtractionTypesModal(false);
+                  setUserForExtractionTypes(null);
+                  setSelectedExtractionTypeIds([]);
+                  setError('');
+                }}
+                className="flex-1 px-4 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-semibold rounded-lg transition-colors duration-200"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Transformation Types Modal */}
+      {showTransformationTypesModal && userForTransformationTypes && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-2xl w-full mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="text-center mb-6">
+              <div className="bg-orange-100 dark:bg-orange-900/50 p-3 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                <RefreshCw className="h-8 w-8 text-orange-600 dark:text-orange-400" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">Manage Transformation Types</h3>
+              <p className="text-gray-600 dark:text-gray-400">Select which transformation types <strong>{userForTransformationTypes.username}</strong> can access</p>
+            </div>
+
+            {transformationTypes.length === 0 ? (
+              <div className="text-center py-8">
+                <RefreshCw className="h-12 w-12 text-gray-400 dark:text-gray-500 mx-auto mb-4" />
+                <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No Transformation Types Available</h4>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Create transformation types in the Transformation Types settings first.
+                </p>
+              </div>
+            ) : (
+              <>
+                {/* Select All / Deselect All Buttons */}
+                <div className="flex space-x-3 mb-4">
+                  <button
+                    onClick={selectAllTransformationTypes}
+                    className="flex-1 px-3 py-2 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 text-orange-700 dark:text-orange-300 text-sm font-medium rounded-lg hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-colors duration-200"
+                  >
+                    Select All
+                  </button>
+                  <button
+                    onClick={deselectAllTransformationTypes}
+                    className="flex-1 px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors duration-200"
+                  >
+                    Deselect All
+                  </button>
+                </div>
+
+                <div className="space-y-4 mb-6">
+                  {transformationTypes.map((type) => {
+                    const isSelected = selectedTransformationTypeIds.includes(type.id);
+
+                    return (
+                      <div
+                        key={type.id}
+                        className={`p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 ${
+                          isSelected
+                            ? 'border-orange-300 dark:border-orange-600 bg-orange-50 dark:bg-orange-900/20'
+                            : 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-500'
+                        }`}
+                        onClick={() => toggleTransformationType(type.id)}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <div className={`p-2 rounded-lg ${
+                              isSelected ? 'bg-orange-100 dark:bg-orange-800' : 'bg-gray-100 dark:bg-gray-600'
+                            }`}>
+                              <RefreshCw className={`h-5 w-5 ${
+                                isSelected ? 'text-orange-600 dark:text-orange-400' : 'text-gray-500 dark:text-gray-400'
+                              }`} />
+                            </div>
+                            <div>
+                              <h4 className={`font-semibold ${
+                                isSelected ? 'text-orange-900 dark:text-orange-200' : 'text-gray-700 dark:text-gray-200'
+                              }`}>
+                                {type.name}
+                              </h4>
+                            </div>
+                          </div>
+                          <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
+                            isSelected
+                              ? 'border-orange-500 bg-orange-500'
+                              : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700'
+                          }`}>
+                            {isSelected && (
+                              <div className="w-2 h-2 bg-white rounded-full"></div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {error && (
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-3 mb-4">
+                <p className="text-red-700 dark:text-red-400 text-sm">{error}</p>
+              </div>
+            )}
+
+            <div className="flex space-x-3">
+              <button
+                onClick={handleUpdateTransformationTypes}
+                disabled={isUpdatingTransformationTypes || transformationTypes.length === 0}
+                className="flex-1 px-4 py-3 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200"
+              >
+                {isUpdatingTransformationTypes ? 'Updating...' : 'Update Permissions'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowTransformationTypesModal(false);
+                  setUserForTransformationTypes(null);
+                  setSelectedTransformationTypeIds([]);
                   setError('');
                 }}
                 className="flex-1 px-4 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-semibold rounded-lg transition-colors duration-200"
@@ -665,6 +1114,19 @@ export default function UserManagementSettings({
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Email Address (Optional)
+                </label>
+                <input
+                  type="email"
+                  value={newUser.email}
+                  onChange={(e) => setNewUser(prev => ({ ...prev, email: e.target.value }))}
+                  placeholder="Enter email address"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Role
                 </label>
                 <select
@@ -752,7 +1214,7 @@ export default function UserManagementSettings({
                 <button
                   onClick={() => {
                     setShowAddModal(false);
-                    setNewUser({ username: '', password: '', isAdmin: false, role: 'user' });
+                    setNewUser({ username: '', password: '', email: '', isAdmin: false, role: 'user' });
                     setError('');
                   }}
                   className="flex-1 px-4 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-semibold rounded-lg transition-colors duration-200"
@@ -822,13 +1284,19 @@ export default function UserManagementSettings({
                       </span>
                     )}
                   </div>
+                  {user.email && (
+                    <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center mt-1">
+                      <Mail className="h-3 w-3 mr-1" />
+                      {user.email}
+                    </p>
+                  )}
                   <div className="flex items-center space-x-4 mt-1">
                     <span className={`text-sm ${
-                      user.role === 'admin' ? 'text-purple-600 dark:text-purple-400 font-medium' : 
+                      user.role === 'admin' ? 'text-purple-600 dark:text-purple-400 font-medium' :
                       user.role === 'vendor' ? 'text-orange-600 dark:text-orange-400 font-medium' :
                       'text-gray-500 dark:text-gray-400'
                     }`}>
-                      {user.role === 'admin' ? 'Administrator' : 
+                      {user.role === 'admin' ? 'Administrator' :
                        user.role === 'vendor' ? 'Vendor' : 'User'}
                     </span>
                     <span className={`text-sm ${
@@ -854,6 +1322,31 @@ export default function UserManagementSettings({
               </div>
 
               <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => handleManageEmail(user)}
+                  className="px-3 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800 hover:bg-blue-200 transition-colors duration-200 flex items-center space-x-1"
+                >
+                  <Mail className="h-3 w-3" />
+                  <span>Email</span>
+                </button>
+                {user.role === 'user' && (
+                  <button
+                    onClick={() => handleManageExtractionTypes(user)}
+                    className="px-3 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800 hover:bg-green-200 transition-colors duration-200 flex items-center space-x-1"
+                  >
+                    <FileText className="h-3 w-3" />
+                    <span>Extract</span>
+                  </button>
+                )}
+                {user.role === 'user' && (
+                  <button
+                    onClick={() => handleManageTransformationTypes(user)}
+                    className="px-3 py-1 text-xs font-medium rounded-full bg-orange-100 text-orange-800 hover:bg-orange-200 transition-colors duration-200 flex items-center space-x-1"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    <span>Transform</span>
+                  </button>
+                )}
                 {user.role === 'vendor' && (
                   <button
                     onClick={() => handleManageCurrentZone(user)}

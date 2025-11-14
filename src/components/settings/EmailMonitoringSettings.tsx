@@ -1,16 +1,28 @@
 import React, { useState } from 'react';
-import { Save, Mail, TestTube, Play, Pause, Cloud, Globe, Send } from 'lucide-react';
-import type { EmailMonitoringConfig } from '../../types';
+import { Save, Mail, TestTube, Play, Pause, Cloud, Globe, Send, Filter } from 'lucide-react';
+import type { EmailMonitoringConfig, EmailProcessingRule, ExtractionType, TransformationType } from '../../types';
+import EmailRulesSettings from './EmailRulesSettings';
 
 interface EmailMonitoringSettingsProps {
   emailConfig: EmailMonitoringConfig;
+  emailRules: EmailProcessingRule[];
+  extractionTypes: ExtractionType[];
+  transformationTypes: TransformationType[];
   onUpdateEmailConfig: (config: EmailMonitoringConfig) => Promise<void>;
+  onUpdateEmailRules: (rules: EmailProcessingRule[]) => Promise<void>;
 }
+
+type EmailTab = 'config' | 'rules';
 
 export default function EmailMonitoringSettings({
   emailConfig,
-  onUpdateEmailConfig
+  emailRules,
+  extractionTypes,
+  transformationTypes,
+  onUpdateEmailConfig,
+  onUpdateEmailRules
 }: EmailMonitoringSettingsProps) {
+  const [activeTab, setActiveTab] = useState<EmailTab>('config');
   const [localConfig, setLocalConfig] = useState<EmailMonitoringConfig>(emailConfig);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -236,6 +248,39 @@ export default function EmailMonitoringSettings({
 
   return (
     <div className="space-y-6">
+      {/* Sub-navigation for Email Monitoring sections */}
+      <div className="flex space-x-1 bg-gray-50 dark:bg-gray-700/50 p-1 rounded-lg">
+        <button
+          onClick={() => setActiveTab('config')}
+          className={`flex-1 flex items-center justify-center space-x-2 px-4 py-2.5 rounded-md transition-all duration-200 ${
+            activeTab === 'config'
+              ? 'bg-white dark:bg-gray-600 text-blue-700 dark:text-blue-300 shadow-sm font-medium'
+              : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600'
+          }`}
+        >
+          <Mail className={`h-4 w-4 ${
+            activeTab === 'config' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'
+          }`} />
+          <span className="text-sm font-medium">Email Provider Configuration</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('rules')}
+          className={`flex-1 flex items-center justify-center space-x-2 px-4 py-2.5 rounded-md transition-all duration-200 ${
+            activeTab === 'rules'
+              ? 'bg-white dark:bg-gray-600 text-blue-700 dark:text-blue-300 shadow-sm font-medium'
+              : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600'
+          }`}
+        >
+          <Filter className={`h-4 w-4 ${
+            activeTab === 'rules' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'
+          }`} />
+          <span className="text-sm font-medium">Email Processing Rules</span>
+        </button>
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === 'config' ? (
+        <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">Email Monitoring</h3>
@@ -763,6 +808,15 @@ export default function EmailMonitoringSettings({
             </div>
           </div>
         </div>
+      )}
+        </div>
+      ) : (
+        <EmailRulesSettings
+          emailRules={emailRules}
+          extractionTypes={extractionTypes}
+          transformationTypes={transformationTypes}
+          onUpdateEmailRules={onUpdateEmailRules}
+        />
       )}
     </div>
   );

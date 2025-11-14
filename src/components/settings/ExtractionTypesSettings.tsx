@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Save, FileText, Code, Database, Map, Brain, Copy } from 'lucide-react';
-import type { ExtractionType, FieldMapping } from '../../types';
+import { Plus, Trash2, Save, FileText, Code, Database, Map, Brain, Copy, Split } from 'lucide-react';
+import type { ExtractionType, FieldMapping, ArraySplitConfig } from '../../types';
 import { useSupabaseData } from '../../hooks/useSupabaseData';
 import MappingPage from '../MappingPage';
+import { supabase } from '../../lib/supabase';
 
 interface ExtractionTypesSettingsProps {
   extractionTypes: ExtractionType[];
@@ -31,6 +32,13 @@ export default function ExtractionTypesSettings({
   const [copyNameError, setCopyNameError] = useState('');
   const [newTypeName, setNewTypeName] = useState('');
   const [nameError, setNameError] = useState('');
+  const [showArraySplitModal, setShowArraySplitModal] = useState(false);
+  const [editingArraySplit, setEditingArraySplit] = useState<ArraySplitConfig | null>(null);
+  const [arraySplitForm, setArraySplitForm] = useState<Partial<ArraySplitConfig>>({
+    targetArrayField: '',
+    splitBasedOnField: '',
+    splitStrategy: 'one_per_entry'
+  });
 
   const handleAddTypeClick = () => {
     setShowAddModal(true);
@@ -356,6 +364,84 @@ export default function ExtractionTypesSettings({
     }
   };
 
+  const handleAddArraySplitClick = () => {
+    setEditingArraySplit(null);
+    setArraySplitForm({
+      targetArrayField: '',
+      splitBasedOnField: '',
+      splitStrategy: 'one_per_entry'
+    });
+    setShowArraySplitModal(true);
+  };
+
+  const handleEditArraySplit = (split: ArraySplitConfig) => {
+    setEditingArraySplit(split);
+    setArraySplitForm(split);
+    setShowArraySplitModal(true);
+  };
+
+  const handleSaveArraySplit = async () => {
+    if (!arraySplitForm.targetArrayField || !arraySplitForm.splitBasedOnField) {
+      alert('Please fill in all required fields');
+      return;
+    }
+
+    const updated = [...localExtractionTypes];
+    const currentType = updated[selectedTypeIndex];
+
+    if (!currentType.arraySplitConfigs) {
+      currentType.arraySplitConfigs = [];
+    }
+
+    if (editingArraySplit) {
+      const index = currentType.arraySplitConfigs.findIndex(s => s.id === editingArraySplit.id);
+      if (index !== -1) {
+        currentType.arraySplitConfigs[index] = {
+          ...editingArraySplit,
+          ...arraySplitForm
+        };
+      }
+    } else {
+      currentType.arraySplitConfigs.push({
+        id: `temp-${Date.now()}`,
+        targetArrayField: arraySplitForm.targetArrayField!,
+        splitBasedOnField: arraySplitForm.splitBasedOnField!,
+        splitStrategy: arraySplitForm.splitStrategy || 'one_per_entry'
+      });
+    }
+
+    setLocalExtractionTypes(updated);
+    setShowArraySplitModal(false);
+
+    try {
+      await onUpdateExtractionTypes(updated);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (error) {
+      console.error('Failed to save array split config:', error);
+      alert('Failed to save array split configuration. Please try again.');
+    }
+  };
+
+  const handleDeleteArraySplit = async (splitId: string) => {
+    const updated = [...localExtractionTypes];
+    const currentType = updated[selectedTypeIndex];
+
+    if (currentType.arraySplitConfigs) {
+      currentType.arraySplitConfigs = currentType.arraySplitConfigs.filter(s => s.id !== splitId);
+      setLocalExtractionTypes(updated);
+
+      try {
+        await onUpdateExtractionTypes(updated);
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+      } catch (error) {
+        console.error('Failed to delete array split config:', error);
+        alert('Failed to delete array split configuration. Please try again.');
+      }
+    }
+  };
+
   const selectedType = localExtractionTypes[selectedTypeIndex];
 
   return (
@@ -565,7 +651,7 @@ export default function ExtractionTypesSettings({
               <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">Delete Extraction Type</h3>
               <p className="text-gray-600 dark:text-gray-400">Are you sure you want to delete "{typeToDelete.name}"? This action cannot be undone.</p>
             </div>
-            
+
             <div className="flex space-x-3">
               <button
                 onClick={confirmDelete}
@@ -582,6 +668,101 @@ export default function ExtractionTypesSettings({
               >
                 Cancel
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Array Split Configuration Modal */}
+      {showArraySplitModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 pt-20">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-2xl w-full mx-4 shadow-2xl">
+            <div className="text-center mb-6">
+              <div className="bg-blue-100 dark:bg-blue-900/50 p-3 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                <Split className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+                {editingArraySplit ? 'Edit Array Split Configuration' : 'Add Array Split Configuration'}
+              </h3>
+              <p className="text-gray-600 dark:text-gray-400">
+                Configure how to split array entries based on a field value
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Target Array Field
+                </label>
+                <input
+                  type="text"
+                  value={arraySplitForm.targetArrayField || ''}
+                  onChange={(e) => setArraySplitForm({ ...arraySplitForm, targetArrayField: e.target.value })}
+                  placeholder="e.g., barcodes"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  The name of the array field in your JSON template (e.g., "barcodes")
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Split Based On Field
+                </label>
+                <input
+                  type="text"
+                  value={arraySplitForm.splitBasedOnField || ''}
+                  onChange={(e) => setArraySplitForm({ ...arraySplitForm, splitBasedOnField: e.target.value })}
+                  placeholder="e.g., pieces"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  The field name whose value determines how many entries to create (e.g., "pieces")
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Split Strategy
+                </label>
+                <select
+                  value={arraySplitForm.splitStrategy || 'one_per_entry'}
+                  onChange={(e) => setArraySplitForm({ ...arraySplitForm, splitStrategy: e.target.value as 'one_per_entry' | 'divide_evenly' })}
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="one_per_entry">One Per Entry (each entry gets 1)</option>
+                  <option value="divide_evenly">Divide Evenly (split total across entries)</option>
+                </select>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  {arraySplitForm.splitStrategy === 'one_per_entry'
+                    ? 'If pieces = 3, create 3 entries each with pieces = 1'
+                    : 'If pieces = 9, you can manually distribute across entries'}
+                </p>
+              </div>
+
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
+                <h4 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">Example</h4>
+                <p className="text-sm text-blue-700 dark:text-blue-400">
+                  If your PDF shows "Pieces: 3", the AI will create 3 separate {arraySplitForm.targetArrayField || 'array'} entries,
+                  each with {arraySplitForm.splitBasedOnField || 'the field'} = {arraySplitForm.splitStrategy === 'one_per_entry' ? '1' : 'divided value'}.
+                </p>
+              </div>
+
+              <div className="flex space-x-3">
+                <button
+                  onClick={handleSaveArraySplit}
+                  className="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors duration-200"
+                >
+                  {editingArraySplit ? 'Update Configuration' : 'Add Configuration'}
+                </button>
+                <button
+                  onClick={() => setShowArraySplitModal(false)}
+                  className="flex-1 px-4 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-semibold rounded-lg transition-colors duration-200"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -864,9 +1045,23 @@ export default function ExtractionTypesSettings({
 
             {/* Default Upload Mode */}
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Default Upload Mode (Optional)
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Default Upload Mode (Optional)
+                </label>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id={`lockUploadMode-${selectedTypeIndex}`}
+                    checked={selectedType.lockUploadMode || false}
+                    onChange={(e) => updateExtractionType(selectedTypeIndex, 'lockUploadMode', e.target.checked)}
+                    className="w-4 h-4 text-purple-600 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded focus:ring-purple-500"
+                  />
+                  <label htmlFor={`lockUploadMode-${selectedTypeIndex}`} className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Lock Mode
+                  </label>
+                </div>
+              </div>
               <select
                 value={selectedType.defaultUploadMode || ''}
                 onChange={(e) => updateExtractionType(selectedTypeIndex, 'defaultUploadMode', e.target.value || undefined)}
@@ -878,6 +1073,7 @@ export default function ExtractionTypesSettings({
               </select>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 When set, the Extract page will automatically default to this upload mode when this extraction type is selected.
+                {selectedType.lockUploadMode && ' Lock Mode prevents users from changing the upload mode.'}
               </p>
             </div>
 
@@ -932,6 +1128,87 @@ export default function ExtractionTypesSettings({
                 These instructions help the AI identify when to use this extraction type. Be specific about document layout, key fields, headers, or unique characteristics.
               </p>
             </div>
+
+            {/* Array Split Configuration Section - Only for JSON */}
+            {selectedType.formatType === 'JSON' && (
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <div className="flex items-center space-x-2">
+                      <Split className="h-4 w-4 text-blue-600" />
+                      <span>Array Split Configuration</span>
+                    </div>
+                  </label>
+                  <button
+                    onClick={handleAddArraySplitClick}
+                    className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors duration-200 flex items-center space-x-1"
+                  >
+                    <Plus className="h-3 w-3" />
+                    <span>Add Split Rule</span>
+                  </button>
+                </div>
+
+                {selectedType.arraySplitConfigs && selectedType.arraySplitConfigs.length > 0 ? (
+                  <div className="space-y-2">
+                    {selectedType.arraySplitConfigs.map((split) => (
+                      <div
+                        key={split.id}
+                        className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center space-x-2 mb-1">
+                              <span className="text-sm font-semibold text-blue-900 dark:text-blue-100">
+                                {split.targetArrayField}
+                              </span>
+                              <span className="text-xs text-blue-600 dark:text-blue-400">→</span>
+                              <span className="text-sm text-blue-800 dark:text-blue-200">
+                                split by {split.splitBasedOnField}
+                              </span>
+                            </div>
+                            <p className="text-xs text-blue-700 dark:text-blue-300">
+                              Strategy: {split.splitStrategy === 'one_per_entry' ? 'One per entry' : 'Divide evenly'}
+                            </p>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() => handleEditArraySplit(split)}
+                              className="p-1 text-blue-600 hover:text-blue-700 hover:bg-blue-100 dark:hover:bg-blue-800 rounded transition-colors duration-200"
+                            >
+                              <FileText className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteArraySplit(split.id!)}
+                              className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900 rounded transition-colors duration-200"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-6 bg-gray-50 dark:bg-gray-700/50 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
+                    <Split className="h-8 w-8 text-gray-400 dark:text-gray-500 mx-auto mb-2" />
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      No array split rules configured
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                      Add a rule to automatically split arrays based on field values
+                    </p>
+                  </div>
+                )}
+
+                <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg">
+                  <p className="text-xs text-blue-700 dark:text-blue-400">
+                    <strong>Array splitting</strong> tells the AI to create multiple array entries based on a field value.
+                    For example, if "pieces" = 3, create 3 barcode entries each with pieces = 1.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {(selectedType.formatType === 'JSON' || selectedType.formatType === 'CSV') && (
               <div>
                 <div className="flex items-center justify-between mb-3">

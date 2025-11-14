@@ -23,6 +23,7 @@ export default function WorkflowExecutionLogsSettings({
   const [expandedLogData, setExpandedLogData] = useState<WorkflowExecutionLog | null>(null);
   const [stepLogs, setStepLogs] = useState<WorkflowStepLog[]>([]);
   const [expandedStepIds, setExpandedStepIds] = useState<Set<string>>(new Set());
+  const [isContextCollapsed, setIsContextCollapsed] = useState(true);
 
   // Debug logging
   React.useEffect(() => {
@@ -93,10 +94,12 @@ export default function WorkflowExecutionLogsSettings({
       setExpandedLogData(null);
       setStepLogs([]);
       setExpandedStepIds(new Set());
+      setIsContextCollapsed(true);
     } else {
       // Expanding
       setExpandedLogId(logId);
       setLoadingContextData(true);
+      setIsContextCollapsed(true);
 
       try {
         const [fullLogData, stepLogsData] = await Promise.all([
@@ -125,6 +128,10 @@ export default function WorkflowExecutionLogsSettings({
       }
       return newSet;
     });
+  };
+
+  const toggleContextCollapse = () => {
+    setIsContextCollapsed(prev => !prev);
   };
 
   const getExecutionTime = (log: WorkflowExecutionLog) => {
@@ -507,14 +514,21 @@ export default function WorkflowExecutionLogsSettings({
 
                               {/* Context Data */}
                               {expandedLogData.contextData && (
-                                <div>
-                                  <div className="flex items-center justify-between mb-3">
+                                <div className="rounded-lg border-2 border-purple-300 bg-purple-50 dark:bg-purple-900/20 dark:border-purple-700">
+                                  <div
+                                    className="p-3 cursor-pointer hover:opacity-80 flex items-center justify-between"
+                                    onClick={toggleContextCollapse}
+                                  >
                                     <h4 className="font-medium text-gray-900 dark:text-gray-100 flex items-center space-x-2">
+                                      {isContextCollapsed ? <ChevronRight className="h-4 w-4 text-gray-600" /> : <ChevronDown className="h-4 w-4 text-gray-600" />}
                                       <Database className="h-5 w-5 text-purple-600" />
                                       <span>Execution Context</span>
                                     </h4>
                                     <button
-                                      onClick={handleCopyContextData}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleCopyContextData();
+                                      }}
                                       className={`px-3 py-1 rounded text-sm font-medium transition-colors flex items-center space-x-1 ${
                                         copySuccess
                                           ? 'bg-green-600 text-white'
@@ -534,11 +548,13 @@ export default function WorkflowExecutionLogsSettings({
                                       )}
                                     </button>
                                   </div>
-                                  <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4 border border-purple-200 dark:border-purple-700 max-w-full">
-                                    <pre className="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap font-mono break-words overflow-x-auto">
-                                      {JSON.stringify(expandedLogData.contextData, null, 2)}
-                                    </pre>
-                                  </div>
+                                  {!isContextCollapsed && (
+                                    <div className="border-t border-purple-300 dark:border-purple-700 p-4 bg-white/50 dark:bg-gray-800/50">
+                                      <pre className="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap font-mono break-words overflow-x-auto">
+                                        {JSON.stringify(expandedLogData.contextData, null, 2)}
+                                      </pre>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>
