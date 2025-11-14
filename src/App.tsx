@@ -7,25 +7,53 @@ import TransformPage from './components/TransformPage';
 import SettingsPage from './components/SettingsPage';
 import LogsPage from './components/LogsPage';
 import TypeSetupPage from './components/TypeSetupPage';
-import VendorUploadPage from './components/VendorUploadPage';
-import OrdersPage from './components/OrdersPage';
+import VendorSetupPage from './components/VendorSetupPage';
+import CheckInSetupPage from './components/CheckInSetupPage';
+import ClientSetupPage from './components/ClientSetupPage';
+import OrderEntryPage from './components/OrderEntryPage';
+import RateQuotePage from './components/RateQuotePage';
+import AddressBookPage from './components/AddressBookPage';
+import DriverCheckinPage from './components/DriverCheckinPage';
+import PermissionDeniedModal from './components/common/PermissionDeniedModal';
 import { useSupabaseData } from './hooks/useSupabaseData';
 import { Loader2 } from 'lucide-react';
-import type { ExtractionType, TransformationType, SftpConfig, SettingsConfig, ApiConfig, EmailMonitoringConfig, EmailProcessingRule, User, SecuritySettings, CompanyBranding } from './types';
+import type { ExtractionType, TransformationType, SftpConfig, SettingsConfig, ApiConfig, EmailMonitoringConfig, EmailProcessingRule, User, SecuritySettings, CompanyBranding, FeatureFlag } from './types';
 
 export default function App() {
-  const { 
-    isAuthenticated, 
-    user, 
-    loading: authLoading, 
-    login, 
+  const [isDriverCheckin, setIsDriverCheckin] = useState(false);
+  const [permissionDenied, setPermissionDenied] = useState<{
+    isOpen: boolean;
+    message: string;
+    title?: string;
+  }>({
+    isOpen: false,
+    message: ''
+  });
+
+  useEffect(() => {
+    const path = window.location.pathname;
+    if (path === '/driver-checkin' || path === '/checkin') {
+      setIsDriverCheckin(true);
+    }
+  }, []);
+
+  const {
+    isAuthenticated,
+    user,
+    loading: authLoading,
+    login,
     logout,
     getAllUsers,
     createUser,
     updateUser,
-    deleteUser
+    deleteUser,
+    updateUserPassword,
+    getUserExtractionTypes,
+    updateUserExtractionTypes,
+    getUserTransformationTypes,
+    updateUserTransformationTypes
   } = useAuth();
-  const [currentPage, setCurrentPage] = useState<'extract' | 'vendor' | 'orders' | 'transform' | 'types' | 'settings' | 'logs'>('extract');
+  const [currentPage, setCurrentPage] = useState<'extract' | 'vendor-setup' | 'checkin-setup' | 'client-setup' | 'transform' | 'types' | 'settings' | 'logs' | 'order-entry' | 'rate-quote' | 'client-users' | 'address-book'>('extract');
   const {
     extractionTypes,
     transformationTypes,
@@ -45,6 +73,7 @@ export default function App() {
     loading,
     refreshData,
     companyBranding,
+    featureFlags,
     refreshLogs,
     refreshLogsWithFilters,
     refreshProcessedEmails,
@@ -60,22 +89,34 @@ export default function App() {
     refreshPollingLogs,
     logExtraction,
     updateCompanyBranding,
+    updateFeatureFlags,
     deleteExtractionType,
     updateTransformationTypes,
     deleteTransformationType
   } = useSupabaseData();
 
-  // Always navigate to extract page when user logs in
+  // Navigate to appropriate page when user logs in
   useEffect(() => {
     if (isAuthenticated && user) {
-      // Navigate vendors to their dedicated upload page
-      if (user.role === 'vendor') {
-        setCurrentPage('orders');
+      // Client users start on order-entry or rate-quote if they have access
+      if (user.role === 'client') {
+        if (user.hasOrderEntryAccess) {
+          setCurrentPage('order-entry');
+        } else if (user.hasRateQuoteAccess) {
+          setCurrentPage('rate-quote');
+        } else if (user.isClientAdmin) {
+          setCurrentPage('client-users');
+        }
       } else {
+        // All other users start on the extract page
         setCurrentPage('extract');
       }
     }
   }, [isAuthenticated, user]);
+
+  if (isDriverCheckin) {
+    return <DriverCheckinPage />;
+  }
 
   if (authLoading || loading) {
     return (
@@ -95,23 +136,128 @@ export default function App() {
     return <LoginPage companyBranding={companyBranding} onLogin={login} />;
   }
 
-  const handleNavigate = (page: 'extract' | 'vendor' | 'orders' | 'transform' | 'types' | 'settings' | 'logs') => {
-    if (page === 'settings' && !user.isAdmin) {
-      alert('You do not have permission to access settings.');
+  const handleNavigate = (page: 'extract' | 'vendor-setup' | 'checkin-setup' | 'client-setup' | 'transform' | 'types' | 'settings' | 'logs' | 'order-entry' | 'rate-quote' | 'client-users') => {
+    // Check for settings permission
+    if (page === 'settings') {
+      const nonTypePermissions = {
+        sftp: user.permissions.sftp,
+        api: user.permissions.api,
+        emailMonitoring: user.permissions.emailMonitoring,
+        emailRules: user.permissions.emailRules,
+        processedEmails: user.permissions.processedEmails,
+        extractionLogs: user.permissions.extractionLogs,
+        userManagement: user.permissions.userManagement
+      };
+      const hasAnyPermission = Object.values(nonTypePermissions).some(permission => permission === true);
+
+      if (!hasAnyPermission) {
+        setPermissionDenied({
+          isOpen: true,
+          message: 'You do not have permission to access the Settings page. This section requires administrative privileges to configure system settings, manage users, or adjust integrations.',
+          title: 'Settings Access Denied'
+        });
+        return;
+      }
+    }
+
+    // Check for vendor-setup permission (requires userManagement)
+    if (page === 'vendor-setup' && !user.permissions.userManagement) {
+      setPermissionDenied({
+        isOpen: true,
+        message: 'You do not have permission to access Vendor Setup. This section requires user management privileges.',
+        title: 'Vendor Setup Access Denied'
+      });
       return;
     }
-    if ((page === 'types' || page === 'logs' || page === 'settings' || page === 'transform' || page === 'extract') && user.role === 'vendor') {
-      alert('You do not have permission to access this section.');
+
+    // Check for checkin-setup permission (requires admin)
+    if (page === 'checkin-setup' && !user.isAdmin) {
+      setPermissionDenied({
+        isOpen: true,
+        message: 'You do not have permission to access Check-In Setup. This section requires administrator privileges.',
+        title: 'Check-In Setup Access Denied'
+      });
       return;
     }
-    if (page === 'orders' && user.role !== 'vendor') {
-      alert('This page is only available for vendor accounts.');
+
+    // Check for client-setup permission (requires userManagement)
+    if (page === 'client-setup' && !user.permissions.userManagement) {
+      setPermissionDenied({
+        isOpen: true,
+        message: 'You do not have permission to access Client Setup. This section requires user management privileges.',
+        title: 'Client Setup Access Denied'
+      });
       return;
     }
-    if (page === 'vendor' && user.role !== 'vendor') {
-      alert('This page is only available for vendor accounts.');
+
+    // Check for order-entry permission (requires client role with access)
+    if (page === 'order-entry') {
+      if (user.role !== 'client' || !user.hasOrderEntryAccess) {
+        setPermissionDenied({
+          isOpen: true,
+          message: 'You do not have permission to access Order Entry. This feature is only available to client users with appropriate access.',
+          title: 'Order Entry Access Denied'
+        });
+        return;
+      }
+    }
+
+    // Check for rate-quote permission (requires client role with access)
+    if (page === 'rate-quote') {
+      if (user.role !== 'client' || !user.hasRateQuoteAccess) {
+        setPermissionDenied({
+          isOpen: true,
+          message: 'You do not have permission to access Rate Quote. This feature is only available to client users with appropriate access.',
+          title: 'Rate Quote Access Denied'
+        });
+        return;
+      }
+    }
+
+    // Check for address-book permission (requires client role with access or Client Admin)
+    if (page === 'address-book') {
+      if (user.role !== 'client' || (!user.hasAddressBookAccess && !user.isClientAdmin)) {
+        setPermissionDenied({
+          isOpen: true,
+          message: 'You do not have permission to access Address Book. This feature is only available to client users with appropriate access.',
+          title: 'Address Book Access Denied'
+        });
+        return;
+      }
+    }
+
+    // Check for client-users permission (requires client admin)
+    if (page === 'client-users') {
+      if (user.role !== 'client' || !user.isClientAdmin) {
+        setPermissionDenied({
+          isOpen: true,
+          message: 'You do not have permission to access User Management. This feature is only available to client administrators.',
+          title: 'User Management Access Denied'
+        });
+        return;
+      }
+    }
+
+    // Prevent vendors from accessing admin/user pages
+    if ((page === 'types' || page === 'logs' || page === 'settings' || page === 'transform' || page === 'vendor-setup' || page === 'checkin-setup' || page === 'client-setup') && user.role === 'vendor') {
+      setPermissionDenied({
+        isOpen: true,
+        message: 'You do not have permission to access this section. Your account is configured with vendor-only access.',
+        title: 'Access Denied'
+      });
       return;
     }
+
+    // Prevent client users from accessing admin/user pages
+    if ((page === 'extract' || page === 'types' || page === 'logs' || page === 'settings' || page === 'transform' || page === 'vendor-setup' || page === 'checkin-setup' || page === 'client-setup') && user.role === 'client') {
+      setPermissionDenied({
+        isOpen: true,
+        message: 'You do not have permission to access this section. Your account is configured with vendor-only access.',
+        title: 'Access Denied'
+      });
+      return;
+    }
+
     setCurrentPage(page);
   };
 
@@ -208,14 +354,21 @@ export default function App() {
   };
 
   return (
-    <Layout 
-      currentPage={currentPage} 
-      onNavigate={handleNavigate}
-      user={user}
-      companyBranding={companyBranding}
-      onLogout={logout}
-    >
-      {currentPage === 'extract' && (
+    <>
+      <PermissionDeniedModal
+        isOpen={permissionDenied.isOpen}
+        onClose={() => setPermissionDenied({ isOpen: false, message: '' })}
+        message={permissionDenied.message}
+        title={permissionDenied.title}
+      />
+      <Layout
+        currentPage={currentPage}
+        onNavigate={handleNavigate}
+        user={user}
+        companyBranding={companyBranding}
+        onLogout={logout}
+      >
+        {currentPage === 'extract' && (
         <ExtractPage
           extractionTypes={extractionTypes}
           transformationTypes={transformationTypes}
@@ -225,19 +378,56 @@ export default function App() {
           onNavigateToSettings={() => setCurrentPage('settings')}
         />
       )}
-      {currentPage === 'vendor' && (
-        <VendorUploadPage
-          transformationTypes={transformationTypes}
-          sftpConfig={sftpConfig}
-          settingsConfig={settingsConfig}
+      {currentPage === 'vendor-setup' && (
+        <VendorSetupPage
+          currentUser={user}
           apiConfig={apiConfig}
-          workflowSteps={workflowSteps}
+          extractionTypes={extractionTypes}
+          transformationTypes={transformationTypes}
+          getAllUsers={getAllUsers}
+          createUser={createUser}
+          updateUser={updateUser}
+          deleteUser={deleteUser}
+          updateUserPassword={updateUserPassword}
+          onUpdateApiConfig={handleUpdateApiConfig}
         />
       )}
-      {currentPage === 'orders' && (
-        <OrdersPage
-          user={user}
-          apiConfig={apiConfig}
+      {currentPage === 'checkin-setup' && (
+        <CheckInSetupPage
+          workflows={workflows}
+        />
+      )}
+      {currentPage === 'client-setup' && (
+        <ClientSetupPage
+          currentUser={user}
+          extractionTypes={extractionTypes}
+          transformationTypes={transformationTypes}
+          getAllUsers={getAllUsers}
+          createUser={createUser}
+          updateUser={updateUser}
+          deleteUser={deleteUser}
+          updateUserPassword={updateUserPassword}
+        />
+      )}
+      {currentPage === 'order-entry' && (
+        <OrderEntryPage />
+      )}
+      {currentPage === 'rate-quote' && (
+        <RateQuotePage />
+      )}
+      {currentPage === 'address-book' && (
+        <AddressBookPage user={user} />
+      )}
+      {currentPage === 'client-users' && (
+        <ClientSetupPage
+          currentUser={user}
+          extractionTypes={extractionTypes}
+          transformationTypes={transformationTypes}
+          getAllUsers={getAllUsers}
+          createUser={createUser}
+          updateUser={updateUser}
+          deleteUser={deleteUser}
+          updateUserPassword={updateUserPassword}
         />
       )}
       {currentPage === 'transform' && (
@@ -247,6 +437,7 @@ export default function App() {
           settingsConfig={settingsConfig}
           apiConfig={apiConfig}
           onNavigateToSettings={() => setCurrentPage('settings')}
+          getUserTransformationTypes={getUserTransformationTypes}
         />
       )}
       {currentPage === 'logs' && (
@@ -302,6 +493,11 @@ export default function App() {
           createUser={createUser}
           updateUser={updateUser}
           deleteUser={deleteUser}
+          updateUserPassword={updateUserPassword}
+          getUserExtractionTypes={getUserExtractionTypes}
+          updateUserExtractionTypes={updateUserExtractionTypes}
+          getUserTransformationTypes={getUserTransformationTypes}
+          updateUserTransformationTypes={updateUserTransformationTypes}
           onUpdateExtractionTypes={handleUpdateExtractionTypes}
           onDeleteExtractionType={handleDeleteExtractionType}
           onUpdateTransformationTypes={handleUpdateTransformationTypes}
@@ -313,9 +509,12 @@ export default function App() {
           onUpdateEmailRules={handleUpdateEmailRules}
           onUpdateSftpPollingConfigs={updateSftpPollingConfigs}
           onUpdateCompanyBranding={handleUpdateCompanyBranding}
+          onUpdateFeatureFlags={updateFeatureFlags}
           transformationTypes={transformationTypes}
+          featureFlags={featureFlags}
         />
       )}
-    </Layout>
+      </Layout>
+    </>
   );
 }
