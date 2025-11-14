@@ -35,6 +35,9 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
   const [includeAttachment, setIncludeAttachment] = useState(true);
   const [attachmentSource, setAttachmentSource] = useState('original_pdf');
   const [emailFrom, setEmailFrom] = useState('');
+  const [pdfEmailStrategy, setPdfEmailStrategy] = useState<'all_pages_in_group' | 'specific_page_in_group'>('all_pages_in_group');
+  const [specificPageToEmail, setSpecificPageToEmail] = useState(1);
+  const [ccUser, setCcUser] = useState(false);
   const [nextStepOnSuccess, setNextStepOnSuccess] = useState('');
   const [nextStepOnFailure, setNextStepOnFailure] = useState('');
   const [responseDataPath, setResponseDataPath] = useState('');
@@ -143,6 +146,9 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
         setIncludeAttachment(config.includeAttachment !== false);
         setAttachmentSource(config.attachmentSource || 'original_pdf');
         setEmailFrom(config.from || '');
+        setPdfEmailStrategy(config.pdfEmailStrategy || 'all_pages_in_group');
+        setSpecificPageToEmail(config.specificPageToEmail || 1);
+        setCcUser(config.ccUser || false);
       } else {
         console.log('No configJson found in step, using defaults');
 
@@ -244,7 +250,10 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
           body: emailBody,
           includeAttachment: includeAttachment,
           attachmentSource: attachmentSource,
-          from: emailFrom
+          from: emailFrom,
+          pdfEmailStrategy: pdfEmailStrategy,
+          specificPageToEmail: pdfEmailStrategy === 'specific_page_in_group' ? specificPageToEmail : undefined,
+          ccUser: ccUser
         };
         break;
     }
@@ -890,6 +899,22 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                   </div>
                 </div>
 
+                <div className="flex items-center space-x-3 mt-4">
+                  <input
+                    type="checkbox"
+                    id="ccUser"
+                    checked={ccUser}
+                    onChange={(e) => setCcUser(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded focus:ring-blue-500"
+                  />
+                  <label htmlFor="ccUser" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    CC User
+                  </label>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 ml-7">
+                  CC the current user who submitted the transform (requires email in Users table)
+                </p>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Subject
@@ -947,14 +972,58 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
                       >
                         <option value="original_pdf">Original PDF</option>
+                        <option value="extraction_type_filename">Extraction Type Filename</option>
                         <option value="renamed_pdf">Renamed PDF (from previous step)</option>
                       </select>
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        Choose whether to attach the original PDF or a renamed version from a previous workflow step
+                        Choose whether to attach the original PDF, use the extraction type's filename template, or a renamed version from a previous workflow step
                       </p>
                     </div>
                   )}
                 </div>
+
+                {includeAttachment && (
+                  <div className="mt-4">
+                    <h6 className="font-medium text-gray-700 dark:text-gray-300 mb-4">PDF Attachment Strategy</h6>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          Attachment Strategy
+                        </label>
+                        <select
+                          value={pdfEmailStrategy}
+                          onChange={(e) => setPdfEmailStrategy(e.target.value as 'all_pages_in_group' | 'specific_page_in_group')}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                        >
+                          <option value="all_pages_in_group">Attach All Pages in Group</option>
+                          <option value="specific_page_in_group">Attach Specific Page Only</option>
+                        </select>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          Choose whether to attach the entire grouped PDF or just a specific page from the group
+                        </p>
+                      </div>
+
+                      {pdfEmailStrategy === 'specific_page_in_group' && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            Specific Page to Attach
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={specificPageToEmail}
+                            onChange={(e) => setSpecificPageToEmail(parseInt(e.target.value) || 1)}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                            placeholder="2"
+                          />
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            Page number within the group to attach (e.g., 2 for the second page in a 2-page group)
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
