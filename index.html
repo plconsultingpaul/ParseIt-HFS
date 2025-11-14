@@ -5,6 +5,16 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ParseIt - PDF Data Extraction Application</title>
+    <script>
+      window.opencvLoadError = false;
+      window.opencvLoadSuccess = false;
+    </script>
+    <script
+      async
+      src="https://docs.opencv.org/4.7.0/opencv.js"
+      onload="window.opencvLoadSuccess = true; console.log('[OpenCV] Script loaded successfully');"
+      onerror="window.opencvLoadError = true; console.error('[OpenCV] Script failed to load');"
+    ></script>
   </head>
   <body>
     <div id="root"></div>
