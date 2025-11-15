@@ -30,6 +30,7 @@ interface UploadRequest {
   formatType?: string
   customFilenamePart?: string
   exactFilename?: string
+  pageGroupFilenameTemplate?: string
   pdfUploadStrategy?: 'all_pages_in_group' | 'specific_page_in_group'
   specificPageToUpload?: number
   sftpPathOverride?: string
@@ -50,7 +51,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { sftpConfig, xmlContent, pdfBase64, baseFilename, originalFilename, parseitIdMapping, useExistingParseitId, userId, extractionTypeId, transformationTypeId, formatType, customFilenamePart, exactFilename, pdfUploadStrategy, specificPageToUpload, sftpPathOverride, uploadFileTypes }: UploadRequest = await req.json()
+    const { sftpConfig, xmlContent, pdfBase64, baseFilename, originalFilename, parseitIdMapping, useExistingParseitId, userId, extractionTypeId, transformationTypeId, formatType, customFilenamePart, exactFilename, pageGroupFilenameTemplate, pdfUploadStrategy, specificPageToUpload, sftpPathOverride, uploadFileTypes }: UploadRequest = await req.json()
 
     console.log('=== SFTP UPLOAD DEBUG ===')
     console.log('Request received with fields:')
@@ -202,13 +203,36 @@ Deno.serve(async (req: Request) => {
         const singlePageBase64 = Buffer.from(singlePagePdfBytes).toString('base64')
 
         let finalFilenameBase: string
-        if (exactFilename) {
+
+        console.log('🔧 Filename decision process:')
+        console.log('  - pageGroupFilenameTemplate (page group config):', pageGroupFilenameTemplate || 'not provided')
+        console.log('  - exactFilename (workflow rename):', exactFilename || 'not provided')
+        console.log('  - baseFilename (may include extraction type):', baseFilename || 'not provided')
+        console.log('  - originalFilename (original PDF):', originalFilename || 'not provided')
+        console.log('  - customFilenamePart:', customFilenamePart || 'not provided')
+
+        if (pageGroupFilenameTemplate) {
+          finalFilenameBase = pageGroupFilenameTemplate
+          console.log('  ✅ Using pageGroupFilenameTemplate from page group config')
+        } else if (exactFilename) {
           finalFilenameBase = exactFilename
+          console.log('  ✅ Using exactFilename from workflow rename')
         } else if (customFilenamePart) {
           finalFilenameBase = `${baseFilename}_${customFilenamePart}`
-        } else {
+          console.log('  ✅ Using baseFilename with customFilenamePart')
+        } else if (baseFilename && baseFilename !== '' && baseFilename !== 'document') {
           finalFilenameBase = baseFilename
+          console.log('  ✅ Using baseFilename (extraction type or workflow default)')
+        } else if (originalFilename) {
+          const fileNameWithoutExt = originalFilename.replace(/\.(pdf|csv|json|xml)$/i, '')
+          finalFilenameBase = fileNameWithoutExt
+          console.log('  ✅ Using originalFilename (fallback)')
+        } else {
+          finalFilenameBase = 'document'
+          console.log('  ⚠️ Using fallback: document')
         }
+
+        console.log('  📝 Final filename base chosen:', finalFilenameBase)
 
         const shouldAppendPageNumber = pagesToProcess.length > 1
 
