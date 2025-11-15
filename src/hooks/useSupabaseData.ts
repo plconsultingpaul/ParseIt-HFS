@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { ExtractionType, TransformationType, SftpConfig, SettingsConfig, ApiConfig, EmailMonitoringConfig, EmailProcessingRule, ProcessedEmail, ExtractionLog, User, ExtractionWorkflow, WorkflowStep, EmailPollingLog, WorkflowExecutionLog, SftpPollingLog, CompanyBranding } from '../types';
+import type { ExtractionType, TransformationType, SftpConfig, SettingsConfig, ApiConfig, EmailMonitoringConfig, EmailProcessingRule, ProcessedEmail, ExtractionLog, User, ExtractionWorkflow, WorkflowStep, EmailPollingLog, WorkflowExecutionLog, SftpPollingLog, CompanyBranding, FeatureFlag } from '../types';
 import {
   fetchApiConfig,
   updateApiConfig,
@@ -31,7 +31,9 @@ import {
   fetchEmailConfig,
   updateEmailConfig,
   fetchEmailRules,
-  updateEmailRules
+  updateEmailRules,
+  fetchFeatureFlags,
+  updateFeatureFlag
 } from '../services';
 import { supabase } from '../lib/supabase';
 
@@ -87,6 +89,7 @@ export function useSupabaseData() {
     logoUrl: '',
     showCompanyName: false
   });
+  const [featureFlags, setFeatureFlags] = useState<FeatureFlag[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadData = async () => {
@@ -132,16 +135,18 @@ export function useSupabaseData() {
       setUsers(usersData);
       setExtractionLogs(extractionLogsData);
 
-      const [processedEmailsData, emailPollingLogsData, workflowExecutionLogsData, sftpPollingLogsData] = await Promise.all([
+      const [processedEmailsData, emailPollingLogsData, workflowExecutionLogsData, sftpPollingLogsData, featureFlagsData] = await Promise.all([
         fetchProcessedEmails(),
         fetchEmailPollingLogs(),
         fetchWorkflowExecutionLogs(),
-        fetchSftpPollingLogs()
+        fetchSftpPollingLogs(),
+        fetchFeatureFlags()
       ]);
       setProcessedEmails(processedEmailsData);
       setEmailPollingLogs(emailPollingLogsData);
       setWorkflowExecutionLogs(workflowExecutionLogsData);
       setSftpPollingLogs(sftpPollingLogsData);
+      setFeatureFlags(featureFlagsData);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -347,6 +352,19 @@ export function useSupabaseData() {
     setCompanyBranding(updatedBranding);
   };
 
+  const handleUpdateFeatureFlags = async (flags: FeatureFlag[]): Promise<void> => {
+    try {
+      for (const flag of flags) {
+        await updateFeatureFlag(flag.featureKey, flag.isEnabled);
+      }
+      const updatedFlags = await fetchFeatureFlags();
+      setFeatureFlags(updatedFlags);
+    } catch (error) {
+      console.error('Error updating feature flags:', error);
+      throw error;
+    }
+  };
+
   const refreshLogs = async (): Promise<void> => {
     try {
       const updatedLogs = await fetchExtractionLogs();
@@ -434,6 +452,7 @@ export function useSupabaseData() {
     workflowExecutionLogs,
     sftpPollingLogs,
     companyBranding,
+    featureFlags,
     loading,
     refreshData: loadData,
     updateExtractionTypes: handleUpdateExtractionTypes,
@@ -447,6 +466,7 @@ export function useSupabaseData() {
     updateWorkflows: handleUpdateWorkflows,
     updateWorkflowSteps: handleUpdateWorkflowSteps,
     updateCompanyBranding: handleUpdateCompanyBranding,
+    updateFeatureFlags: handleUpdateFeatureFlags,
     deleteExtractionType: handleDeleteExtractionType,
     deleteTransformationType: handleDeleteTransformationType,
     refreshLogs,
