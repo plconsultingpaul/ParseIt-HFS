@@ -352,10 +352,12 @@ Deno.serve(async (req)=>{
       extractedData: extractedData,
       originalExtractedData: requestData.extractedData,
       formatType: formatType,
-      pdfFilename: requestData.pdfFilename,
+      pdfFilename: requestData.extractionTypeFilename || requestData.pdfFilename,
       originalPdfFilename: requestData.originalPdfFilename,
+      extractionTypeFilename: typeDetails?.filename_template || requestData.extractionTypeFilename,
       pdfStoragePath: requestData.pdfStoragePath,
-      pdfBase64: requestData.pdfBase64
+      pdfBase64: requestData.pdfBase64,
+      userId: requestData.userId
     };
     if (formatType !== 'CSV' && typeof extractedData === 'object' && extractedData !== null) {
       contextData = {
@@ -1260,14 +1262,26 @@ Deno.serve(async (req)=>{
               }
             } else if (attachmentSource === 'original_pdf') {
               attachmentFilename = contextData.originalPdfFilename || 'attachment.pdf';
-              console.log('📧 ✅ Using originalPdfFilename:', attachmentFilename);
+              console.log('Using originalPdfFilename:', attachmentFilename);
+            } else if (attachmentSource === 'extraction_type_filename') {
+              if (contextData.extractionTypeFilename) {
+                const filenameResult = processTemplateWithMapping(contextData.extractionTypeFilename, contextData, 'Extraction Type Filename');
+                attachmentFilename = filenameResult.processed;
+                Object.assign(allFieldMappings, filenameResult.mappings);
+                console.log('Using extractionTypeFilename from extraction type:', attachmentFilename);
+              } else {
+                attachmentFilename = contextData.originalPdfFilename || 'attachment.pdf';
+                console.log('No extractionTypeFilename available, falling back to originalPdfFilename:', attachmentFilename);
+              }
             } else {
               if (contextData.renamedFilename) {
                 attachmentFilename = contextData.renamedFilename;
                 console.log('📧 ✅ Using renamedFilename (legacy mode):', attachmentFilename);
-              } else if (contextData.transformSetupFilename || contextData.pdfFilename) {
-                attachmentFilename = contextData.transformSetupFilename || contextData.pdfFilename;
-                console.log('📧 ✅ Using transform setup filename (legacy mode):', attachmentFilename);
+              } else if (contextData.extractionTypeFilename) {
+                const filenameResult = processTemplateWithMapping(contextData.extractionTypeFilename, contextData, 'Extraction Type Filename');
+                attachmentFilename = filenameResult.processed;
+                Object.assign(allFieldMappings, filenameResult.mappings);
+                console.log('Using extractionTypeFilename from extraction type:', attachmentFilename);
               } else {
                 attachmentFilename = contextData.originalPdfFilename || 'attachment.pdf';
                 console.log('📧 ⚠️  Using fallback to originalPdfFilename (legacy mode):', attachmentFilename);
@@ -1294,8 +1308,38 @@ Deno.serve(async (req)=>{
             };
             console.log('📧 PDF attachment prepared with filename:', attachmentFilename);
           }
+          let ccEmail = null;
+          if (config.ccUser && contextData.userId) {
+            console.log('📧 CC User enabled, fetching user email for userId:', contextData.userId);
+            try {
+              const userResponse = await fetch(
+                `${supabaseUrl}/rest/v1/users?id=eq.${contextData.userId}&select=email`,
+                {
+                  headers: {
+                    'Authorization': `Bearer ${supabaseServiceKey}`,
+                    'Content-Type': 'application/json',
+                    'apikey': supabaseServiceKey
+                  }
+                }
+              );
+              if (userResponse.ok) {
+                const users = await userResponse.json();
+                if (users && users.length > 0 && users[0].email) {
+                  ccEmail = users[0].email;
+                  console.log('📧 ✅ User email retrieved for CC:', ccEmail);
+                } else {
+                  console.log('📧 ⚠️ User email not found in database for userId:', contextData.userId);
+                }
+              } else {
+                console.log('📧 ⚠️ Failed to fetch user email:', userResponse.status);
+              }
+            } catch (userError) {
+              console.error('📧 ❌ Error fetching user email:', userError);
+            }
+          }
           console.log('\n📧 === FINAL EMAIL DETAILS ===');
           console.log('To:', processedConfig.to);
+          console.log('CC:', ccEmail || 'none');
           console.log('Subject:', processedConfig.subject);
           console.log('From:', processedConfig.from || '(default)');
           console.log('Attachment:', pdfAttachment ? pdfAttachment.filename : 'none');
@@ -1336,14 +1380,16 @@ Deno.serve(async (req)=>{
               to: processedConfig.to,
               subject: processedConfig.subject,
               body: processedConfig.body,
-              from: processedConfig.from || emailConfig.office365.default_send_from_email
+              from: processedConfig.from || emailConfig.office365.default_send_from_email,
+              cc: ccEmail
             }, pdfAttachment);
           } else {
             emailResult = await sendGmailEmail(emailConfig.gmail, {
               to: processedConfig.to,
               subject: processedConfig.subject,
               body: processedConfig.body,
-              from: processedConfig.from || emailConfig.gmail.default_send_from_email
+              from: processedConfig.from || emailConfig.gmail.default_send_from_email,
+              cc: ccEmail
             }, pdfAttachment);
           }
           if (!emailResult.success) {
@@ -1353,7 +1399,10 @@ Deno.serve(async (req)=>{
             success: true,
             message: 'Email sent successfully',
             emailResult,
-            processedConfig,
+            processedConfig: {
+              ...processedConfig,
+              cc: ccEmail
+            },
             fieldMappings: allFieldMappings,
             attachmentIncluded: !!pdfAttachment,
             attachmentFilename: pdfAttachment?.filename
@@ -1744,7 +1793,16 @@ async function sendOffice365Email(config, email, attachment) {
               address: email.to
             }
           }
-        ]
+        ],
+        ...(email.cc ? {
+          ccRecipients: [
+            {
+              emailAddress: {
+                address: email.cc
+              }
+            }
+          ]
+        } : {})
       },
       saveToSentItems: 'true'
     };
@@ -1814,6 +1872,7 @@ async function sendGmailEmail(config, email, attachment) {
       const boundary = '----=_Part_' + Date.now();
       const emailLines = [
         `To: ${email.to}`,
+        ...(email.cc ? [`Cc: ${email.cc}`] : []),
         `From: ${email.from}`,
         `Subject: ${email.subject}`,
         `MIME-Version: 1.0`,
@@ -1838,6 +1897,7 @@ async function sendGmailEmail(config, email, attachment) {
       emailContent = [
         `From: ${email.from}`,
         `To: ${email.to}`,
+        ...(email.cc ? [`Cc: ${email.cc}`] : []),
         `Subject: ${email.subject}`,
         'Content-Type: text/html; charset=utf-8',
         '',
