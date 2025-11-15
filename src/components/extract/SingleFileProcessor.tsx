@@ -58,7 +58,8 @@ export default function SingleFileProcessor({
         formatType: currentExtractionType.formatType,
         fieldMappings: currentExtractionType.fieldMappings,
         parseitIdMapping: currentExtractionType.parseitIdMapping,
-        apiKey: apiConfig.googleApiKey || settingsConfig.geminiApiKey
+        apiKey: apiConfig.googleApiKey || settingsConfig.geminiApiKey,
+        arraySplitConfigs: currentExtractionType.arraySplitConfigs
       });
       
       setExtractedData(result);
@@ -93,7 +94,8 @@ export default function SingleFileProcessor({
           parseitIdMapping: currentExtractionType.parseitIdMapping,
           traceTypeMapping: currentExtractionType.traceTypeMapping,
           traceTypeValue: currentExtractionType.traceTypeValue,
-          apiKey: apiConfig.googleApiKey || settingsConfig.geminiApiKey
+          apiKey: apiConfig.googleApiKey || settingsConfig.geminiApiKey,
+          arraySplitConfigs: currentExtractionType.arraySplitConfigs
         });
         setExtractedData(dataToSend);
       }
@@ -119,7 +121,8 @@ export default function SingleFileProcessor({
             pdfPages: 1,
             pdfBase64: pdfBase64,
             originalPdfFilename: uploadedFile.name,
-            formatType: currentExtractionType.formatType
+            formatType: currentExtractionType.formatType,
+            extractionTypeFilename: currentExtractionType.filename
           });
           
           console.log('Workflow execution completed successfully:', workflowResult);

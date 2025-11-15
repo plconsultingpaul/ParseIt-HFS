@@ -2,18 +2,21 @@ import React, { useState, useRef } from 'react';
 import { Upload, FileText, Brain, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
 import { PDFDocument } from 'pdf-lib';
 import { detectExtractionType } from '../../lib/geminiDetector';
-import { splitPdfIntoLogicalDocuments } from '../../lib/pdfUtils';
-import type { ExtractionType, DetectionResult, VendorExtractionRule } from '../../types';
+import { splitPdfIntoLogicalDocuments, splitPdfWithPageGroups } from '../../lib/pdfUtils';
+import type { ExtractionType, DetectionResult, VendorExtractionRule, PageGroupConfig } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 
 interface AutoDetectPdfUploadSectionProps {
   extractionTypes: ExtractionType[];
   apiKey: string;
   onDetectionComplete: (
-    uploadedFile: File, 
-    pdfPages: File[], 
-    detectedTypeId: string | null, 
-    detectionResult: DetectionResult
+    uploadedFile: File,
+    pdfPages: File[],
+    detectedTypeId: string | null,
+    detectionResult: DetectionResult,
+    pageGroupConfigs?: PageGroupConfig[],
+    pageRangeInfo?: { totalPages: number; usedPages: number[]; unusedPages: number[] },
+    originalPdfFile?: File
   ) => void;
 }
 
@@ -159,43 +162,91 @@ export default function AutoDetectPdfUploadSection({
         console.log('🔍 ❌ No transformation type available!');
       }
       
+      // Get total page count for tracking (load PDF once)
+      const arrayBuffer = await file.arrayBuffer();
+      const pdfDoc = await PDFDocument.load(arrayBuffer);
+      const totalPages = pdfDoc.getPageCount();
+
       // Split PDF into logical documents based on transformation type settings
       let logicalDocuments: File[] = [];
-      
-      // Check if we should use advanced splitting based on transformation type settings
-      const shouldUseAdvancedSplitting = transformationType && (
-        (transformationType.pagesPerGroup && 
-         typeof transformationType.pagesPerGroup === 'number' && 
-         transformationType.pagesPerGroup > 1) ||
-        (transformationType.documentStartDetectionEnabled === true)
-      );
-      
+      let usedPageGroupConfigs: PageGroupConfig[] | undefined = undefined;
+      const usedPages: number[] = [];
+
+      // PRIORITY 1: Check if page group configurations exist (manual configuration)
+      const hasPageGroupConfigs = transformationType &&
+        transformationType.pageGroupConfigs &&
+        transformationType.pageGroupConfigs.length > 0;
+
       console.log('🚨 === FINAL SPLITTING DECISION ===');
-      console.log('🚨 shouldUseAdvancedSplitting:', shouldUseAdvancedSplitting);
       console.log('🚨 transformationType exists:', !!transformationType);
-      if (transformationType) {
-        console.log('🚨 pagesPerGroup condition:', transformationType.pagesPerGroup && typeof transformationType.pagesPerGroup === 'number' && transformationType.pagesPerGroup > 1);
-        console.log('🚨 documentStartDetection condition:', transformationType.documentStartDetectionEnabled === true);
-      }
-      
-      if (shouldUseAdvancedSplitting) {
-        console.log('✅ === USING ADVANCED PDF SPLITTING ===');
+      console.log('🚨 hasPageGroupConfigs:', hasPageGroupConfigs);
+
+      if (hasPageGroupConfigs) {
+        console.log('✅ === USING PAGE GROUP CONFIGURATIONS (MANUAL) ===');
         console.log('✅ Transformation type:', transformationType.name);
-        console.log('✅ Splitting options:', {
-          pagesPerGroup: transformationType.pagesPerGroup,
-          documentStartPattern: transformationType.documentStartPattern,
-          documentStartDetectionEnabled: transformationType.documentStartDetectionEnabled
+        console.log('✅ Page group configs count:', transformationType.pageGroupConfigs!.length);
+        console.log('✅ Page group configs:', transformationType.pageGroupConfigs!.map((config, idx) => ({
+          order: config.groupOrder,
+          pagesPerGroup: config.pagesPerGroup,
+          pattern: config.smartDetectionPattern,
+          processMode: config.processMode,
+          workflowId: config.workflowId
+        })));
+
+        // Use page group configuration splitting with AI support
+        const pageGroupResults = await splitPdfWithPageGroups(
+          file,
+          transformationType.pageGroupConfigs!,
+          apiKey  // Pass API key for AI-powered detection
+        );
+        logicalDocuments = pageGroupResults.map(result => result.file);
+        usedPageGroupConfigs = transformationType.pageGroupConfigs;
+
+        // Track which pages were used
+        pageGroupResults.forEach(result => {
+          for (let page = result.originalPdfPageStart; page <= result.originalPdfPageEnd; page++) {
+            if (!usedPages.includes(page)) {
+              usedPages.push(page);
+            }
+          }
         });
-        
-        logicalDocuments = await splitPdfIntoLogicalDocuments(file, {
-          pagesPerGroup: transformationType.pagesPerGroup || 1,
-          documentStartPattern: transformationType.documentStartPattern,
-          documentStartDetectionEnabled: transformationType.documentStartDetectionEnabled || false
-        });
-        
-        console.log('✅ Advanced splitting completed, created', logicalDocuments.length, 'logical documents');
+
+        console.log('✅ Page group splitting completed, created', logicalDocuments.length, 'logical documents');
         console.log('✅ Document names:', logicalDocuments.map(doc => doc.name));
+        console.log('✅ Used pages:', usedPages.sort((a, b) => a - b));
       } else {
+        // PRIORITY 2: Check if we should use advanced splitting based on main transformation type settings
+        const shouldUseAdvancedSplitting = transformationType && (
+          (transformationType.pagesPerGroup &&
+           typeof transformationType.pagesPerGroup === 'number' &&
+           transformationType.pagesPerGroup > 1) ||
+          (transformationType.documentStartDetectionEnabled === true)
+        );
+
+        console.log('🚨 shouldUseAdvancedSplitting (main settings):', shouldUseAdvancedSplitting);
+        if (transformationType) {
+          console.log('🚨 pagesPerGroup condition:', transformationType.pagesPerGroup && typeof transformationType.pagesPerGroup === 'number' && transformationType.pagesPerGroup > 1);
+          console.log('🚨 documentStartDetection condition:', transformationType.documentStartDetectionEnabled === true);
+        }
+
+        if (shouldUseAdvancedSplitting) {
+          console.log('✅ === USING ADVANCED PDF SPLITTING (MAIN SETTINGS) ===');
+          console.log('✅ Transformation type:', transformationType.name);
+          console.log('✅ Splitting options:', {
+            pagesPerGroup: transformationType.pagesPerGroup,
+            documentStartPattern: transformationType.documentStartPattern,
+            documentStartDetectionEnabled: transformationType.documentStartDetectionEnabled
+          });
+
+          logicalDocuments = await splitPdfIntoLogicalDocuments(file, {
+            pagesPerGroup: transformationType.pagesPerGroup || 1,
+            documentStartPattern: transformationType.documentStartPattern,
+            documentStartDetectionEnabled: transformationType.documentStartDetectionEnabled || false
+          });
+
+          console.log('✅ Advanced splitting completed, created', logicalDocuments.length, 'logical documents');
+          console.log('✅ Document names:', logicalDocuments.map(doc => doc.name));
+        } else {
         console.log('⚠️ === USING SIMPLE SINGLE-PAGE SPLITTING ===');
         console.log('⚠️ Reason: Advanced grouping conditions not met');
         if (transformationType) {
@@ -209,42 +260,60 @@ export default function AutoDetectPdfUploadSection({
         } else {
           console.log('⚠️   - transformationType: null/undefined');
         }
-        
+
         // Fall back to single-page splitting for backward compatibility
-        const arrayBuffer = await file.arrayBuffer();
-        const pdfDoc = await PDFDocument.load(arrayBuffer);
-        const pageCount = pdfDoc.getPageCount();
-        
-        console.log('⚠️ Creating', pageCount, 'individual page files (single-page splitting)');
-        
-        for (let i = 0; i < pageCount; i++) {
+        console.log('⚠️ Creating', totalPages, 'individual page files (single-page splitting)');
+
+        for (let i = 0; i < totalPages; i++) {
           const singlePageDoc = await PDFDocument.create();
           const [copiedPage] = await singlePageDoc.copyPages(pdfDoc, [i]);
           singlePageDoc.addPage(copiedPage);
-          
+
           const pdfBytes = await singlePageDoc.save();
           const pageFile = new File([pdfBytes], `${file.name.replace('.pdf', '')}_page_${i + 1}.pdf`, {
             type: 'application/pdf'
           });
-          
+
           logicalDocuments.push(pageFile);
+          usedPages.push(i + 1); // Track this page as used (1-indexed)
         }
-        
+
         console.log('⚠️ Simple splitting completed, created', logicalDocuments.length, 'individual pages');
+        }
       }
 
+      // Calculate unused pages
+      const allPages = Array.from({ length: totalPages }, (_, i) => i + 1);
+      const unusedPages = allPages.filter(page => !usedPages.includes(page));
+
       console.log('🏁 === PDF SPLITTING COMPLETE ===');
+      console.log('🏁 Total pages in PDF:', totalPages);
       console.log('🏁 Total logical documents created:', logicalDocuments.length);
       console.log('🏁 Document names:', logicalDocuments.map(doc => doc.name));
-      
+      console.log('🏁 Used pages:', usedPages.sort((a, b) => a - b));
+      console.log('🏁 Unused pages:', unusedPages);
+      console.log('🏁 Used page group configs:', usedPageGroupConfigs ? 'YES' : 'NO');
+
       setIsProcessingPdf(false);
 
       // Use the initial detection result
       setDetectionResult(initialDetectionResult);
       setIsDetecting(false);
 
-      // Notify parent component with the logical documents
-      onDetectionComplete(file, logicalDocuments, initialDetectionResult.detectedTypeId, initialDetectionResult);
+      // Notify parent component with the logical documents and page range info
+      onDetectionComplete(
+        file,
+        logicalDocuments,
+        initialDetectionResult.detectedTypeId,
+        initialDetectionResult,
+        usedPageGroupConfigs,
+        {
+          totalPages,
+          usedPages: usedPages.sort((a, b) => a - b),
+          unusedPages
+        },
+        file  // Pass original PDF file
+      );
 
     } catch (error) {
       setIsProcessingPdf(false);

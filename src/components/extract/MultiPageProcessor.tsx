@@ -174,7 +174,8 @@ export default function MultiPageProcessor({
           parseitIdMapping: currentExtractionType.parseitIdMapping,
           traceTypeMapping: currentExtractionType.traceTypeMapping,
           traceTypeValue: currentExtractionType.traceTypeValue,
-          apiKey: apiConfig.googleApiKey || settingsConfig.geminiApiKey
+          apiKey: apiConfig.googleApiKey || settingsConfig.geminiApiKey,
+          arraySplitConfigs: currentExtractionType.arraySplitConfigs
         });
       }
 
