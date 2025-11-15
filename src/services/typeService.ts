@@ -11,7 +11,28 @@ export async function fetchExtractionTypes(): Promise<ExtractionType[]> {
 
     if (error) throw error;
 
-    return (data || []).map(type => ({
+    const types = data || [];
+
+    // Fetch array split configurations
+    const { data: arraySplitData, error: arraySplitError } = await supabase
+      .from('extraction_type_array_splits')
+      .select('*')
+      .order('created_at', { ascending: true });
+
+    if (arraySplitError) {
+      console.error('Error fetching array split configs:', arraySplitError);
+    }
+
+    // Group array splits by extraction type ID
+    const arraySplitsByType = new Map<string, any[]>();
+    (arraySplitData || []).forEach(split => {
+      if (!arraySplitsByType.has(split.extraction_type_id)) {
+        arraySplitsByType.set(split.extraction_type_id, []);
+      }
+      arraySplitsByType.get(split.extraction_type_id)!.push(split);
+    });
+
+    return types.map(type => ({
       id: type.id,
       name: type.name,
       defaultInstructions: type.default_instructions,
@@ -29,7 +50,17 @@ export async function fetchExtractionTypes(): Promise<ExtractionType[]> {
       csvIncludeHeaders: type.csv_include_headers,
       csvRowDetectionInstructions: type.csv_row_detection_instructions,
       csvMultiPageProcessing: type.csv_multi_page_processing,
-      defaultUploadMode: type.default_upload_mode as 'manual' | 'auto' | undefined
+      defaultUploadMode: type.default_upload_mode as 'manual' | 'auto' | undefined,
+      lockUploadMode: type.lock_upload_mode || false,
+      arraySplitConfigs: (arraySplitsByType.get(type.id) || []).map(split => ({
+        id: split.id,
+        extractionTypeId: split.extraction_type_id,
+        targetArrayField: split.target_array_field,
+        splitBasedOnField: split.split_based_on_field,
+        splitStrategy: split.split_strategy as 'one_per_entry' | 'divide_evenly',
+        createdAt: split.created_at,
+        updatedAt: split.updated_at
+      }))
     }));
   } catch (error) {
     console.error('Error fetching extraction types:', error);
@@ -52,7 +83,7 @@ export async function updateExtractionTypes(types: ExtractionType[]): Promise<vo
       allRequiredFields: !!(type.name && type.defaultInstructions !== undefined && type.formatTemplate !== undefined)
     });
   });
-  
+
   try {
     // Get existing types to determine which to update vs insert
     console.log('Fetching existing types from database...');
@@ -103,6 +134,7 @@ export async function updateExtractionTypes(types: ExtractionType[]): Promise<vo
           csv_row_detection_instructions: type.csvRowDetectionInstructions || null,
           csv_multi_page_processing: type.csvMultiPageProcessing || false,
           default_upload_mode: type.defaultUploadMode || null,
+          lock_upload_mode: type.lockUploadMode || false,
           updated_at: new Date().toISOString()
         })
         .eq('id', type.id);
@@ -151,7 +183,8 @@ export async function updateExtractionTypes(types: ExtractionType[]): Promise<vo
           csv_include_headers: type.csvIncludeHeaders !== false,
           csv_row_detection_instructions: type.csvRowDetectionInstructions || null,
           csv_multi_page_processing: type.csvMultiPageProcessing || false,
-          default_upload_mode: type.defaultUploadMode || null
+          default_upload_mode: type.defaultUploadMode || null,
+          lock_upload_mode: type.lockUploadMode || false
         };
 
         console.log('  Mapped data for database:', mappedData);
@@ -185,7 +218,91 @@ export async function updateExtractionTypes(types: ExtractionType[]): Promise<vo
     // Let the user manually delete types they don't want
     console.log('=== CLEANUP PHASE SKIPPED ===');
     console.log('Skipping automatic cleanup to prevent deleting newly inserted records');
-    
+
+    // Update array split configurations
+    console.log('=== UPDATING ARRAY SPLIT CONFIGS ===');
+    for (const type of types) {
+      if (!type.id.startsWith('temp-') && type.arraySplitConfigs) {
+        console.log(`Processing array split configs for ${type.name}`);
+
+        const { data: existingArraySplits } = await supabase
+          .from('extraction_type_array_splits')
+          .select('id')
+          .eq('extraction_type_id', type.id);
+
+        const existingArraySplitIds = new Set((existingArraySplits || []).map(split => split.id));
+        const splitsToUpdate = type.arraySplitConfigs.filter(split => existingArraySplitIds.has(split.id!) && !split.id!.startsWith('temp-'));
+        const splitsToInsert = type.arraySplitConfigs.filter(split => !split.id || !existingArraySplitIds.has(split.id) || split.id.startsWith('temp-'));
+        const splitIdsToKeep = new Set(type.arraySplitConfigs.filter(s => s.id).map(split => split.id!));
+        const splitsToDelete = (existingArraySplits || []).filter(split => !splitIdsToKeep.has(split.id));
+
+        for (const split of splitsToUpdate) {
+          console.log(`Updating array split config: ${split.id}`);
+          const { error } = await supabase
+            .from('extraction_type_array_splits')
+            .update({
+              target_array_field: split.targetArrayField,
+              split_based_on_field: split.splitBasedOnField,
+              split_strategy: split.splitStrategy,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', split.id!);
+
+          if (error) {
+            console.error('❌ Failed to update array split config:', error);
+            console.error('Error details:', {
+              message: error.message,
+              code: error.code,
+              details: error.details,
+              hint: error.hint
+            });
+            throw new Error(`Failed to update array split configuration: ${error.message}`);
+          }
+        }
+
+        if (splitsToInsert.length > 0) {
+          console.log(`Inserting ${splitsToInsert.length} array split configs for ${type.name}`);
+          const insertData = splitsToInsert.map(split => ({
+            extraction_type_id: type.id,
+            target_array_field: split.targetArrayField,
+            split_based_on_field: split.splitBasedOnField,
+            split_strategy: split.splitStrategy
+          }));
+
+          console.log('Array split insert data:', insertData);
+
+          const { error } = await supabase
+            .from('extraction_type_array_splits')
+            .insert(insertData);
+
+          if (error) {
+            console.error('❌ Failed to insert array split configs:', error);
+            console.error('Error details:', {
+              message: error.message,
+              code: error.code,
+              details: error.details,
+              hint: error.hint
+            });
+            throw new Error(`Failed to save array split configuration: ${error.message}`);
+          }
+
+          console.log(`✅ Successfully inserted ${splitsToInsert.length} array split configs`);
+        }
+
+        for (const split of splitsToDelete) {
+          const { error } = await supabase
+            .from('extraction_type_array_splits')
+            .delete()
+            .eq('id', split.id);
+
+          if (error) throw error;
+        }
+
+        console.log(`Updated ${splitsToUpdate.length}, inserted ${splitsToInsert.length}, deleted ${splitsToDelete.length} array split configs for ${type.name}`);
+      }
+    }
+    console.log('=== ARRAY SPLIT CONFIGS UPDATE COMPLETE ===');
+
     console.log('=== updateExtractionTypes SERVICE COMPLETE ===');
   } catch (error) {
     console.error('Error updating extraction types:', error);
@@ -217,7 +334,26 @@ export async function fetchTransformationTypes(): Promise<TransformationType[]> 
 
     if (error) throw error;
 
-    return (data || []).map(type => ({
+    const types = data || [];
+
+    const { data: pageGroupData, error: pageGroupError } = await supabase
+      .from('page_group_configs')
+      .select('*')
+      .order('group_order', { ascending: true });
+
+    if (pageGroupError) {
+      console.error('Error fetching page group configs:', pageGroupError);
+    }
+
+    const pageGroupsByType = new Map<string, any[]>();
+    (pageGroupData || []).forEach(pg => {
+      if (!pageGroupsByType.has(pg.transformation_type_id)) {
+        pageGroupsByType.set(pg.transformation_type_id, []);
+      }
+      pageGroupsByType.get(pg.transformation_type_id)!.push(pg);
+    });
+
+    return types.map(type => ({
       id: type.id,
       name: type.name,
       defaultInstructions: type.default_instructions,
@@ -231,7 +367,24 @@ export async function fetchTransformationTypes(): Promise<TransformationType[]> 
       pagesPerGroup: type.pages_per_group || 1,
       documentStartPattern: type.document_start_pattern,
       documentStartDetectionEnabled: type.document_start_detection_enabled || false,
-      defaultUploadMode: type.default_upload_mode as 'manual' | 'auto' | undefined
+      defaultUploadMode: type.default_upload_mode as 'manual' | 'auto' | undefined,
+      lockUploadMode: type.lock_upload_mode || false,
+      pageGroupConfigs: (pageGroupsByType.get(type.id) || []).map(pg => ({
+        id: pg.id,
+        transformationTypeId: pg.transformation_type_id,
+        groupOrder: pg.group_order,
+        pagesPerGroup: pg.pages_per_group,
+        workflowId: pg.workflow_id,
+        smartDetectionPattern: pg.smart_detection_pattern,
+        processMode: pg.process_mode as 'single' | 'all',
+        filenameTemplate: pg.filename_template,
+        fieldMappings: pg.field_mappings ? JSON.parse(pg.field_mappings) : undefined,
+        useAiDetection: pg.use_ai_detection || false,
+        fallbackBehavior: pg.fallback_behavior as 'skip' | 'fixed_position' | 'error' | undefined,
+        detectionConfidenceThreshold: pg.detection_confidence_threshold || 0.7,
+        createdAt: pg.created_at,
+        updatedAt: pg.updated_at
+      }))
     }));
   } catch (error) {
     console.error('Error fetching transformation types:', error);
@@ -302,6 +455,7 @@ export async function updateTransformationTypes(types: TransformationType[]): Pr
           document_start_pattern: type.documentStartPattern,
           document_start_detection_enabled: type.documentStartDetectionEnabled || false,
           default_upload_mode: type.defaultUploadMode || null,
+          lock_upload_mode: type.lockUploadMode || false,
           updated_at: new Date().toISOString()
         })
         .eq('id', type.id);
@@ -343,7 +497,8 @@ export async function updateTransformationTypes(types: TransformationType[]): Pr
           pages_per_group: type.pagesPerGroup || 1,
           document_start_pattern: type.documentStartPattern || null,
           document_start_detection_enabled: type.documentStartDetectionEnabled || false,
-          default_upload_mode: type.defaultUploadMode || null
+          default_upload_mode: type.defaultUploadMode || null,
+          lock_upload_mode: type.lockUploadMode || false
         };
         
         console.log('  Mapped data for database:', mappedData);
@@ -390,7 +545,80 @@ export async function updateTransformationTypes(types: TransformationType[]): Pr
     // Let the user manually delete types they don't want
     console.log('=== CLEANUP PHASE SKIPPED ===');
     console.log('Skipping automatic cleanup to prevent deleting newly inserted records');
-   
+
+    console.log('=== UPDATING PAGE GROUP CONFIGS ===');
+    for (const type of types) {
+      if (!type.id.startsWith('temp-') && type.pageGroupConfigs) {
+        console.log(`Processing page group configs for ${type.name}`);
+
+        const { data: existingPageGroups } = await supabase
+          .from('page_group_configs')
+          .select('id')
+          .eq('transformation_type_id', type.id);
+
+        const existingPageGroupIds = new Set((existingPageGroups || []).map(pg => pg.id));
+        const configsToUpdate = type.pageGroupConfigs.filter(cfg => existingPageGroupIds.has(cfg.id) && !cfg.id.startsWith('temp-'));
+        const configsToInsert = type.pageGroupConfigs.filter(cfg => !existingPageGroupIds.has(cfg.id) || cfg.id.startsWith('temp-'));
+        const configIdsToKeep = new Set(type.pageGroupConfigs.map(cfg => cfg.id));
+        const configsToDelete = (existingPageGroups || []).filter(pg => !configIdsToKeep.has(pg.id));
+
+        for (const config of configsToUpdate) {
+          const { error } = await supabase
+            .from('page_group_configs')
+            .update({
+              group_order: config.groupOrder,
+              pages_per_group: config.pagesPerGroup,
+              workflow_id: config.workflowId || null,
+              smart_detection_pattern: config.smartDetectionPattern || null,
+              process_mode: config.processMode,
+              filename_template: config.filenameTemplate || null,
+              field_mappings: config.fieldMappings ? JSON.stringify(config.fieldMappings) : null,
+              use_ai_detection: config.useAiDetection || false,
+              fallback_behavior: config.fallbackBehavior || 'skip',
+              detection_confidence_threshold: config.detectionConfidenceThreshold || 0.7,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', config.id);
+
+          if (error) throw error;
+        }
+
+        if (configsToInsert.length > 0) {
+          const insertData = configsToInsert.map(config => ({
+            transformation_type_id: type.id,
+            group_order: config.groupOrder,
+            pages_per_group: config.pagesPerGroup,
+            workflow_id: config.workflowId || null,
+            smart_detection_pattern: config.smartDetectionPattern || null,
+            process_mode: config.processMode,
+            filename_template: config.filenameTemplate || null,
+            field_mappings: config.fieldMappings ? JSON.stringify(config.fieldMappings) : null,
+            use_ai_detection: config.useAiDetection || false,
+            fallback_behavior: config.fallbackBehavior || 'skip',
+            detection_confidence_threshold: config.detectionConfidenceThreshold || 0.7
+          }));
+
+          const { error } = await supabase
+            .from('page_group_configs')
+            .insert(insertData);
+
+          if (error) throw error;
+        }
+
+        for (const config of configsToDelete) {
+          const { error } = await supabase
+            .from('page_group_configs')
+            .delete()
+            .eq('id', config.id);
+
+          if (error) throw error;
+        }
+
+        console.log(`Updated ${configsToUpdate.length}, inserted ${configsToInsert.length}, deleted ${configsToDelete.length} page group configs for ${type.name}`);
+      }
+    }
+    console.log('=== PAGE GROUP CONFIGS UPDATE COMPLETE ===');
+
     console.log('=== updateTransformationTypes SERVICE COMPLETE ===');
   } catch (error) {
     console.error('Error updating transformation types:', error);

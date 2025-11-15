@@ -4,3 +4,4 @@ export * from './typeService';
 export * from './workflowService';
 export * from './logService';
 export * from './emailService';
+export * from './featureFlagService';
