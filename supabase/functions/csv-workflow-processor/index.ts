@@ -1107,13 +1107,45 @@ Deno.serve(async (req: Request) => {
             }
           }
 
+          let ccEmail = null;
+          if (config.ccUser && contextData.userId) {
+            console.log('📧 CC User enabled, fetching user email for userId:', contextData.userId);
+            try {
+              const userResponse = await fetch(
+                `${supabaseUrl}/rest/v1/users?id=eq.${contextData.userId}&select=email`,
+                {
+                  headers: {
+                    'Authorization': `Bearer ${supabaseServiceKey}`,
+                    'Content-Type': 'application/json',
+                    'apikey': supabaseServiceKey
+                  }
+                }
+              );
+              if (userResponse.ok) {
+                const users = await userResponse.json();
+                if (users && users.length > 0 && users[0].email) {
+                  ccEmail = users[0].email;
+                  console.log('📧 ✅ User email retrieved for CC:', ccEmail);
+                } else {
+                  console.log('📧 ⚠️ User email not found in database for userId:', contextData.userId);
+                }
+              } else {
+                console.log('📧 ⚠️ Failed to fetch user email:', userResponse.status);
+              }
+            } catch (userError) {
+              console.error('📧 ❌ Error fetching user email:', userError);
+            }
+          }
+
           console.log('📧 Sending email...')
           console.log('📧 To:', config.to)
+          console.log('📧 CC:', ccEmail || 'none')
           console.log('📧 Subject:', subject)
 
           stepOutputData = {
             emailSent: true,
             to: config.to,
+            cc: ccEmail,
             subject,
             message: 'Email action executed (actual sending not implemented in this version)'
           }
