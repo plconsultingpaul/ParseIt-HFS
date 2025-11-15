@@ -6,6 +6,16 @@ export interface FieldMapping {
   maxLength?: number;
 }
 
+export interface ArraySplitConfig {
+  id?: string;
+  extractionTypeId?: string;
+  targetArrayField: string;
+  splitBasedOnField: string;
+  splitStrategy: 'one_per_entry' | 'divide_evenly';
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface ExtractionType {
   id: string;
   name: string;
@@ -25,6 +35,8 @@ export interface ExtractionType {
   csvRowDetectionInstructions?: string;
   csvMultiPageProcessing?: boolean;
   defaultUploadMode?: 'manual' | 'auto';
+  lockUploadMode?: boolean;
+  arraySplitConfigs?: ArraySplitConfig[];
 }
 
 export interface TransformationFieldMapping {
@@ -34,6 +46,30 @@ export interface TransformationFieldMapping {
   dataType?: 'string' | 'number' | 'integer' | 'datetime' | 'phone' | 'boolean';
   maxLength?: number;
   pageNumberInGroup?: number;
+}
+
+export interface PageGroupConfig {
+  id: string;
+  transformationTypeId: string;
+  groupOrder: number;
+  pagesPerGroup: number;
+  workflowId?: string;
+  smartDetectionPattern?: string;
+  processMode: 'single' | 'all';
+  filenameTemplate?: string;
+  fieldMappings?: TransformationFieldMapping[];
+  useAiDetection?: boolean;
+  fallbackBehavior?: 'skip' | 'fixed_position' | 'error';
+  detectionConfidenceThreshold?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ManualGroupEdit {
+  groupIndex: number;
+  groupOrder: number;
+  pages: number[];
+  pageGroupConfig: PageGroupConfig;
 }
 
 export interface TransformationType {
@@ -51,6 +87,8 @@ export interface TransformationType {
   pagesPerGroup?: number;
   documentStartPattern?: string;
   documentStartDetectionEnabled?: boolean;
+  pageGroupConfigs?: PageGroupConfig[];
+  lockUploadMode?: boolean;
 }
 
 export interface SftpConfig {
@@ -65,11 +103,18 @@ export interface SftpConfig {
   csvPath?: string;
 }
 
+export interface OrderDisplayMapping {
+  fieldName: string;
+  displayLabel: string;
+}
+
 export interface ApiConfig {
   id?: string;
-  baseUrl: string;
-  username: string;
+  path: string;
   password: string;
+  googleApiKey: string;
+  orderDisplayFields: string;
+  customOrderDisplayFields: OrderDisplayMapping[];
 }
 
 export interface WorkflowStep {
@@ -93,6 +138,13 @@ export interface Workflow {
   updatedAt?: string;
 }
 
+export interface PageRangeInfo {
+  groupOrder: number;
+  startPage: number;
+  endPage: number;
+  groupName?: string;
+}
+
 export interface ExtractionLog {
   id: string;
   userId?: string;
@@ -106,6 +158,10 @@ export interface ExtractionLog {
   processingMode?: 'extraction' | 'transformation';
   parseitId?: number;
   createdAt: string;
+  pageStart?: number;
+  pageEnd?: number;
+  pageRanges?: PageRangeInfo[];
+  unusedPages?: number;
 }
 
 export interface WorkflowExecutionLog {
@@ -142,12 +198,40 @@ export interface VendorExtractionRule {
   updatedAt: string;
 }
 
+export interface UserPermissions {
+  extractionTypes: boolean;
+  transformationTypes: boolean;
+  sftp: boolean;
+  api: boolean;
+  emailMonitoring: boolean;
+  emailRules: boolean;
+  processedEmails: boolean;
+  extractionLogs: boolean;
+  userManagement: boolean;
+  workflowManagement: boolean;
+}
+
 export interface User {
   id: string;
-  email: string;
-  role?: 'admin' | 'user' | 'vendor';
-  fullName?: string;
+  username: string;
+  email?: string;
+  isAdmin: boolean;
+  isActive: boolean;
+  role: 'admin' | 'user' | 'vendor' | 'client';
+  permissions: UserPermissions;
+  preferredUploadMode: 'manual' | 'auto';
+  currentZone?: string;
+  clientId?: string;
+  isClientAdmin?: boolean;
+  hasOrderEntryAccess?: boolean;
+  hasRateQuoteAccess?: boolean;
+  hasAddressBookAccess?: boolean;
   createdAt?: string;
+}
+
+export interface AuthState {
+  isAuthenticated: boolean;
+  user: User | null;
 }
 
 export interface EmailConfig {
@@ -163,18 +247,158 @@ export interface EmailConfig {
   gmailSendFromEmail?: string;
 }
 
+export interface EmailMonitoringConfig {
+  provider: 'office365' | 'gmail';
+  tenantId: string;
+  clientId: string;
+  clientSecret: string;
+  monitoredEmail: string;
+  defaultSendFromEmail: string;
+  gmailClientId: string;
+  gmailClientSecret: string;
+  gmailRefreshToken: string;
+  gmailMonitoredLabel: string;
+  pollingInterval: number;
+  isEnabled: boolean;
+  enableAutoDetect: boolean;
+  lastCheck?: string;
+}
+
 export interface EmailProcessingRule {
   id: string;
   ruleName: string;
-  fromAddress?: string;
-  subjectContains?: string;
+  senderPattern?: string;
+  subjectPattern?: string;
   extractionTypeId?: string;
   transformationTypeId?: string;
   processingMode: 'extraction' | 'transformation';
   isEnabled: boolean;
   priority: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type ExtractionWorkflow = Workflow;
+
+export interface DriverCheckin {
+  id: string;
+  phoneNumber: string;
+  name: string;
+  company: string;
   createdAt: string;
   updatedAt: string;
 }
 
-export type ExtractionWorkflow = Workflow;
+export interface DriverCheckinLog {
+  id: string;
+  driverCheckinId?: string;
+  phoneNumber: string;
+  name: string;
+  company: string;
+  bolsCount: number;
+  doorNumber: number;
+  checkInTimestamp: string;
+  status: 'pending' | 'scanning' | 'processing' | 'completed' | 'failed';
+  createdAt: string;
+}
+
+export interface DriverCheckinDocument {
+  id: string;
+  driverCheckinLogId: string;
+  pdfFilename: string;
+  pdfStoragePath: string;
+  documentOrder: number;
+  extractionTypeId?: string;
+  workflowId?: string;
+  processingStatus: 'pending' | 'processing' | 'completed' | 'failed';
+  errorMessage?: string;
+  extractionLogId?: string;
+  createdAt: string;
+}
+
+export interface DriverCheckinSettings {
+  id: string;
+  fallbackWorkflowId?: string;
+  additionalFields: any[];
+  isEnabled: boolean;
+  baseUrl?: string;
+  darkModeEnabled?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SettingsConfig {
+  id?: string;
+  password: string;
+  geminiApiKey?: string;
+}
+
+export interface FeatureFlag {
+  id: string;
+  featureKey: string;
+  featureName: string;
+  isEnabled: boolean;
+  description: string;
+  category: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FeatureFlags {
+  extractionTypes: boolean;
+  transformationTypes: boolean;
+  sftpUpload: boolean;
+  sftpPolling: boolean;
+  apiIntegration: boolean;
+  emailMonitoring: boolean;
+  emailRules: boolean;
+  workflowManagement: boolean;
+  userManagement: boolean;
+  vendorManagement: boolean;
+  driverCheckin: boolean;
+  companyBranding: boolean;
+  extractionLogs: boolean;
+  workflowExecutionLogs: boolean;
+  emailPollingLogs: boolean;
+  sftpPollingLogs: boolean;
+}
+
+export interface UserExtractionType {
+  id: string;
+  userId: string;
+  extractionTypeId: string;
+  createdAt: string;
+}
+
+export interface Client {
+  id: string;
+  clientName: string;
+  clientId: string;
+  isActive: boolean;
+  hasOrderEntryAccess: boolean;
+  hasRateQuoteAccess: boolean;
+  hasAddressBookAccess: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ClientAddress {
+  id: string;
+  clientId: string;
+  name: string;
+  address1: string;
+  address2?: string;
+  city: string;
+  stateProv: string;
+  country: string;
+  contactName?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  contactPhoneExt?: string;
+  appointmentReq: boolean;
+  active: boolean;
+  isShipper: boolean;
+  isConsignee: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
