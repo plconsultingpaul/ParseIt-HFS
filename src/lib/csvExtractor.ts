@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { FieldMapping } from '../types';
+import { withRetry } from './retryHelper';
 
 interface CsvExtractionRequest {
   pdfFile: File;
@@ -206,7 +207,10 @@ Please analyze the PDF and return the extracted data as a JSON array.`;
     prompt
   ];
 
-  const result = await model.generateContent(contentParts);
+  const result = await withRetry(
+    () => model.generateContent(contentParts),
+    'Gemini API CSV extraction (single page)'
+  );
   const geminiEndTime = performance.now();
   const fetchDuration = ((geminiEndTime - geminiStartTime) / 1000).toFixed(2);
   console.log(`[csvExtractor] ✅ Gemini API responded in ${fetchDuration}s`);
@@ -426,7 +430,10 @@ Please analyze ALL PDF pages and return the extracted data as a JSON array.`;
 
   contentParts.push(prompt);
 
-  const result = await model.generateContent(contentParts);
+  const result = await withRetry(
+    () => model.generateContent(contentParts),
+    'Gemini API CSV extraction (multi-page)'
+  );
   const geminiEndTime = performance.now();
   const fetchDuration = ((geminiEndTime - geminiStartTime) / 1000).toFixed(2);
   console.log(`[csvExtractor] ✅ Gemini API responded in ${fetchDuration}s`);

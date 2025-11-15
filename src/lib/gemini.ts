@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { PDFDocument } from 'pdf-lib';
+import { withRetry } from './retryHelper';
 
 // Helper function to truncate a string based on its JSON-escaped length
 function truncateJsonEscaped(str: string, maxLength: number): string {
@@ -211,15 +212,18 @@ IMPORTANT GUIDELINES:
 Please provide only the ${outputFormat} output without any additional explanation or formatting.
 `;
 
-    const result = await model.generateContent([
-      {
-        inlineData: {
-          mimeType: 'application/pdf',
-          data: pdfBase64
-        }
-      },
-      prompt
-    ]);
+    const result = await withRetry(
+      () => model.generateContent([
+        {
+          inlineData: {
+            mimeType: 'application/pdf',
+            data: pdfBase64
+          }
+        },
+        prompt
+      ]),
+      'Gemini API extraction'
+    );
 
     const response = await result.response;
     let extractedContent = response.text();

@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { ExtractionType, VendorExtractionRule } from '../types';
+import { withRetry } from './retryHelper';
 
 export interface DetectionRequest {
   pdfFile: File;
@@ -113,15 +114,18 @@ IMPORTANT RULES:
 Please analyze the document and classify it now.
 `;
 
-    const result = await model.generateContent([
-      {
-        inlineData: {
-          mimeType: 'application/pdf',
-          data: pdfBase64
-        }
-      },
-      prompt
-    ]);
+    const result = await withRetry(
+      () => model.generateContent([
+        {
+          inlineData: {
+            mimeType: 'application/pdf',
+            data: pdfBase64
+          }
+        },
+        prompt
+      ]),
+      'Gemini API detection'
+    );
 
     const response = await result.response;
     let responseText = response.text().trim();
