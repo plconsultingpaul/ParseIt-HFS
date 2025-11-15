@@ -10,6 +10,7 @@ interface WorkflowExecutionRequest {
   pdfBase64: string;
   originalPdfFilename: string;
   formatType?: string;
+  extractionTypeFilename?: string;
 }
 
 export async function executeWorkflow(request: WorkflowExecutionRequest): Promise<any> {

@@ -1,10 +1,17 @@
 import { PDFDocument } from 'pdf-lib';
 import { extractTextFromPdfPages } from './pdfTextExtractor';
+import { detectPatternWithAI } from './aiSmartDetection';
+import type { PageGroupConfig, ManualGroupEdit } from '../types';
 
 export interface PdfSplittingOptions {
   pagesPerGroup?: number;
   documentStartPattern?: string;
   documentStartDetectionEnabled?: boolean;
+}
+
+export interface PageGroupSplittingOptions {
+  pageGroupConfigs?: PageGroupConfig[];
+  apiKey?: string;
 }
 
 export async function splitPdfIntoLogicalDocuments(
@@ -132,11 +139,303 @@ export async function splitPdfIntoLogicalDocuments(
 
 function createFixedGroupBoundaries(totalPages: number, pagesPerGroup: number): number[] {
   const boundaries: number[] = [];
-  
+
   for (let startPage = 0; startPage < totalPages; startPage += pagesPerGroup) {
     const endPage = Math.min(startPage + pagesPerGroup - 1, totalPages - 1);
     boundaries.push(startPage, endPage);
   }
-  
+
   return boundaries;
+}
+
+export interface PageGroupResult {
+  file: File;
+  pageGroupConfig: PageGroupConfig;
+  startPage: number;
+  endPage: number;
+  detectionMethod: 'smart' | 'fixed';
+  originalPdfPageStart: number;
+  originalPdfPageEnd: number;
+}
+
+export async function splitPdfWithPageGroups(
+  originalPdfFile: File,
+  pageGroupConfigs: PageGroupConfig[],
+  apiKey?: string
+): Promise<PageGroupResult[]> {
+  console.log('🔧 === PDF PAGE GROUP SPLITTING START ===');
+  console.log('📄 Original PDF file:', originalPdfFile.name);
+  console.log('📊 Page group configs:', pageGroupConfigs.length);
+  console.log('🤖 AI detection available:', !!apiKey);
+
+  try {
+    const arrayBuffer = await originalPdfFile.arrayBuffer();
+    const pdfDoc = await PDFDocument.load(arrayBuffer);
+    const totalPages = pdfDoc.getPageCount();
+
+    console.log(`📄 PDF has ${totalPages} pages`);
+
+    const pageTexts = await extractTextFromPdfPages(originalPdfFile);
+    console.log('Extracted text from', pageTexts.length, 'pages');
+
+    const results: PageGroupResult[] = [];
+    let currentPage = 0;
+
+    for (const groupConfig of pageGroupConfigs.sort((a, b) => a.groupOrder - b.groupOrder)) {
+      if (currentPage >= totalPages) {
+        console.log(`Reached end of PDF at page ${currentPage + 1}, stopping group detection`);
+        break;
+      }
+
+      console.log(`\n=== Processing Page Group ${groupConfig.groupOrder} ===`);
+      console.log('Config:', {
+        pagesPerGroup: groupConfig.pagesPerGroup,
+        smartDetectionPattern: groupConfig.smartDetectionPattern,
+        processMode: groupConfig.processMode,
+        workflowId: groupConfig.workflowId
+      });
+
+      let startPage = currentPage;
+      let endPage = currentPage;
+      let detectionMethod: 'smart' | 'fixed' = 'fixed';
+
+      if (groupConfig.smartDetectionPattern && groupConfig.smartDetectionPattern.trim()) {
+        console.log('Using smart detection with pattern:', groupConfig.smartDetectionPattern);
+        console.log('AI detection enabled:', groupConfig.useAiDetection);
+        console.log('Fallback behavior:', groupConfig.fallbackBehavior || 'skip');
+        detectionMethod = 'smart';
+
+        let foundPattern = false;
+        const useAI = groupConfig.useAiDetection && apiKey;
+
+        if (useAI) {
+          // AI-powered detection
+          console.log('🤖 Using AI-powered pattern detection');
+          const confidenceThreshold = groupConfig.detectionConfidenceThreshold || 0.7;
+
+          for (let pageIdx = currentPage; pageIdx < totalPages; pageIdx++) {
+            const pageText = pageTexts[pageIdx];
+            try {
+              const aiResult = await detectPatternWithAI({
+                pageText,
+                pattern: groupConfig.smartDetectionPattern,
+                confidenceThreshold,
+                apiKey: apiKey!
+              });
+
+              console.log(`Page ${pageIdx + 1} AI detection: match=${aiResult.match}, confidence=${aiResult.confidence.toFixed(2)}`);
+              console.log(`  Reasoning: ${aiResult.reasoning}`);
+
+              if (aiResult.match) {
+                console.log(`✅ AI found pattern on page ${pageIdx + 1} (confidence: ${aiResult.confidence.toFixed(2)})`);
+                startPage = pageIdx;
+                foundPattern = true;
+                break;
+              }
+            } catch (aiError) {
+              console.error(`AI detection failed for page ${pageIdx + 1}:`, aiError);
+              // Fall back to simple text search on error
+              const patternLower = groupConfig.smartDetectionPattern.toLowerCase();
+              if (pageText.toLowerCase().includes(patternLower)) {
+                console.log(`⚠️ Fallback: Found pattern on page ${pageIdx + 1} using simple text search`);
+                startPage = pageIdx;
+                foundPattern = true;
+                break;
+              }
+            }
+          }
+        } else {
+          // Simple text-based detection
+          console.log('📝 Using simple text-based pattern detection');
+          const patternLower = groupConfig.smartDetectionPattern.toLowerCase();
+
+          for (let pageIdx = currentPage; pageIdx < totalPages; pageIdx++) {
+            const pageText = pageTexts[pageIdx];
+            if (pageText.toLowerCase().includes(patternLower)) {
+              console.log(`Found pattern on page ${pageIdx + 1}`);
+              startPage = pageIdx;
+              foundPattern = true;
+              break;
+            }
+          }
+        }
+
+        if (!foundPattern) {
+          const fallbackBehavior = groupConfig.fallbackBehavior || 'skip';
+          console.log(`⚠️ Pattern not found. Fallback behavior: ${fallbackBehavior}`);
+
+          if (fallbackBehavior === 'skip') {
+            console.log('Skipping this group');
+            continue;
+          } else if (fallbackBehavior === 'error') {
+            throw new Error(`Required pattern not found for group ${groupConfig.groupOrder}: "${groupConfig.smartDetectionPattern}"`);
+          } else if (fallbackBehavior === 'fixed_position') {
+            console.log('Using fixed position as fallback');
+            startPage = currentPage;
+            foundPattern = true;
+            detectionMethod = 'fixed';
+          }
+        }
+
+        if (!foundPattern) {
+          continue;
+        }
+
+        if (groupConfig.processMode === 'single') {
+          endPage = startPage;
+          console.log(`Single page mode: using only page ${startPage + 1}`);
+        } else {
+          const nextGroupConfig = pageGroupConfigs.find(cfg => cfg.groupOrder > groupConfig.groupOrder);
+          let maxEndPage = startPage + groupConfig.pagesPerGroup - 1;
+
+          if (nextGroupConfig?.smartDetectionPattern) {
+            const nextPatternLower = nextGroupConfig.smartDetectionPattern.toLowerCase();
+            for (let pageIdx = startPage + 1; pageIdx < totalPages && pageIdx <= maxEndPage; pageIdx++) {
+              const pageText = pageTexts[pageIdx];
+              if (pageText.toLowerCase().includes(nextPatternLower)) {
+                console.log(`Found next group pattern on page ${pageIdx + 1}, limiting current group`);
+                maxEndPage = pageIdx - 1;
+                break;
+              }
+            }
+          }
+
+          endPage = Math.min(maxEndPage, totalPages - 1);
+          console.log(`All pages mode: pages ${startPage + 1} to ${endPage + 1}`);
+        }
+      } else {
+        console.log('Using fixed position grouping');
+        detectionMethod = 'fixed';
+        startPage = currentPage;
+
+        if (groupConfig.processMode === 'single') {
+          endPage = startPage;
+          console.log(`Single page mode: using only page ${startPage + 1}`);
+        } else {
+          endPage = Math.min(startPage + groupConfig.pagesPerGroup - 1, totalPages - 1);
+          console.log(`All pages mode: pages ${startPage + 1} to ${endPage + 1}`);
+        }
+      }
+
+      const groupDoc = await PDFDocument.create();
+      const pagesToCopy = [];
+
+      for (let pageIndex = startPage; pageIndex <= endPage; pageIndex++) {
+        pagesToCopy.push(pageIndex);
+      }
+
+      const copiedPages = await groupDoc.copyPages(pdfDoc, pagesToCopy);
+      copiedPages.forEach(page => groupDoc.addPage(page));
+
+      const groupPdfBytes = await groupDoc.save();
+      const groupFileName = `${originalPdfFile.name.replace('.pdf', '')}_group_${groupConfig.groupOrder}_pages_${startPage + 1}-${endPage + 1}.pdf`;
+      const groupFile = new File([groupPdfBytes], groupFileName, {
+        type: 'application/pdf'
+      });
+
+      results.push({
+        file: groupFile,
+        pageGroupConfig: groupConfig,
+        startPage,
+        endPage,
+        detectionMethod,
+        originalPdfPageStart: startPage + 1,
+        originalPdfPageEnd: endPage + 1
+      });
+
+      currentPage = endPage + 1;
+      console.log(`Group ${groupConfig.groupOrder} complete. Next page to process: ${currentPage + 1}`);
+    }
+
+    console.log(`\n✅ Created ${results.length} page groups from ${totalPages} pages`);
+    results.forEach((result, idx) => {
+      console.log(`  Group ${idx + 1}: Pages ${result.startPage + 1}-${result.endPage + 1}, Method: ${result.detectionMethod}, Workflow: ${result.pageGroupConfig.workflowId || 'none'}`);
+    });
+
+    return results;
+
+  } catch (error) {
+    console.error('Error splitting PDF with page groups:', error);
+    throw new Error(`Failed to split PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+export async function splitPdfWithManualGroups(
+  originalPdfFile: File,
+  manualGroups: ManualGroupEdit[]
+): Promise<PageGroupResult[]> {
+  console.log('🔧 === PDF MANUAL GROUP SPLITTING START ===');
+  console.log('📄 Original PDF file:', originalPdfFile.name);
+  console.log('📊 Manual groups:', manualGroups.length);
+
+  try {
+    const arrayBuffer = await originalPdfFile.arrayBuffer();
+    const pdfDoc = await PDFDocument.load(arrayBuffer);
+    const totalPages = pdfDoc.getPageCount();
+
+    console.log(`📄 PDF has ${totalPages} pages`);
+
+    const results: PageGroupResult[] = [];
+
+    for (const manualGroup of manualGroups.sort((a, b) => a.groupOrder - b.groupOrder)) {
+      if (manualGroup.pages.length === 0) {
+        console.log(`⚠️ Skipping group ${manualGroup.groupOrder} - no pages assigned`);
+        continue;
+      }
+
+      console.log(`\n=== Processing Manual Group ${manualGroup.groupOrder} ===`);
+      console.log('Pages:', manualGroup.pages.join(', '));
+
+      for (const pageNum of manualGroup.pages) {
+        const pageIndex = pageNum - 1;
+        if (pageIndex < 0 || pageIndex >= totalPages) {
+          const errorMsg = `Invalid page number ${pageNum} in group ${manualGroup.groupOrder}. PDF only has ${totalPages} pages (valid range: 1-${totalPages}).`;
+          console.error('❌ Page validation failed:', errorMsg);
+          throw new Error(errorMsg);
+        }
+      }
+
+      const startPage = Math.min(...manualGroup.pages) - 1;
+      const endPage = Math.max(...manualGroup.pages) - 1;
+
+      const groupDoc = await PDFDocument.create();
+      const pagesToCopy = manualGroup.pages.map(p => p - 1);
+      console.log(`📋 Copying page indices from PDF:`, pagesToCopy);
+
+      const copiedPages = await groupDoc.copyPages(pdfDoc, pagesToCopy);
+      copiedPages.forEach(page => groupDoc.addPage(page));
+
+      const groupPdfBytes = await groupDoc.save();
+      const pagesStr = manualGroup.pages.length === 1
+        ? manualGroup.pages[0].toString()
+        : `${Math.min(...manualGroup.pages)}-${Math.max(...manualGroup.pages)}`;
+      const groupFileName = `${originalPdfFile.name.replace('.pdf', '')}_group_${manualGroup.groupOrder}_pages_${pagesStr}.pdf`;
+      const groupFile = new File([groupPdfBytes], groupFileName, {
+        type: 'application/pdf'
+      });
+
+      results.push({
+        file: groupFile,
+        pageGroupConfig: manualGroup.pageGroupConfig,
+        startPage,
+        endPage,
+        detectionMethod: 'fixed',
+        originalPdfPageStart: Math.min(...manualGroup.pages),
+        originalPdfPageEnd: Math.max(...manualGroup.pages)
+      });
+
+      console.log(`✅ Group ${manualGroup.groupOrder} complete: ${groupFileName}`);
+    }
+
+    console.log(`\n✅ Created ${results.length} manual groups from ${totalPages} pages`);
+    results.forEach((result, idx) => {
+      console.log(`  Group ${idx + 1}: Pages ${result.originalPdfPageStart}-${result.originalPdfPageEnd}, Workflow: ${result.pageGroupConfig.workflowId || 'none'}`);
+    });
+
+    return results;
+
+  } catch (error) {
+    console.error('Error splitting PDF with manual groups:', error);
+    throw new Error(`Failed to split PDF with manual groups: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }

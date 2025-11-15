@@ -56,6 +56,13 @@ function formatPhoneNumber(phone: string): string | null {
   return "";
 }
 
+export interface ArraySplitConfig {
+  id?: string;
+  targetArrayField: string;
+  splitBasedOnField: string;
+  splitStrategy: 'one_per_entry' | 'divide_evenly';
+}
+
 export interface ExtractionRequest {
   pdfFile: File;
   defaultInstructions: string;
@@ -67,6 +74,7 @@ export interface ExtractionRequest {
   traceTypeMapping?: string;
   traceTypeValue?: string;
   apiKey: string;
+  arraySplitConfigs?: ArraySplitConfig[];
 }
 
 export async function extractDataFromPDF({
@@ -79,7 +87,8 @@ export async function extractDataFromPDF({
   parseitIdMapping,
   traceTypeMapping,
   traceTypeValue,
-  apiKey
+  apiKey,
+  arraySplitConfigs = []
 }: ExtractionRequest): Promise<string> {
   if (!apiKey) {
     throw new Error('Google Gemini API key not configured. Please add it in the API settings.');
@@ -165,11 +174,24 @@ POSTAL CODE FORMATTING RULES:
       xmlTraceTypeInstructions = `\n\nTRACE TYPE MAPPING FOR XML:\n- At the XML path "${traceTypeMapping}": Always set this attribute/element to the exact value "${traceTypeValue}".\n`;
     }
 
+    // Add array split instructions for JSON
+    let arraySplitInstructions = '';
+    if (isJsonFormat && arraySplitConfigs && arraySplitConfigs.length > 0) {
+      arraySplitInstructions = '\n\nARRAY SPLIT INSTRUCTIONS:\n';
+      arraySplitConfigs.forEach(config => {
+        if (config.splitStrategy === 'one_per_entry') {
+          arraySplitInstructions += `- For the "${config.targetArrayField}" array: Look at the value of the "${config.splitBasedOnField}" field in the document. If this field has a value of N (for example, if "${config.splitBasedOnField}" = 3), create N separate entries in the "${config.targetArrayField}" array. Each entry should have "${config.splitBasedOnField}" set to 1, and all other fields should contain the same data from the document. For example, if pieces = 3, create 3 barcode entries each with pieces = 1.\n`;
+        } else {
+          arraySplitInstructions += `- For the "${config.targetArrayField}" array: Look at the value of the "${config.splitBasedOnField}" field and create multiple entries distributing the value evenly across them based on the data in the document.\n`;
+        }
+      });
+    }
+
     const prompt = `
 You are a data extraction AI. Please analyze the provided PDF document and extract the requested information according to the following instructions:
 
 EXTRACTION INSTRUCTIONS:
-${fullInstructions}${fieldMappingInstructions}${parseitIdInstructions}${traceTypeInstructions}${xmlParseitIdInstructions}${xmlTraceTypeInstructions}${postalCodeRules}
+${fullInstructions}${fieldMappingInstructions}${parseitIdInstructions}${traceTypeInstructions}${xmlParseitIdInstructions}${xmlTraceTypeInstructions}${arraySplitInstructions}${postalCodeRules}
 
 OUTPUT FORMAT:
 Please format the extracted data as ${outputFormat} following this EXACT ${templateLabel} structure:
