@@ -66,6 +66,7 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
     csv: true
   });
   const [uploadType, setUploadType] = useState('csv');
+  const [escapeSingleQuotesInBody, setEscapeSingleQuotesInBody] = useState(false);
 
   useEffect(() => {
     console.log('StepConfigForm useEffect - step data:', step);
@@ -99,6 +100,7 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
         }
 
         setRequestBody(config.requestBody || config.request_body || '');
+        setEscapeSingleQuotesInBody(config.escapeSingleQuotesInBody || false);
 
         // API Call response handling configuration
         setResponseDataPath(config.responseDataPath || '');
@@ -197,7 +199,8 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
           headers: parsedHeaders,
           requestBody: method === 'GET' ? '' : requestBody,
           responseDataPath: responseDataPath.trim() || undefined,
-          updateJsonPath: updateJsonPath.trim() || undefined
+          updateJsonPath: updateJsonPath.trim() || undefined,
+          escapeSingleQuotesInBody: escapeSingleQuotesInBody
         };
         console.log('Saving API call config:', config);
         break;
@@ -266,7 +269,8 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
       stepType: stepType,
       configJson: config,
       nextStepOnSuccessId: nextStepOnSuccess || undefined,
-      nextStepOnFailureId: nextStepOnFailure || undefined
+      nextStepOnFailureId: nextStepOnFailure || undefined,
+      escapeSingleQuotesInBody: escapeSingleQuotesInBody
     };
 
     onSave(stepData);
@@ -433,6 +437,24 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     Use {`{{field_name}}`} to reference extracted data. Leave empty for GET requests.
                   </p>
+                </div>
+
+                <div className="flex items-center space-x-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-md border border-blue-200 dark:border-blue-800">
+                  <input
+                    type="checkbox"
+                    id="escapeSingleQuotesInBody"
+                    checked={escapeSingleQuotesInBody}
+                    onChange={(e) => setEscapeSingleQuotesInBody(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded focus:ring-blue-500"
+                  />
+                  <div className="flex-1">
+                    <label htmlFor="escapeSingleQuotesInBody" className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">
+                      Escape Single Quotes for OData Filters
+                    </label>
+                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                      Enable this when using OData $filter syntax. Converts single quotes to double quotes (e.g., "O'Hare" becomes "O''Hare") in all placeholder values in the request body.
+                    </p>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

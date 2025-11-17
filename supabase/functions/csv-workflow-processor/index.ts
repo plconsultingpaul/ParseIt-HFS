@@ -398,6 +398,16 @@ Deno.serve(async (req: Request) => {
     console.log('🔄 Starting workflow execution with', steps.length, 'steps...')
     let lastApiResponse: any = null
 
+    // === Helper Function: Escape Single Quotes for OData ===
+    const escapeSingleQuotesForOData = (value: any): any => {
+      if (typeof value !== 'string') {
+        return value
+      }
+      // Replace single quote with double single quote for OData filter compatibility
+      return value.replace(/'/g, "''")
+    }
+    // === END: Helper Function ===
+
     const getValueByPath = (obj: any, path: string): any => {
       try {
         const parts = path.split('.')
@@ -583,7 +593,13 @@ Deno.serve(async (req: Request) => {
           }
 
           for (const replacement of bodyReplacements) {
-            const rawValue = String(replacement.value || '')
+            let rawValue = String(replacement.value || '')
+            // Apply single quote escaping for OData if enabled
+            if (config.escapeSingleQuotesInBody && rawValue.includes("'")) {
+              const beforeEscape = rawValue
+              rawValue = escapeSingleQuotesForOData(rawValue)
+              console.log(`🔄 Escaped single quotes: "${beforeEscape}" → "${rawValue}"`)
+            }
             const escapedValue = rawValue
               .replace(/\\/g, '\\\\')
               .replace(/"/g, '\\"')

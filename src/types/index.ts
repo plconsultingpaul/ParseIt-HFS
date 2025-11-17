@@ -126,6 +126,7 @@ export interface WorkflowStep {
   configJson: any;
   nextStepOnSuccessId?: string;
   nextStepOnFailureId?: string;
+  escapeSingleQuotesInBody?: boolean;
 }
 
 export interface Workflow {

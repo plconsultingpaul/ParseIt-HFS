@@ -63,6 +63,15 @@ function getValueByPath(obj, path) {
   }
 }
 // === DIAGNOSTIC END: Helper Function ===
+// === Helper Function: Escape Single Quotes for OData ===
+function escapeSingleQuotesForOData(value) {
+  if (typeof value !== 'string') {
+    return value;
+  }
+  // Replace single quote with double single quote for OData filter compatibility
+  return value.replace(/'/g, "''");
+}
+// === END: Helper Function ===
 Deno.serve(async (req)=>{
   if (req.method === "OPTIONS") {
     return new Response(null, {
@@ -611,7 +620,13 @@ Deno.serve(async (req)=>{
             console.log(`🔍 Path "${path}" resolved to:`, value);
           }
           for (const replacement of bodyReplacements){
-            const rawValue = String(replacement.value || '');
+            let rawValue = String(replacement.value || '');
+            // Apply single quote escaping for OData if enabled
+            if (config.escapeSingleQuotesInBody && rawValue.includes("'")) {
+              const beforeEscape = rawValue;
+              rawValue = escapeSingleQuotesForOData(rawValue);
+              console.log(`🔄 Escaped single quotes: "${beforeEscape}" → "${rawValue}"`);
+            }
             const escapedValue = rawValue.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
             requestBody = requestBody.replace(new RegExp(replacement.placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), escapedValue);
             console.log(`🔄 Replaced ${replacement.placeholder} with: ${rawValue}`);
