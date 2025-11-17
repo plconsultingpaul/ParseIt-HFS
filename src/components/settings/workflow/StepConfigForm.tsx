@@ -452,7 +452,7 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                       Escape Single Quotes for OData Filters
                     </label>
                     <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                      Enable this when using OData $filter syntax. Converts single quotes to double quotes (e.g., "O'Hare" becomes "O''Hare") in all placeholder values in the request body.
+                      Enable this when using OData $filter syntax. Converts single quotes to double quotes (e.g., "O'Hare" becomes "O''Hare") in all placeholder values in the URL and request body.
                     </p>
                   </div>
                 </div>

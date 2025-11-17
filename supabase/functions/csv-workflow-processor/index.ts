@@ -549,7 +549,15 @@ Deno.serve(async (req: Request) => {
           }
 
           for (const replacement of replacements) {
-            const rawValue = String(replacement.value || '')
+            let rawValue = String(replacement.value || '')
+
+            // Apply single quote escaping for OData if enabled
+            if (config.escapeSingleQuotesInBody && rawValue.includes("'")) {
+              const beforeEscape = rawValue
+              rawValue = escapeSingleQuotesForOData(rawValue)
+              console.log(`🔄 Escaped single quotes in URL: "${beforeEscape}" → "${rawValue}"`)
+            }
+
             const encodedValue = rawValue
             const placeholderEscaped = replacement.placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
             url = url.replace(new RegExp(placeholderEscaped, 'g'), encodedValue)
