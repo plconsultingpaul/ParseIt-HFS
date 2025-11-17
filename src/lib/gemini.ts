@@ -257,17 +257,28 @@ Please provide only the ${outputFormat} output without any additional explanatio
               if (mapping.dataType === 'datetime') {
                 const fieldPath = mapping.fieldName.split('.');
                 let current = obj;
-                
-                // Navigate to the field location
+
+                // Navigate to the field location, handling arrays
                 for (let i = 0; i < fieldPath.length - 1; i++) {
                   if (current[fieldPath[i]] === undefined) {
                     current[fieldPath[i]] = {};
                   }
+
+                  // If we encounter an array, process each item recursively
+                  if (Array.isArray(current[fieldPath[i]])) {
+                    const remainingPath = fieldPath.slice(i + 1).join('.');
+                    const nestedMapping = { ...mapping, fieldName: remainingPath };
+                    current[fieldPath[i]].forEach((item: any) => {
+                      processObject(item, [nestedMapping]);
+                    });
+                    return;
+                  }
+
                   current = current[fieldPath[i]];
                 }
-                
+
                 const finalField = fieldPath[fieldPath.length - 1];
-                
+
                 // Set default datetime if field is empty or doesn't exist
                 if (!current[finalField] || current[finalField] === "" || current[finalField] === "N/A") {
                   if (mapping.type === 'hardcoded' && mapping.value) {
@@ -279,17 +290,28 @@ Please provide only the ${outputFormat} output without any additional explanatio
               } else if (mapping.dataType === 'phone') {
                 const fieldPath = mapping.fieldName.split('.');
                 let current = obj;
-                
-                // Navigate to the field location
+
+                // Navigate to the field location, handling arrays
                 for (let i = 0; i < fieldPath.length - 1; i++) {
                   if (current[fieldPath[i]] === undefined) {
                     current[fieldPath[i]] = {};
                   }
+
+                  // If we encounter an array, process each item recursively
+                  if (Array.isArray(current[fieldPath[i]])) {
+                    const remainingPath = fieldPath.slice(i + 1).join('.');
+                    const nestedMapping = { ...mapping, fieldName: remainingPath };
+                    current[fieldPath[i]].forEach((item: any) => {
+                      processObject(item, [nestedMapping]);
+                    });
+                    return;
+                  }
+
                   current = current[fieldPath[i]];
                 }
-                
+
                 const finalField = fieldPath[fieldPath.length - 1];
-                
+
                 // Format phone number if field has a value
                 if (current[finalField] && typeof current[finalField] === 'string') {
                   const formattedPhone = formatPhoneNumber(current[finalField]);
@@ -299,11 +321,22 @@ Please provide only the ${outputFormat} output without any additional explanatio
                 const fieldPath = mapping.fieldName.split('.');
                 let current = obj;
 
-                // Navigate to the field location
+                // Navigate to the field location, handling arrays
                 for (let i = 0; i < fieldPath.length - 1; i++) {
                   if (current[fieldPath[i]] === undefined) {
                     current[fieldPath[i]] = {};
                   }
+
+                  // If we encounter an array, process each item recursively
+                  if (Array.isArray(current[fieldPath[i]])) {
+                    const remainingPath = fieldPath.slice(i + 1).join('.');
+                    const nestedMapping = { ...mapping, fieldName: remainingPath };
+                    current[fieldPath[i]].forEach((item: any) => {
+                      processObject(item, [nestedMapping]);
+                    });
+                    return;
+                  }
+
                   current = current[fieldPath[i]];
                 }
 
