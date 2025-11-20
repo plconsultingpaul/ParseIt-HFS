@@ -291,12 +291,6 @@ serve(async (req) => {
             const parsedResponse = JSON.parse(extractedContent)
             const pageData = parsedResponse.extractedData || parsedResponse || {}
 
-            console.log(`📋 [DEBUG] Raw pageData structure:`, JSON.stringify(pageData, null, 2))
-            console.log(`📋 [DEBUG] pageData.details type:`, Array.isArray(pageData.details) ? 'array' : typeof pageData.details)
-            if (Array.isArray(pageData.details) && pageData.details.length > 0) {
-              console.log(`📋 [DEBUG] pageData.details[0]:`, JSON.stringify(pageData.details[0], null, 2))
-            }
-
             // Apply boolean normalization and string uppercase conversion
             pageFields.forEach(field => {
               // Helper to get nested value by path (supports arrays)
@@ -334,45 +328,19 @@ serve(async (req) => {
               }
 
               const currentValue = getValueByPath(pageData, field.fieldName)
-              console.log(`🔍 [DEBUG] Field: ${field.fieldName}`)
-              console.log(`   - Data type: ${field.dataType}`)
-              console.log(`   - Current value: ${JSON.stringify(currentValue)}`)
-              console.log(`   - Value type: ${typeof currentValue}`)
-              console.log(`   - Value is undefined: ${currentValue === undefined}`)
 
               if (field.dataType === 'boolean' && currentValue !== undefined) {
-                const normalizedValue = normalizeBooleanValue(currentValue)
-                console.log(`   - Normalized to: ${JSON.stringify(normalizedValue)}`)
-
-                setValueByPath(pageData, field.fieldName, normalizedValue)
-
-                // Verify it was set correctly
-                const verifyValue = getValueByPath(pageData, field.fieldName)
-                console.log(`   - Verification after set: ${JSON.stringify(verifyValue)}`)
-                console.log(`   - Verification type: ${typeof verifyValue}`)
-
+                setValueByPath(pageData, field.fieldName, normalizeBooleanValue(currentValue))
               } else if ((field.dataType === 'string' || !field.dataType) && currentValue !== undefined) {
                 // Convert string fields to uppercase
                 if (typeof currentValue === 'string' && currentValue !== '') {
-                  console.log(`   - Converting string to uppercase`)
                   setValueByPath(pageData, field.fieldName, currentValue.toUpperCase())
                 }
-              } else {
-                console.log(`   - ⚠️ Skipped normalization (condition not met)`)
               }
             })
 
-            console.log(`📋 [DEBUG] pageData after normalization:`, JSON.stringify(pageData, null, 2))
-
             // Merge page-specific data into final result
             Object.assign(extractedData, pageData)
-
-            console.log(`📋 [DEBUG] extractedData after merge:`, JSON.stringify(extractedData, null, 2))
-            console.log(`📋 [DEBUG] extractedData.details type:`, Array.isArray(extractedData.details) ? 'array' : typeof extractedData.details)
-            if (Array.isArray(extractedData.details) && extractedData.details.length > 0) {
-              console.log(`📋 [DEBUG] extractedData.details[0].dangerousGoods:`, extractedData.details[0].dangerousGoods)
-              console.log(`📋 [DEBUG] Type:`, typeof extractedData.details[0].dangerousGoods)
-            }
 
             console.log(`✅ Page ${pageNum} data extracted successfully:`, Object.keys(pageData).join(', '))
           } catch (parseError) {
