@@ -353,6 +353,8 @@ serve(async (req: Request) => {
 
     let extractedData: any = {}
 
+    const fullInstructions = `${transformationType.defaultInstructions || ''}${additionalInstructions ? '\n\nAdditional Instructions:\n' + additionalInstructions : ''}`
+
     // Check if we have field mappings for targeted extraction
     if (transformationType.fieldMappings && transformationType.fieldMappings.length > 0) {
       console.log('✨ Using field-by-field extraction mode')
@@ -467,20 +469,38 @@ Please provide only the JSON output without any additional explanation or format
 
             // Apply boolean normalization and string uppercase conversion
             pageFields.forEach(field => {
-              // Helper to get nested value by path
+              // Helper to get nested value by path (supports arrays)
               const getValueByPath = (obj: any, path: string): any => {
-                return path.split('.').reduce((current, prop) => current?.[prop], obj)
+                return path.split('.').reduce((current, prop) => {
+                  if (current === undefined || current === null) return undefined
+                  // If current is an array, look in the first element
+                  if (Array.isArray(current)) {
+                    return current[0]?.[prop]
+                  }
+                  return current[prop]
+                }, obj)
               }
 
-              // Helper to set nested value by path
+              // Helper to set nested value by path (supports arrays)
               const setValueByPath = (obj: any, path: string, value: any): void => {
                 const parts = path.split('.')
                 const last = parts.pop()!
                 const target = parts.reduce((current, prop) => {
                   if (!current[prop]) current[prop] = {}
+                  // If current[prop] is an array, work with the first element
+                  if (Array.isArray(current[prop])) {
+                    if (!current[prop][0]) current[prop][0] = {}
+                    return current[prop][0]
+                  }
                   return current[prop]
                 }, obj)
-                target[last] = value
+
+                // If target is an array, set on first element
+                if (Array.isArray(target) && target.length > 0) {
+                  target[0][last] = value
+                } else {
+                  target[last] = value
+                }
               }
 
               const currentValue = getValueByPath(pageData, field.fieldName)
@@ -718,5 +738,3 @@ Please provide only the JSON output without any additional explanation or format
     )
   }
 })
-
-const fullInstructions = `${transformationType.defaultInstructions || ''}${additionalInstructions ? '\n\nAdditional Instructions:\n' + additionalInstructions : ''}`
