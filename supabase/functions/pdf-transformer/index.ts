@@ -107,139 +107,158 @@ function normalizeBooleanValue(value: any): string {
 // Configuration for chunked processing to avoid stack overflow
 const CHUNK_SIZE = 8192
 
-// Helper function to decode base64 in chunks to avoid stack overflow
-function decodeBase64InChunks(base64String: string): Uint8Array {
-  const binaryString = atob(base64String)
-  const bytes = new Uint8Array(binaryString.length)
-
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i)
-  }
-
-  return bytes
-}
-
-// Helper function to encode bytes to base64 in chunks to avoid stack overflow
-function encodeBase64InChunks(bytes: Uint8Array): string {
-  let result = ''
-
-  for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
-    const chunk = bytes.slice(i, Math.min(i + CHUNK_SIZE, bytes.length))
-    result += String.fromCharCode(...chunk)
-  }
-
-  return btoa(result)
-}
-
-// Helper function to extract a specific page from a PDF
-async function extractSpecificPage(pdfBase64: string, pageNumber: number): Promise<string> {
-  const funcName = 'extractSpecificPage'
-  console.log(`INFO [${funcName}]: START - Extracting page ${pageNumber}`)
-  console.log(`TRACE [${funcName}]: Input PDF base64 size: ${pdfBase64.length} chars`)
-
+// Helper function to check if a buffer is a valid PDF
+function isValidPdf(buffer: Uint8Array): boolean {
   try {
-    console.log(`TRACE [${funcName}]: Decoding base64 to bytes using chunked approach...`)
-    const startDecode = Date.now()
-
-    // Decode base64 to bytes using chunked approach
-    const pdfBytes = decodeBase64InChunks(pdfBase64)
-    console.log(`TRACE [${funcName}]: Base64 decode completed in ${Date.now() - startDecode}ms, resulting bytes: ${pdfBytes.length}`)
-
-    // Load the PDF document
-    console.log(`TRACE [${funcName}]: Loading PDF document...`)
-    const startLoad = Date.now()
-    const pdfDoc = await PDFDocument.load(pdfBytes)
-    const totalPages = pdfDoc.getPageCount()
-    console.log(`TRACE [${funcName}]: PDF loaded in ${Date.now() - startLoad}ms, total pages: ${totalPages}`)
-
-    // Validate page number
-    if (pageNumber < 1 || pageNumber > totalPages) {
-      console.warn(`WARNING [${funcName}]: Invalid page number ${pageNumber} (PDF has ${totalPages} pages), using page 1 as fallback`)
-      pageNumber = 1
-    }
-
-    // Create a new PDF with only the requested page
-    console.log(`TRACE [${funcName}]: Creating single-page PDF for page ${pageNumber}...`)
-    const startCreate = Date.now()
-    const singlePageDoc = await PDFDocument.create()
-    const [copiedPage] = await singlePageDoc.copyPages(pdfDoc, [pageNumber - 1])
-    singlePageDoc.addPage(copiedPage)
-    console.log(`TRACE [${funcName}]: Single-page PDF created in ${Date.now() - startCreate}ms`)
-
-    // Convert back to base64 using chunked approach
-    console.log(`TRACE [${funcName}]: Saving and encoding single-page PDF using chunked approach...`)
-    const startSave = Date.now()
-    const singlePageBytes = await singlePageDoc.save()
-    console.log(`TRACE [${funcName}]: PDF saved, size: ${singlePageBytes.length} bytes`)
-
-    const singlePageBase64 = encodeBase64InChunks(singlePageBytes)
-    console.log(`TRACE [${funcName}]: Single-page PDF encoded in ${Date.now() - startSave}ms, size: ${singlePageBase64.length} chars`)
-
-    console.log(`INFO [${funcName}]: END - Successfully extracted page ${pageNumber}`)
-    return singlePageBase64
-  } catch (error) {
-    console.error(`ERROR [${funcName}]: Failed to extract page ${pageNumber}`)
-    console.error(`ERROR [${funcName}]: Error type: ${error instanceof Error ? error.constructor.name : typeof error}`)
-    console.error(`ERROR [${funcName}]: Error message: ${error instanceof Error ? error.message : String(error)}`)
-    console.error(`ERROR [${funcName}]: Stack trace:`, error instanceof Error ? error.stack : 'No stack trace available')
-    throw new Error(`Failed to extract page ${pageNumber}: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    // Check for PDF header (%PDF-)
+    const header = new TextDecoder().decode(buffer.slice(0, 5))
+    return header === '%PDF-'
+  } catch {
+    return false
   }
 }
 
-// Helper function to group field mappings by page number
+// Helper function to safely decode base64 in chunks to avoid stack overflow
+function safeBase64Decode(base64String: string): Uint8Array {
+  try {
+    console.log(`TRACE [safeBase64Decode]: Starting base64 decode, input length: ${base64String.length}`)
+    
+    // Remove any whitespace or newlines
+    const cleanBase64 = base64String.replace(/\s/g, '')
+    console.log(`TRACE [safeBase64Decode]: Cleaned base64 length: ${cleanBase64.length}`)
+    
+    // Decode in chunks to avoid stack overflow
+    const chunks: Uint8Array[] = []
+    let offset = 0
+    
+    while (offset < cleanBase64.length) {
+      const chunk = cleanBase64.slice(offset, offset + CHUNK_SIZE)
+      const binaryString = atob(chunk)
+      const bytes = new Uint8Array(binaryString.length)
+      
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i)
+      }
+      
+      chunks.push(bytes)
+      offset += CHUNK_SIZE
+      
+      if (offset % (CHUNK_SIZE * 10) === 0) {
+        console.log(`TRACE [safeBase64Decode]: Processed ${offset}/${cleanBase64.length} characters (${Math.round(offset / cleanBase64.length * 100)}%)`)
+      }
+    }
+    
+    // Combine all chunks
+    const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
+    const result = new Uint8Array(totalLength)
+    let position = 0
+    
+    for (const chunk of chunks) {
+      result.set(chunk, position)
+      position += chunk.length
+    }
+    
+    console.log(`TRACE [safeBase64Decode]: Decode complete, output length: ${result.length} bytes`)
+    
+    // Validate the decoded PDF
+    if (!isValidPdf(result)) {
+      throw new Error('Decoded data is not a valid PDF')
+    }
+    
+    return result
+  } catch (error) {
+    console.error('ERROR [safeBase64Decode]: Failed to decode base64:', error)
+    throw error
+  }
+}
+
+// Function to group field mappings by page number
 function groupFieldsByPage(fieldMappings: FieldMapping[]): Map<number, FieldMapping[]> {
   const pageGroups = new Map<number, FieldMapping[]>()
-
-  for (const mapping of fieldMappings) {
-    // Default to page 1 if not specified
-    const pageNum = mapping.pageNumberInGroup || 1
-
+  
+  for (const field of fieldMappings) {
+    const pageNum = field.pageNumberInGroup || 1
+    
     if (!pageGroups.has(pageNum)) {
       pageGroups.set(pageNum, [])
     }
-
-    pageGroups.get(pageNum)!.push(mapping)
+    
+    pageGroups.get(pageNum)!.push(field)
   }
-
+  
   console.log(`📊 Field mappings grouped by page:`)
   for (const [pageNum, fields] of pageGroups.entries()) {
     console.log(`   Page ${pageNum}: ${fields.length} fields - ${fields.map(f => f.fieldName).join(', ')}`)
   }
-
+  
   return pageGroups
+}
+
+// Function to extract a specific page from a PDF
+async function extractSpecificPage(pdfBase64: string, pageNumber: number): Promise<string> {
+  try {
+    console.log(`📄 Extracting page ${pageNumber} from PDF...`)
+    
+    // Decode the PDF
+    const pdfBytes = safeBase64Decode(pdfBase64)
+    
+    // Load the PDF
+    const pdfDoc = await PDFDocument.load(pdfBytes)
+    const totalPages = pdfDoc.getPageCount()
+    
+    console.log(`   Total pages in PDF: ${totalPages}`)
+    
+    if (pageNumber < 1 || pageNumber > totalPages) {
+      throw new Error(`Invalid page number ${pageNumber}. PDF has ${totalPages} pages.`)
+    }
+    
+    // Create a new PDF with just the specific page
+    const newPdf = await PDFDocument.create()
+    const [copiedPage] = await newPdf.copyPages(pdfDoc, [pageNumber - 1])
+    newPdf.addPage(copiedPage)
+    
+    // Save and encode
+    const newPdfBytes = await newPdf.save()
+    const newPdfBase64 = btoa(String.fromCharCode(...newPdfBytes))
+    
+    console.log(`✅ Extracted page ${pageNumber} (${newPdfBytes.length} bytes)`)
+    
+    return newPdfBase64
+  } catch (error) {
+    console.error(`❌ Failed to extract page ${pageNumber}:`, error)
+    throw error
+  }
 }
 
 serve(async (req: Request) => {
   const requestId = generateRequestId()
-  const requestStartTime = Date.now()
-
   console.log('===============================================')
-  console.log(`INFO [MAIN]: REQUEST START - ID: ${requestId}`)
-  console.log(`INFO [MAIN]: Timestamp: ${new Date().toISOString()}`)
-  console.log(`INFO [MAIN]: Method: ${req.method}`)
-  console.log(`INFO [MAIN]: URL: ${req.url}`)
+  console.log(`INFO [MAIN]: NEW TRANSFORMATION REQUEST - ${requestId}`)
   console.log('===============================================')
-
-  if (req.method === "OPTIONS") {
-    console.log(`INFO [MAIN]: OPTIONS request, returning CORS headers - ${requestId}`)
+  console.log(`TRACE [MAIN]: Request method: ${req.method} - ${requestId}`)
+  console.log(`TRACE [MAIN]: Request URL: ${req.url} - ${requestId}`)
+  
+  if (req.method === 'OPTIONS') {
+    console.log(`INFO [MAIN]: Handling OPTIONS preflight request - ${requestId}`)
     return new Response(null, {
-      status: 200,
-      headers: corsHeaders,
+      status: 204,
+      headers: corsHeaders
     })
   }
 
   try {
     console.log(`TRACE [MAIN]: Reading request body - ${requestId}`)
-    let requestText: string;
+    const bodyStartTime = Date.now()
+    let requestText: string
+    
     try {
-      const readStartTime = Date.now()
-      requestText = await req.text();
-      console.log(`TRACE [MAIN]: Request body read in ${Date.now() - readStartTime}ms, size: ${requestText.length} chars - ${requestId}`)
+      requestText = await req.text()
+      console.log(`TRACE [MAIN]: Request body read successfully in ${Date.now() - bodyStartTime}ms - ${requestId}`)
+      console.log(`TRACE [MAIN]: Request body length: ${requestText.length} characters - ${requestId}`)
     } catch (readError) {
       console.error(`ERROR [MAIN]: Failed to read request body - ${requestId}`)
-      console.error(`ERROR [MAIN]: Error type: ${readError instanceof Error ? readError.constructor.name : typeof readError}`)
-      console.error(`ERROR [MAIN]: Error message: ${readError instanceof Error ? readError.message : String(readError)}`)
-      console.error(`ERROR [MAIN]: Stack trace:`, readError instanceof Error ? readError.stack : 'No stack trace available')
+      console.error(`ERROR [MAIN]: Read error type: ${readError instanceof Error ? readError.constructor.name : typeof readError}`)
+      console.error(`ERROR [MAIN]: Read error message: ${readError instanceof Error ? readError.message : String(readError)}`)
       return new Response(
         JSON.stringify({
           error: "Failed to read request body",
@@ -253,10 +272,9 @@ serve(async (req: Request) => {
       );
     }
 
-    console.log(`INFO [MAIN]: Request body size: ${requestText.length} characters - ${requestId}`)
-    console.log(`TRACE [MAIN]: Request body preview (first 200 chars): ${requestText.substring(0, 200)} - ${requestId}`)
-    console.log(`TRACE [MAIN]: Request body preview (last 200 chars): ${requestText.substring(Math.max(0, requestText.length - 200))} - ${requestId}`)
-
+    console.log('===============================================')
+    console.log(`INFO [MAIN]: PARSING REQUEST DATA - ${requestId}`)
+    console.log('===============================================')
     console.log(`TRACE [MAIN]: Parsing request JSON - ${requestId}`)
     let requestData: TransformationRequest;
     try {
@@ -282,41 +300,63 @@ serve(async (req: Request) => {
       );
     }
 
+    console.log(`TRACE [MAIN]: Transformation type: ${requestData.transformationType?.name || 'unknown'} - ${requestId}`)
+    console.log(`TRACE [MAIN]: Transformation type ID: ${requestData.transformationType?.id || 'unknown'} - ${requestId}`)
+    console.log(`TRACE [MAIN]: Has field mappings: ${!!requestData.transformationType?.fieldMappings} - ${requestId}`)
+    console.log(`TRACE [MAIN]: Field mappings count: ${requestData.transformationType?.fieldMappings?.length || 0} - ${requestId}`)
+    console.log(`TRACE [MAIN]: Has API key: ${!!requestData.apiKey} - ${requestId}`)
+    console.log(`TRACE [MAIN]: Has PDF data: ${!!requestData.pdfBase64} - ${requestId}`)
+    console.log(`TRACE [MAIN]: PDF data length: ${requestData.pdfBase64?.length || 0} characters - ${requestId}`)
+
     const { pdfBase64, transformationType, additionalInstructions, apiKey } = requestData;
 
-    console.log(`INFO [MAIN]: PDF base64 length: ${pdfBase64?.length || 0} chars - ${requestId}`)
-    console.log(`INFO [MAIN]: Transformation type: ${transformationType?.name} (ID: ${transformationType?.id}) - ${requestId}`)
-    console.log(`INFO [MAIN]: Filename template: ${transformationType?.filenameTemplate} - ${requestId}`)
-    console.log(`INFO [MAIN]: Field mappings count: ${transformationType?.fieldMappings?.length || 0} - ${requestId}`)
-    console.log(`INFO [MAIN]: Additional instructions length: ${additionalInstructions?.length || 0} chars - ${requestId}`)
-    console.log(`INFO [MAIN]: API key present: ${!!apiKey} - ${requestId}`);
+    console.log('===============================================')
+    console.log(`INFO [MAIN]: VALIDATING REQUEST DATA - ${requestId}`)
+    console.log('===============================================')
 
-    if (!apiKey) {
-      throw new Error('Google Gemini API key not configured')
+    if (!pdfBase64) {
+      console.error(`ERROR [MAIN]: Missing PDF data - ${requestId}`)
+      return new Response(
+        JSON.stringify({ error: 'PDF data is required', requestId }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
     }
 
     if (!transformationType) {
-      throw new Error('Transformation type not provided')
+      console.error(`ERROR [MAIN]: Missing transformation type - ${requestId}`)
+      return new Response(
+        JSON.stringify({ error: 'Transformation type is required', requestId }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
     }
 
-    console.log('Initializing Gemini AI...');
+    if (!apiKey) {
+      console.error(`ERROR [MAIN]: Missing API key - ${requestId}`)
+      return new Response(
+        JSON.stringify({ error: 'API key is required', requestId }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    console.log(`INFO [MAIN]: All required data present - ${requestId}`)
+
+    console.log('===============================================')
+    console.log(`INFO [AI]: INITIALIZING GEMINI AI - ${requestId}`)
+    console.log('===============================================')
     const genAI = new GoogleGenerativeAI(apiKey)
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' })
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+    console.log(`INFO [AI]: Gemini AI initialized successfully - ${requestId}`)
 
-    // Combine instructions
-    const fullInstructions = additionalInstructions
-      ? `${transformationType.defaultInstructions}\n\nAdditional Instructions: ${additionalInstructions}`
-      : transformationType.defaultInstructions
-
-    console.log('Full instructions length:', fullInstructions.length);
-
-    // NEW APPROACH: Process fields page by page to ensure accurate extraction
-    console.log('=== PAGE-AWARE FIELD EXTRACTION ===')
+    console.log('===============================================')
+    console.log(`INFO [EXTRACTION]: BEGINNING DATA EXTRACTION - ${requestId}`)
+    console.log('===============================================')
 
     let extractedData: any = {}
 
+    // Check if we have field mappings for targeted extraction
     if (transformationType.fieldMappings && transformationType.fieldMappings.length > 0) {
-      console.log('Processing field mappings:', transformationType.fieldMappings.length);
+      console.log('✨ Using field-by-field extraction mode')
+      console.log(`   Total fields to extract: ${transformationType.fieldMappings.length}`)
 
       // First, handle all hardcoded fields (no AI needed)
       for (const mapping of transformationType.fieldMappings) {
@@ -427,12 +467,30 @@ Please provide only the JSON output without any additional explanation or format
 
             // Apply boolean normalization and string uppercase conversion
             pageFields.forEach(field => {
-              if (field.dataType === 'boolean' && pageData.hasOwnProperty(field.fieldName)) {
-                pageData[field.fieldName] = normalizeBooleanValue(pageData[field.fieldName])
-              } else if ((field.dataType === 'string' || !field.dataType) && pageData.hasOwnProperty(field.fieldName)) {
+              // Helper to get nested value by path
+              const getValueByPath = (obj: any, path: string): any => {
+                return path.split('.').reduce((current, prop) => current?.[prop], obj)
+              }
+
+              // Helper to set nested value by path
+              const setValueByPath = (obj: any, path: string, value: any): void => {
+                const parts = path.split('.')
+                const last = parts.pop()!
+                const target = parts.reduce((current, prop) => {
+                  if (!current[prop]) current[prop] = {}
+                  return current[prop]
+                }, obj)
+                target[last] = value
+              }
+
+              const currentValue = getValueByPath(pageData, field.fieldName)
+
+              if (field.dataType === 'boolean' && currentValue !== undefined) {
+                setValueByPath(pageData, field.fieldName, normalizeBooleanValue(currentValue))
+              } else if ((field.dataType === 'string' || !field.dataType) && currentValue !== undefined) {
                 // Convert string fields to uppercase
-                if (typeof pageData[field.fieldName] === 'string' && pageData[field.fieldName] !== '') {
-                  pageData[field.fieldName] = pageData[field.fieldName].toUpperCase()
+                if (typeof currentValue === 'string' && currentValue !== '') {
+                  setValueByPath(pageData, field.fieldName, currentValue.toUpperCase())
                 }
               }
             })
@@ -475,8 +533,6 @@ IMPORTANT GUIDELINES:
 2. If a field is not found, use empty string ("") for text fields, 0 for numbers, null for optional fields
 3. For datetime fields, use the format yyyy-MM-ddThh:mm:ss (e.g., "2024-03-15T14:30:00")
 4. Be precise and accurate with the extracted data
-5. The extracted data will be used to rename the PDF file using the template: ${transformationType.filenameTemplate}
-6. Ensure all field names match exactly what's needed for the filename template
 
 Please provide only the JSON output without any additional explanation or formatting.
 `
@@ -612,149 +668,55 @@ Please provide only the JSON output without any additional explanation or format
       }
     }
 
-    // Ensure the filename ends with .pdf
-    if (!newFilename.toLowerCase().endsWith('.pdf')) {
-      console.log(`TRACE [FILENAME]: Adding .pdf extension - ${requestId}`)
-      newFilename += '.pdf'
-    }
-
-    // Remove any remaining unreplaced placeholders
-    const remainingPlaceholders = newFilename.match(/\{\{[^}]+\}\}/g)
-    if (remainingPlaceholders) {
-      console.log(`WARNING [FILENAME]: Found ${remainingPlaceholders.length} unreplaced placeholders: ${remainingPlaceholders.join(', ')} - ${requestId}`)
-    }
-    newFilename = newFilename.replace(/\{\{[^}]+\}\}/g, 'MISSING')
-
-    console.log(`INFO [FILENAME]: Final generated filename: ${newFilename} - ${requestId}`)
+    console.log(`INFO [FILENAME]: Generated filename: ${newFilename} - ${requestId}`)
+    console.log(`TRACE [FILENAME]: Filename length: ${newFilename.length} characters - ${requestId}`)
 
     console.log('===============================================')
-    console.log(`INFO [RESPONSE]: BUILDING RESPONSE - ${requestId}`)
+    console.log(`INFO [RESPONSE]: PREPARING RESPONSE - ${requestId}`)
     console.log('===============================================')
-    console.log(`TRACE [RESPONSE]: Extracted data size: ${JSON.stringify(extractedData).length} characters - ${requestId}`)
-    console.log(`TRACE [RESPONSE]: Building response object - ${requestId}`)
-
+    
     const responseData = {
-        success: true,
-        extractedData: extractedData,
-        newFilename: newFilename,
-        message: 'PDF transformation completed successfully',
-        requestId: requestId
-    };
-
-    console.log(`TRACE [RESPONSE]: Response object created - ${requestId}`)
-    console.log(`TRACE [RESPONSE]: Response object keys: ${Object.keys(responseData).join(', ')} - ${requestId}`)
-    console.log(`TRACE [RESPONSE]: Checking response for circular references - ${requestId}`)
-    const responseHasCircular = hasCircularReference(responseData)
-    console.log(`TRACE [RESPONSE]: Response has circular reference: ${responseHasCircular} - ${requestId}`)
-
-    // Validate response can be serialized
-    let responseJson: string;
-    try {
-      console.log(`TRACE [RESPONSE]: Attempting to serialize response to JSON - ${requestId}`)
-      const responseSerializeStartTime = Date.now()
-      responseJson = JSON.stringify(responseData);
-      console.log(`INFO [RESPONSE]: Response JSON serialization successful in ${Date.now() - responseSerializeStartTime}ms - ${requestId}`)
-      console.log(`INFO [RESPONSE]: Response JSON length: ${responseJson.length} chars - ${requestId}`)
-      console.log(`TRACE [RESPONSE]: Response JSON preview (first 300 chars): ${responseJson.substring(0, 300)} - ${requestId}`)
-    } catch (serializeError) {
-      console.error(`ERROR [RESPONSE]: CRITICAL - Cannot serialize response to JSON - ${requestId}`)
-      console.error(`ERROR [RESPONSE]: Serialize error type: ${serializeError instanceof Error ? serializeError.constructor.name : typeof serializeError}`)
-      console.error(`ERROR [RESPONSE]: Serialize error message: ${serializeError instanceof Error ? serializeError.message : String(serializeError)}`)
-      console.error(`ERROR [RESPONSE]: Stack trace:`, serializeError instanceof Error ? serializeError.stack : 'No stack trace available')
-      return new Response(
-        JSON.stringify({
-          error: "Response serialization failed",
-          details: serializeError instanceof Error ? serializeError.message : "Unknown serialization error",
-          requestId
-        }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
+      success: true,
+      newFilename,
+      extractedData,
+      requestId
     }
-
-    const totalTime = Date.now() - requestStartTime
+    
+    console.log(`TRACE [RESPONSE]: Response data keys: ${Object.keys(responseData).join(', ')} - ${requestId}`)
+    console.log(`TRACE [RESPONSE]: Response data size: ${JSON.stringify(responseData).length} bytes - ${requestId}`)
+    console.log(`INFO [RESPONSE]: Sending successful response - ${requestId}`)
     console.log('===============================================')
-    console.log(`INFO [MAIN]: REQUEST SUCCESS - ${requestId}`)
-    console.log(`INFO [MAIN]: Total processing time: ${totalTime}ms`)
-    console.log(`INFO [MAIN]: Sending response with status 200`)
+    console.log(`INFO [MAIN]: REQUEST COMPLETED SUCCESSFULLY - ${requestId}`)
     console.log('===============================================')
 
     return new Response(
-      responseJson,
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify(responseData),
+      {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      }
     )
 
   } catch (error) {
-    const totalTime = Date.now() - requestStartTime
     console.log('===============================================')
-    console.error(`ERROR [MAIN]: REQUEST FAILED - ${requestId}`)
-    console.error(`ERROR [MAIN]: Total time before failure: ${totalTime}ms`)
+    console.error(`ERROR [MAIN]: CRITICAL ERROR OCCURRED - ${requestId}`)
     console.log('===============================================')
-
     console.error(`ERROR [MAIN]: Error type: ${error instanceof Error ? error.constructor.name : typeof error}`)
     console.error(`ERROR [MAIN]: Error message: ${error instanceof Error ? error.message : String(error)}`)
     console.error(`ERROR [MAIN]: Stack trace:`, error instanceof Error ? error.stack : 'No stack trace available')
-
-    // Provide more detailed error information
-    let errorDetails = "Unknown error";
-    if (error instanceof Error) {
-      errorDetails = error.message;
-
-      // Check for specific error types and provide better messages
-      if (error.message.includes("Unexpected end of JSON input")) {
-        console.error(`ERROR [MAIN]: Detected JSON parsing error - AI returned incomplete JSON`)
-        errorDetails = "The AI returned invalid or incomplete JSON data. This usually happens when the PDF content is unclear or the extraction instructions need to be more specific. Please try with a clearer PDF or adjust your transformation instructions.";
-      } else if (error.message.includes("JSON.parse")) {
-        console.error(`ERROR [MAIN]: Detected JSON parsing error - Invalid JSON format`)
-        errorDetails = "The AI returned data that couldn't be processed as valid JSON. Please check your transformation instructions and try again with a clearer PDF document.";
-      } else if (error.message.includes("API key")) {
-        console.error(`ERROR [MAIN]: Detected API key error`)
-        errorDetails = "Google Gemini API key is missing or invalid. Please check your API configuration in Settings.";
-      } else if (error.message.includes("quota") || error.message.includes("rate limit")) {
-        console.error(`ERROR [MAIN]: Detected rate limit error`)
-        errorDetails = "API rate limit exceeded. Please wait a moment and try again.";
-      } else if (error.message.includes("overloaded") || error.message.includes("503")) {
-        console.error(`ERROR [MAIN]: Detected service overload error`)
-        errorDetails = "The AI service is temporarily overloaded. Please wait a moment and try again.";
-      } else if (error.message.includes("Maximum call stack")) {
-        console.error(`ERROR [MAIN]: CRITICAL - Maximum call stack size exceeded!`)
-        errorDetails = "Maximum call stack size exceeded. This indicates a recursive operation or circular reference in the data structure.";
-      }
-    }
-
-    const errorResponse = {
-      error: "PDF transformation failed",
-      details: errorDetails,
-      requestId: requestId,
-      timestamp: new Date().toISOString()
-    };
-
-    console.log(`TRACE [MAIN]: Building error response - ${requestId}`)
-    let errorResponseJson: string
-    try {
-      errorResponseJson = JSON.stringify(errorResponse)
-      console.log(`TRACE [MAIN]: Error response JSON created, length: ${errorResponseJson.length} - ${requestId}`)
-    } catch (jsonError) {
-      console.error(`ERROR [MAIN]: CRITICAL - Cannot even serialize error response! - ${requestId}`)
-      console.error(`ERROR [MAIN]: JSON error:`, jsonError)
-      errorResponseJson = JSON.stringify({
-        error: "Critical error - cannot serialize error response",
-        requestId: requestId
-      })
-    }
-
-    console.log('===============================================')
-    console.log(`INFO [MAIN]: Sending error response with status 500 - ${requestId}`)
     console.log('===============================================')
 
     return new Response(
-      errorResponseJson,
+      JSON.stringify({
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+        requestId
+      }),
       {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }
     )
   }
 })
+
+const fullInstructions = `${transformationType.defaultInstructions || ''}${additionalInstructions ? '\n\nAdditional Instructions:\n' + additionalInstructions : ''}`
