@@ -304,9 +304,11 @@ serve(async (req) => {
                   // Process ALL items in the array
                   arrayData.forEach(item => {
                     const currentValue = item[propertyName]
+                    console.log(`DEBUG [NORMALIZE]: Field="${field.fieldName}" DataType="${field.dataType}" Property="${propertyName}" Value="${currentValue}" Type="${typeof currentValue}"`)
 
                     if (field.dataType?.toLowerCase() === 'boolean' && currentValue !== undefined) {
                       item[propertyName] = normalizeBooleanValue(currentValue)
+                      console.log(`DEBUG [NORMALIZE]: After normalization: ${propertyName} = "${item[propertyName]}"`)
                     } else if ((field.dataType === 'string' || !field.dataType) && currentValue !== undefined) {
                       if (typeof currentValue === 'string' && currentValue !== '') {
                         item[propertyName] = currentValue.toUpperCase()
@@ -330,6 +332,7 @@ serve(async (req) => {
 
             // Merge page-specific data into final result
             Object.assign(extractedData, pageData)
+            console.log(`DEBUG [FINAL]: extractedData.details = ${JSON.stringify(extractedData.details)}`)
 
             console.log(`✅ Page ${pageNum} data extracted successfully:`, Object.keys(pageData).join(', '))
           } catch (parseError) {
@@ -414,9 +417,11 @@ serve(async (req) => {
                 // Process ALL items in the array
                 arrayData.forEach(item => {
                   const currentValue = item[propertyName]
+                  console.log(`DEBUG [NORMALIZE]: Field="${field.fieldName}" DataType="${field.dataType}" Property="${propertyName}" Value="${currentValue}" Type="${typeof currentValue}"`)
 
                   if (field.dataType?.toLowerCase() === 'boolean' && currentValue !== undefined) {
                     item[propertyName] = normalizeBooleanValue(currentValue)
+                    console.log(`DEBUG [NORMALIZE]: After normalization: ${propertyName} = "${item[propertyName]}"`)
                   } else if ((field.dataType === 'string' || !field.dataType) && currentValue !== undefined) {
                     if (typeof currentValue === 'string' && currentValue !== '') {
                       item[propertyName] = currentValue.toUpperCase()
@@ -439,6 +444,7 @@ serve(async (req) => {
           })
 
           Object.assign(extractedData, responseData)
+          console.log(`DEBUG [FINAL]: extractedData.details = ${JSON.stringify(extractedData.details)}`)
           console.log(`INFO [AI]: Extracted data keys: ${Object.keys(responseData).join(', ')} - ${requestId}`)
         } catch (parseError) {
           console.error(`ERROR [AI]: Failed to parse Gemini response - ${requestId}`, parseError)
