@@ -4,6 +4,7 @@ export interface FieldMapping {
   value: string;
   dataType?: 'string' | 'number' | 'integer' | 'datetime' | 'phone' | 'boolean';
   maxLength?: number;
+  removeIfNull?: boolean;
 }
 
 export interface ArraySplitConfig {

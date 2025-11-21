@@ -1277,7 +1277,7 @@ export default function ExtractionTypesSettings({
                        ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-700'
                        : 'bg-orange-50 dark:bg-orange-900/20 border-orange-300 dark:border-orange-700'
                     }`}>
-                      <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
+                      <div className="grid grid-cols-1 md:grid-cols-7 gap-3 items-end">
                         <div>
                           <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
                             Field Name
@@ -1320,8 +1320,8 @@ export default function ExtractionTypesSettings({
                             onChange={(e) => updateFieldMapping(selectedTypeIndex, mappingIndex, 'value', e.target.value)}
                             className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
                             placeholder={
-                              mapping.type === 'hardcoded' ? 'Fixed value' : 
-                              mapping.type === 'mapped' ? 'e.g., (100, 200, 150, 30)' : 
+                              mapping.type === 'hardcoded' ? 'Fixed value' :
+                              mapping.type === 'mapped' ? 'e.g., (100, 200, 150, 30)' :
                               'What to extract'
                             }
                           />
@@ -1361,6 +1361,19 @@ export default function ExtractionTypesSettings({
                               {(mapping.dataType === 'phone') ? 'Auto' : (mapping.dataType === 'boolean') ? 'True/False' : 'N/A'}
                             </div>
                           )}
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                            Remove if Null
+                          </label>
+                          <div className="flex items-center justify-center h-[34px]">
+                            <input
+                              type="checkbox"
+                              checked={mapping.removeIfNull || false}
+                              onChange={(e) => updateFieldMapping(selectedTypeIndex, mappingIndex, 'removeIfNull', e.target.checked)}
+                              className="w-4 h-4 text-blue-600 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 focus:ring-2"
+                            />
+                          </div>
                         </div>
                         <div>
                           <button

@@ -591,7 +591,56 @@ Please provide only the ${outputFormat} output without any additional explanatio
             formatPostalCodes(order);
           });
         }
-        
+
+        // STEP 4: Remove fields marked with removeIfNull when they contain null/empty values
+        if (fieldMappings.length > 0) {
+          const removeNullFields = (obj: any, mappings: any[]) => {
+            mappings.forEach(mapping => {
+              if (mapping.removeIfNull) {
+                const fieldPath = mapping.fieldName.split('.');
+                let current = obj;
+
+                // Navigate to the parent of the field
+                for (let i = 0; i < fieldPath.length - 1; i++) {
+                  if (!current[fieldPath[i]]) {
+                    return; // Path doesn't exist, nothing to remove
+                  }
+
+                  // If we encounter an array, process each item recursively
+                  if (Array.isArray(current[fieldPath[i]])) {
+                    const remainingPath = fieldPath.slice(i + 1).join('.');
+                    const nestedMapping = { ...mapping, fieldName: remainingPath };
+                    current[fieldPath[i]].forEach((item: any) => {
+                      removeNullFields(item, [nestedMapping]);
+                    });
+                    return;
+                  }
+
+                  current = current[fieldPath[i]];
+                }
+
+                const finalField = fieldPath[fieldPath.length - 1];
+                const fieldValue = current[finalField];
+
+                // Remove field if value is null, empty string, undefined, or string "null"
+                if (
+                  fieldValue === null ||
+                  fieldValue === "" ||
+                  fieldValue === undefined ||
+                  fieldValue === "null"
+                ) {
+                  delete current[finalField];
+                }
+              }
+            });
+          };
+
+          // Process each order to remove null fields
+          jsonData.orders.forEach((order: any) => {
+            removeNullFields(order, fieldMappings);
+          });
+        }
+
         extractedContent = JSON.stringify(jsonData);
       } catch (parseError) {
         console.warn('Could not parse JSON for post-processing:', parseError);
