@@ -81,6 +81,7 @@ export interface ArraySplitConfig {
   targetArrayField: string;
   splitBasedOnField: string;
   splitStrategy: 'one_per_entry' | 'divide_evenly';
+  defaultToOneIfMissing?: boolean;
 }
 
 export interface ExtractionRequest {
@@ -200,9 +201,15 @@ POSTAL CODE FORMATTING RULES:
       arraySplitInstructions = '\n\nARRAY SPLIT INSTRUCTIONS:\n';
       arraySplitConfigs.forEach(config => {
         if (config.splitStrategy === 'one_per_entry') {
-          arraySplitInstructions += `- For the "${config.targetArrayField}" array: Look at the value of the "${config.splitBasedOnField}" field in the document. If this field has a value of N (for example, if "${config.splitBasedOnField}" = 3), create N separate entries in the "${config.targetArrayField}" array. Each entry should have "${config.splitBasedOnField}" set to 1, and all other fields should contain the same data from the document. For example, if pieces = 3, create 3 barcode entries each with pieces = 1.\n`;
+          const fallbackInstruction = config.defaultToOneIfMissing
+            ? ` If the "${config.splitBasedOnField}" field is not found, empty, or has a value of 0, create 1 entry in the "${config.targetArrayField}" array with "${config.splitBasedOnField}" set to 1.`
+            : '';
+          arraySplitInstructions += `- For the "${config.targetArrayField}" array: Look at the value of the "${config.splitBasedOnField}" field in the document. If this field has a value of N (for example, if "${config.splitBasedOnField}" = 3), create N separate entries in the "${config.targetArrayField}" array. Each entry should have "${config.splitBasedOnField}" set to 1, and all other fields should contain the same data from the document. For example, if pieces = 3, create 3 barcode entries each with pieces = 1.${fallbackInstruction}\n`;
         } else {
-          arraySplitInstructions += `- For the "${config.targetArrayField}" array: Look at the value of the "${config.splitBasedOnField}" field and create multiple entries distributing the value evenly across them based on the data in the document.\n`;
+          const fallbackInstruction = config.defaultToOneIfMissing
+            ? ` If the "${config.splitBasedOnField}" field is not found, empty, or has a value of 0, create 1 entry in the "${config.targetArrayField}" array.`
+            : '';
+          arraySplitInstructions += `- For the "${config.targetArrayField}" array: Look at the value of the "${config.splitBasedOnField}" field and create multiple entries distributing the value evenly across them based on the data in the document.${fallbackInstruction}\n`;
         }
       });
     }

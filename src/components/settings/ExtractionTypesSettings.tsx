@@ -37,7 +37,8 @@ export default function ExtractionTypesSettings({
   const [arraySplitForm, setArraySplitForm] = useState<Partial<ArraySplitConfig>>({
     targetArrayField: '',
     splitBasedOnField: '',
-    splitStrategy: 'one_per_entry'
+    splitStrategy: 'one_per_entry',
+    defaultToOneIfMissing: false
   });
 
   const handleAddTypeClick = () => {
@@ -741,6 +742,23 @@ export default function ExtractionTypesSettings({
                 </p>
               </div>
 
+              <div>
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={arraySplitForm.defaultToOneIfMissing || false}
+                    onChange={(e) => setArraySplitForm({ ...arraySplitForm, defaultToOneIfMissing: e.target.checked })}
+                    className="w-4 h-4 text-blue-600 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 focus:ring-2"
+                  />
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Default to 1 Record if Field Not Found
+                  </span>
+                </label>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 ml-6">
+                  When enabled, if the field value is missing, empty, or 0, create 1 record instead of none
+                </p>
+              </div>
+
               <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
                 <h4 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">Example</h4>
                 <p className="text-sm text-blue-700 dark:text-blue-400">
@@ -1166,9 +1184,16 @@ export default function ExtractionTypesSettings({
                                 split by {split.splitBasedOnField}
                               </span>
                             </div>
-                            <p className="text-xs text-blue-700 dark:text-blue-300">
-                              Strategy: {split.splitStrategy === 'one_per_entry' ? 'One per entry' : 'Divide evenly'}
-                            </p>
+                            <div className="flex items-center space-x-2">
+                              <p className="text-xs text-blue-700 dark:text-blue-300">
+                                Strategy: {split.splitStrategy === 'one_per_entry' ? 'One per entry' : 'Divide evenly'}
+                              </p>
+                              {split.defaultToOneIfMissing && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300">
+                                  Default to 1
+                                </span>
+                              )}
+                            </div>
                           </div>
                           <div className="flex items-center space-x-2">
                             <button

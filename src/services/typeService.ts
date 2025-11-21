@@ -58,6 +58,7 @@ export async function fetchExtractionTypes(): Promise<ExtractionType[]> {
         targetArrayField: split.target_array_field,
         splitBasedOnField: split.split_based_on_field,
         splitStrategy: split.split_strategy as 'one_per_entry' | 'divide_evenly',
+        defaultToOneIfMissing: split.default_to_one_if_missing || false,
         createdAt: split.created_at,
         updatedAt: split.updated_at
       }))
@@ -244,6 +245,7 @@ export async function updateExtractionTypes(types: ExtractionType[]): Promise<vo
               target_array_field: split.targetArrayField,
               split_based_on_field: split.splitBasedOnField,
               split_strategy: split.splitStrategy,
+              default_to_one_if_missing: split.defaultToOneIfMissing || false,
               updated_at: new Date().toISOString()
             })
             .eq('id', split.id!);
@@ -266,7 +268,8 @@ export async function updateExtractionTypes(types: ExtractionType[]): Promise<vo
             extraction_type_id: type.id,
             target_array_field: split.targetArrayField,
             split_based_on_field: split.splitBasedOnField,
-            split_strategy: split.splitStrategy
+            split_strategy: split.splitStrategy,
+            default_to_one_if_missing: split.defaultToOneIfMissing || false
           }));
 
           console.log('Array split insert data:', insertData);

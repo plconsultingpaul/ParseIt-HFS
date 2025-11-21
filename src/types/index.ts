@@ -12,6 +12,7 @@ export interface ArraySplitConfig {
   targetArrayField: string;
   splitBasedOnField: string;
   splitStrategy: 'one_per_entry' | 'divide_evenly';
+  defaultToOneIfMissing?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
