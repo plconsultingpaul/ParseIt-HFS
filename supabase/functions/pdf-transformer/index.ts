@@ -293,48 +293,37 @@ serve(async (req) => {
 
             // Apply boolean normalization and string uppercase conversion
             pageFields.forEach(field => {
-              // Helper to get nested value by path (supports arrays)
-              const getValueByPath = (obj: any, path: string): any => {
-                return path.split('.').reduce((current, prop) => {
-                  if (current === undefined || current === null) return undefined
-                  // If current is an array, look in the first element
-                  if (Array.isArray(current)) {
-                    return current[0]?.[prop]
-                  }
-                  return current[prop]
-                }, obj)
-              }
+              const parts = field.fieldName.split('.')
 
-              // Helper to set nested value by path (supports arrays)
-              const setValueByPath = (obj: any, path: string, value: any): void => {
-                const parts = path.split('.')
-                const last = parts.pop()!
-                const target = parts.reduce((current, prop) => {
-                  if (!current[prop]) current[prop] = {}
-                  // If current[prop] is an array, work with the first element
-                  if (Array.isArray(current[prop])) {
-                    if (!current[prop][0]) current[prop][0] = {}
-                    return current[prop][0]
-                  }
-                  return current[prop]
-                }, obj)
+              // Check if we're dealing with an array field (e.g., details.fieldName)
+              if (parts.length === 2) {
+                const [arrayName, propertyName] = parts
+                const arrayData = pageData[arrayName]
 
-                // If target is an array, set on first element
-                if (Array.isArray(target) && target.length > 0) {
-                  target[0][last] = value
-                } else {
-                  target[last] = value
+                if (Array.isArray(arrayData)) {
+                  // Process ALL items in the array
+                  arrayData.forEach(item => {
+                    const currentValue = item[propertyName]
+
+                    if (field.dataType === 'boolean' && currentValue !== undefined) {
+                      item[propertyName] = normalizeBooleanValue(currentValue)
+                    } else if ((field.dataType === 'string' || !field.dataType) && currentValue !== undefined) {
+                      if (typeof currentValue === 'string' && currentValue !== '') {
+                        item[propertyName] = currentValue.toUpperCase()
+                      }
+                    }
+                  })
                 }
-              }
+              } else {
+                // Handle non-array fields
+                const currentValue = pageData[field.fieldName]
 
-              const currentValue = getValueByPath(pageData, field.fieldName)
-
-              if (field.dataType === 'boolean' && currentValue !== undefined) {
-                setValueByPath(pageData, field.fieldName, normalizeBooleanValue(currentValue))
-              } else if ((field.dataType === 'string' || !field.dataType) && currentValue !== undefined) {
-                // Convert string fields to uppercase
-                if (typeof currentValue === 'string' && currentValue !== '') {
-                  setValueByPath(pageData, field.fieldName, currentValue.toUpperCase())
+                if (field.dataType === 'boolean' && currentValue !== undefined) {
+                  pageData[field.fieldName] = normalizeBooleanValue(currentValue)
+                } else if ((field.dataType === 'string' || !field.dataType) && currentValue !== undefined) {
+                  if (typeof currentValue === 'string' && currentValue !== '') {
+                    pageData[field.fieldName] = currentValue.toUpperCase()
+                  }
                 }
               }
             })
