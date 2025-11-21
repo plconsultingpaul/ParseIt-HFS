@@ -57,6 +57,25 @@ function formatPhoneNumber(phone: string): string | null {
   return "";
 }
 
+// Helper function to normalize boolean values
+function normalizeBooleanValue(value: any): string {
+  if (value === null || value === undefined || value === '') {
+    return 'False';
+  }
+
+  const strValue = String(value).trim().toLowerCase();
+
+  if (strValue === 'true' || strValue === 'yes' || strValue === '1') {
+    return 'True';
+  }
+
+  if (strValue === 'false' || strValue === 'no' || strValue === '0') {
+    return 'False';
+  }
+
+  return 'False';
+}
+
 export interface ArraySplitConfig {
   id?: string;
   targetArrayField: string;
@@ -361,6 +380,35 @@ Please provide only the ${outputFormat} output without any additional explanatio
                       current[finalField] = truncateJsonEscaped(current[finalField], mapping.maxLength);
                     }
                   }
+                }
+              } else if (mapping.dataType === 'boolean') {
+                const fieldPath = mapping.fieldName.split('.');
+                let current = obj;
+
+                // Navigate to the field location, handling arrays
+                for (let i = 0; i < fieldPath.length - 1; i++) {
+                  if (current[fieldPath[i]] === undefined) {
+                    current[fieldPath[i]] = {};
+                  }
+
+                  // If we encounter an array, process each item recursively
+                  if (Array.isArray(current[fieldPath[i]])) {
+                    const remainingPath = fieldPath.slice(i + 1).join('.');
+                    const nestedMapping = { ...mapping, fieldName: remainingPath };
+                    current[fieldPath[i]].forEach((item: any) => {
+                      processObject(item, [nestedMapping]);
+                    });
+                    return;
+                  }
+
+                  current = current[fieldPath[i]];
+                }
+
+                const finalField = fieldPath[fieldPath.length - 1];
+
+                // Normalize boolean value if field exists
+                if (current[finalField] !== undefined) {
+                  current[finalField] = normalizeBooleanValue(current[finalField]);
                 }
               }
             });
