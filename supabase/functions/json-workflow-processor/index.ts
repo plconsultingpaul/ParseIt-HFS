@@ -570,7 +570,7 @@ Deno.serve(async (req)=>{
               console.log(`🔄 Escaped single quotes in URL: "${beforeEscape}" → "${rawValue}"`);
             }
 
-            const encodedValue = rawValue;
+            const encodedValue = encodeURIComponent(rawValue);
             const placeholderEscaped = replacement.placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             url = url.replace(new RegExp(placeholderEscaped, 'g'), encodedValue);
             console.log(`🔄 Replaced ${replacement.placeholder} with: ${rawValue}`);
