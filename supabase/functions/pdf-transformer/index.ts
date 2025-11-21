@@ -305,7 +305,7 @@ serve(async (req) => {
                   arrayData.forEach(item => {
                     const currentValue = item[propertyName]
 
-                    if (field.dataType === 'boolean' && currentValue !== undefined) {
+                    if (field.dataType?.toLowerCase() === 'boolean' && currentValue !== undefined) {
                       item[propertyName] = normalizeBooleanValue(currentValue)
                     } else if ((field.dataType === 'string' || !field.dataType) && currentValue !== undefined) {
                       if (typeof currentValue === 'string' && currentValue !== '') {
@@ -318,7 +318,7 @@ serve(async (req) => {
                 // Handle non-array fields
                 const currentValue = pageData[field.fieldName]
 
-                if (field.dataType === 'boolean' && currentValue !== undefined) {
+                if (field.dataType?.toLowerCase() === 'boolean' && currentValue !== undefined) {
                   pageData[field.fieldName] = normalizeBooleanValue(currentValue)
                 } else if ((field.dataType === 'string' || !field.dataType) && currentValue !== undefined) {
                   if (typeof currentValue === 'string' && currentValue !== '') {
@@ -415,7 +415,7 @@ serve(async (req) => {
                 arrayData.forEach(item => {
                   const currentValue = item[propertyName]
 
-                  if (field.dataType === 'boolean' && currentValue !== undefined) {
+                  if (field.dataType?.toLowerCase() === 'boolean' && currentValue !== undefined) {
                     item[propertyName] = normalizeBooleanValue(currentValue)
                   } else if ((field.dataType === 'string' || !field.dataType) && currentValue !== undefined) {
                     if (typeof currentValue === 'string' && currentValue !== '') {
@@ -428,7 +428,7 @@ serve(async (req) => {
               // Handle non-array fields
               const currentValue = responseData[field.fieldName]
 
-              if (field.dataType === 'boolean' && currentValue !== undefined) {
+              if (field.dataType?.toLowerCase() === 'boolean' && currentValue !== undefined) {
                 responseData[field.fieldName] = normalizeBooleanValue(currentValue)
               } else if ((field.dataType === 'string' || !field.dataType) && currentValue !== undefined) {
                 if (typeof currentValue === 'string' && currentValue !== '') {
