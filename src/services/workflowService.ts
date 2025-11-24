@@ -170,14 +170,7 @@ export async function updateWorkflowSteps(workflowId: string, steps: WorkflowSte
       throw new Error('Invalid step data: all steps must have stepName, stepType, and stepOrder');
     }
 
-    // Separate steps into those with existing IDs and new steps
-    const existingSteps = steps.filter(step => step.id && !step.id.toString().startsWith('temp-'));
-    const newSteps = steps.filter(step => !step.id || step.id.toString().startsWith('temp-'));
-
-    console.log('Existing steps to update/keep:', existingSteps.length);
-    console.log('New steps to insert:', newSteps.length);
-
-    // Get current steps from database
+    // Get current steps from database first to determine what exists
     const { data: currentSteps, error: fetchError } = await supabase
       .from('workflow_steps')
       .select('id')
@@ -186,6 +179,15 @@ export async function updateWorkflowSteps(workflowId: string, steps: WorkflowSte
     if (fetchError) throw fetchError;
 
     const currentStepIds = new Set((currentSteps || []).map(s => s.id));
+
+    // Separate steps into those that exist in DB and new steps
+    // Check against actual DB records, not just ID format
+    const existingSteps = steps.filter(step => step.id && currentStepIds.has(step.id));
+    const newSteps = steps.filter(step => !step.id || !currentStepIds.has(step.id));
+
+    console.log('Existing steps to update/keep:', existingSteps.length);
+    console.log('New steps to insert:', newSteps.length);
+
     const keepStepIds = new Set(existingSteps.map(s => s.id));
 
     // Find steps to delete (exist in DB but not in our keep list)
