@@ -199,16 +199,25 @@ export async function updateWorkflowSteps(workflowId: string, steps: WorkflowSte
     if (newSteps.length > 0) {
       console.log('📝 Inserting new steps...');
 
-      const stepsToInsert = newSteps.map(step => ({
-        id: step.id,
-        workflow_id: workflowId,
-        step_order: step.stepOrder,
-        step_type: step.stepType,
-        step_name: step.stepName,
-        config_json: step.configJson || {},
-        next_step_on_success_id: step.nextStepOnSuccessId || null,
-        next_step_on_failure_id: step.nextStepOnFailureId || null
-      }));
+      const stepsToInsert = newSteps.map(step => {
+        const baseStep = {
+          workflow_id: workflowId,
+          step_order: step.stepOrder,
+          step_type: step.stepType,
+          step_name: step.stepName,
+          config_json: step.configJson || {},
+          next_step_on_success_id: step.nextStepOnSuccessId || null,
+          next_step_on_failure_id: step.nextStepOnFailureId || null
+        };
+
+        // Only include id if it's a valid UUID (from copy operation)
+        // Omit id for temp IDs to let database auto-generate
+        if (step.id && !step.id.toString().startsWith('temp-')) {
+          return { id: step.id, ...baseStep };
+        }
+
+        return baseStep;
+      });
 
       console.log('Inserting steps with IDs:', stepsToInsert);
 
