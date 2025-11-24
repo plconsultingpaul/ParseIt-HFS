@@ -193,11 +193,12 @@ export async function updateWorkflowSteps(workflowId: string, steps: WorkflowSte
 
     console.log('Steps to delete:', stepsToDelete.length);
 
-    // Insert new steps first (without id field)
+    // Insert new steps with their IDs preserved
     if (newSteps.length > 0) {
       console.log('📝 Inserting new steps...');
 
       const stepsToInsert = newSteps.map(step => ({
+        id: step.id,
         workflow_id: workflowId,
         step_order: step.stepOrder,
         step_type: step.stepType,
@@ -207,9 +208,9 @@ export async function updateWorkflowSteps(workflowId: string, steps: WorkflowSte
         next_step_on_failure_id: step.nextStepOnFailureId || null
       }));
 
-      console.log('Inserting steps (without id):', stepsToInsert);
+      console.log('Inserting steps with IDs:', stepsToInsert);
 
-      // Insert without specifying id field - let database auto-generate
+      // Insert with specified id field to preserve UUIDs from copy operation
       const { data: insertedSteps, error: insertError } = await supabase
         .from('workflow_steps')
         .insert(stepsToInsert)
