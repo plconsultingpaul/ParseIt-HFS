@@ -192,14 +192,15 @@ export default function PageTransformerCard({
         }
       }
 
-      const responseText = await response.text();
       let result;
       try {
+        const responseText = await response.text();
         if (!responseText || responseText.trim() === '') {
           throw new Error('PDF transformer returned an empty response. This usually means the AI had trouble extracting data from your PDF. Please try with a clearer PDF or adjust your transformation instructions.');
         }
         result = JSON.parse(responseText);
       } catch (parseError) {
+        const responseText = await response.text();
         if (!responseText || responseText.trim() === '') {
           throw new Error('PDF transformer returned an empty response. This usually means the AI had trouble extracting data from your PDF. Please try with a clearer PDF or adjust your transformation instructions.');
         } else {
@@ -277,14 +278,15 @@ export default function PageTransformerCard({
           }
         }
 
-        const responseText = await response.text();
         let result;
         try {
+          const responseText = await response.text();
           if (!responseText || responseText.trim() === '') {
             throw new Error('PDF transformer returned an empty response. This usually means the AI had trouble extracting data from your PDF. Please try with a clearer PDF or adjust your transformation instructions.');
           }
           result = JSON.parse(responseText);
         } catch (parseError) {
+          const responseText = await response.text();
           if (!responseText || responseText.trim() === '') {
             throw new Error('PDF transformer returned an empty response. This usually means the AI had trouble extracting data from your PDF. Please try with a clearer PDF or adjust your transformation instructions.');
           } else {
