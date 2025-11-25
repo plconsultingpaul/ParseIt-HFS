@@ -28,13 +28,47 @@ interface TransformationRequest {
   }
   additionalInstructions?: string
   apiKey: string
-  pageGroupConfig?: {
-    enabled: boolean
-    numberOfPages: number
-    processedPageNumbers?: number[]
+}
+
+// Generate unique request ID for tracing
+function generateRequestId(): string {
+  return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+}
+
+// Helper function to get object size in bytes
+function getObjectSize(obj: any): number {
+  try {
+    return JSON.stringify(obj).length
+  } catch {
+    return -1
   }
 }
 
+// Helper function to check for circular references
+function hasCircularReference(obj: any, seen = new WeakSet()): boolean {
+  try {
+    if (obj === null || typeof obj !== 'object') {
+      return false
+    }
+    if (seen.has(obj)) {
+      return true
+    }
+    seen.add(obj)
+    for (const key in obj) {
+      if (obj.hasOwnProperty(key)) {
+        if (hasCircularReference(obj[key], seen)) {
+          return true
+        }
+      }
+    }
+    return false
+  } catch (error) {
+    console.error('ERROR: Failed to check circular reference:', error)
+    return true
+  }
+}
+
+// Helper function to normalize boolean values to proper case (True/False)
 function normalizeBooleanValue(value: any): string {
   console.log(`TRACE [normalizeBooleanValue]: Input value: ${JSON.stringify(value)}, type: ${typeof value}`)
 
@@ -45,9 +79,10 @@ function normalizeBooleanValue(value: any): string {
   }
 
   if (typeof value === 'string') {
-    const lowerValue = value.toLowerCase().trim()
+    const lowerValue = value.trim().toLowerCase()
     console.log(`TRACE [normalizeBooleanValue]: String value (lowercased): ${lowerValue}`)
 
+    // Handle common boolean representations
     if (lowerValue === 'true' || lowerValue === 't' || lowerValue === 'yes' || lowerValue === 'y' || lowerValue === '1') {
       console.log(`TRACE [normalizeBooleanValue]: String matched TRUE pattern`)
       return 'True'
@@ -57,34 +92,143 @@ function normalizeBooleanValue(value: any): string {
       return 'False'
     }
 
+    // If it's already in proper case format, return as is
     if (value === 'True' || value === 'False') {
       console.log(`TRACE [normalizeBooleanValue]: Already in proper case: ${value}`)
       return value
     }
   }
 
+  // Default to False for any other value
   console.warn(`⚠️ WARNING [normalizeBooleanValue]: Invalid boolean value "${value}", defaulting to False`)
   return 'False'
 }
 
-serve(async (req) => {
-  const requestId = crypto.randomUUID()
+// Configuration for chunked processing to avoid stack overflow
+const CHUNK_SIZE = 8192
+
+// Helper function to decode base64 in chunks to avoid stack overflow
+function decodeBase64InChunks(base64String: string): Uint8Array {
+  const binaryString = atob(base64String)
+  const bytes = new Uint8Array(binaryString.length)
+
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i)
+  }
+
+  return bytes
+}
+
+// Helper function to encode bytes to base64 in chunks to avoid stack overflow
+function encodeBase64InChunks(bytes: Uint8Array): string {
+  let result = ''
+
+  for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+    const chunk = bytes.slice(i, Math.min(i + CHUNK_SIZE, bytes.length))
+    result += String.fromCharCode(...chunk)
+  }
+
+  return btoa(result)
+}
+
+// Helper function to extract a specific page from a PDF
+async function extractSpecificPage(pdfBase64: string, pageNumber: number): Promise<string> {
+  const funcName = 'extractSpecificPage'
+  console.log(`INFO [${funcName}]: START - Extracting page ${pageNumber}`)
+  console.log(`TRACE [${funcName}]: Input PDF base64 size: ${pdfBase64.length} chars`)
+
+  try {
+    console.log(`TRACE [${funcName}]: Decoding base64 to bytes using chunked approach...`)
+    const startDecode = Date.now()
+
+    // Decode base64 to bytes using chunked approach
+    const pdfBytes = decodeBase64InChunks(pdfBase64)
+    console.log(`TRACE [${funcName}]: Base64 decode completed in ${Date.now() - startDecode}ms, resulting bytes: ${pdfBytes.length}`)
+
+    // Load the PDF document
+    console.log(`TRACE [${funcName}]: Loading PDF document...`)
+    const startLoad = Date.now()
+    const pdfDoc = await PDFDocument.load(pdfBytes)
+    const totalPages = pdfDoc.getPageCount()
+    console.log(`TRACE [${funcName}]: PDF loaded in ${Date.now() - startLoad}ms, total pages: ${totalPages}`)
+
+    // Validate page number
+    if (pageNumber < 1 || pageNumber > totalPages) {
+      console.warn(`WARNING [${funcName}]: Invalid page number ${pageNumber} (PDF has ${totalPages} pages), using page 1 as fallback`)
+      pageNumber = 1
+    }
+
+    // Create a new PDF with only the requested page
+    console.log(`TRACE [${funcName}]: Creating single-page PDF for page ${pageNumber}...`)
+    const startCreate = Date.now()
+    const singlePageDoc = await PDFDocument.create()
+    const [copiedPage] = await singlePageDoc.copyPages(pdfDoc, [pageNumber - 1])
+    singlePageDoc.addPage(copiedPage)
+    console.log(`TRACE [${funcName}]: Single-page PDF created in ${Date.now() - startCreate}ms`)
+
+    // Convert back to base64 using chunked approach
+    console.log(`TRACE [${funcName}]: Saving and encoding single-page PDF using chunked approach...`)
+    const startSave = Date.now()
+    const singlePageBytes = await singlePageDoc.save()
+    console.log(`TRACE [${funcName}]: PDF saved, size: ${singlePageBytes.length} bytes`)
+
+    const singlePageBase64 = encodeBase64InChunks(singlePageBytes)
+    console.log(`TRACE [${funcName}]: Single-page PDF encoded in ${Date.now() - startSave}ms, size: ${singlePageBase64.length} chars`)
+
+    console.log(`INFO [${funcName}]: END - Successfully extracted page ${pageNumber}`)
+    return singlePageBase64
+  } catch (error) {
+    console.error(`ERROR [${funcName}]: Failed to extract page ${pageNumber}`)
+    console.error(`ERROR [${funcName}]: Error type: ${error instanceof Error ? error.constructor.name : typeof error}`)
+    console.error(`ERROR [${funcName}]: Error message: ${error instanceof Error ? error.message : String(error)}`)
+    console.error(`ERROR [${funcName}]: Stack trace:`, error instanceof Error ? error.stack : 'No stack trace available')
+    throw new Error(`Failed to extract page ${pageNumber}: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+}
+
+// Helper function to group field mappings by page number
+function groupFieldsByPage(fieldMappings: FieldMapping[]): Map<number, FieldMapping[]> {
+  const pageGroups = new Map<number, FieldMapping[]>()
+
+  for (const mapping of fieldMappings) {
+    // Default to page 1 if not specified
+    const pageNum = mapping.pageNumberInGroup || 1
+
+    if (!pageGroups.has(pageNum)) {
+      pageGroups.set(pageNum, [])
+    }
+
+    pageGroups.get(pageNum)!.push(mapping)
+  }
+
+  console.log(`📊 Field mappings grouped by page:`)
+  for (const [pageNum, fields] of pageGroups.entries()) {
+    console.log(`   Page ${pageNum}: ${fields.length} fields - ${fields.map(f => f.fieldName).join(', ')}`)
+  }
+
+  return pageGroups
+}
+
+serve(async (req: Request) => {
+  const requestId = generateRequestId()
+  const requestStartTime = Date.now()
+
   console.log('===============================================')
-  console.log(`INFO [MAIN]: NEW REQUEST STARTED - ${requestId}`)
-  console.log('===============================================')
+  console.log(`INFO [MAIN]: REQUEST START - ID: ${requestId}`)
+  console.log(`INFO [MAIN]: Timestamp: ${new Date().toISOString()}`)
   console.log(`INFO [MAIN]: Method: ${req.method}`)
   console.log(`INFO [MAIN]: URL: ${req.url}`)
+  console.log('===============================================')
 
-  if (req.method === 'OPTIONS') {
-    console.log(`INFO [MAIN]: Handling OPTIONS preflight - ${requestId}`)
-    return new Response(null, { status: 200, headers: corsHeaders })
+  if (req.method === "OPTIONS") {
+    console.log(`INFO [MAIN]: OPTIONS request, returning CORS headers - ${requestId}`)
+    return new Response(null, {
+      status: 200,
+      headers: corsHeaders,
+    })
   }
 
   try {
-    console.log('===============================================')
-    console.log(`INFO [REQUEST]: PARSING REQUEST BODY - ${requestId}`)
-    console.log('===============================================')
-
     console.log(`TRACE [MAIN]: Reading request body - ${requestId}`)
     let requestText: string;
     try {
@@ -95,8 +239,23 @@ serve(async (req) => {
       console.error(`ERROR [MAIN]: Failed to read request body - ${requestId}`)
       console.error(`ERROR [MAIN]: Error type: ${readError instanceof Error ? readError.constructor.name : typeof readError}`)
       console.error(`ERROR [MAIN]: Error message: ${readError instanceof Error ? readError.message : String(readError)}`)
-      throw new Error(`Failed to read request body: ${readError instanceof Error ? readError.message : 'Unknown error'}`)
+      console.error(`ERROR [MAIN]: Stack trace:`, readError instanceof Error ? readError.stack : 'No stack trace available')
+      return new Response(
+        JSON.stringify({
+          error: "Failed to read request body",
+          details: readError instanceof Error ? readError.message : "Unknown error",
+          requestId
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
+
+    console.log(`INFO [MAIN]: Request body size: ${requestText.length} characters - ${requestId}`)
+    console.log(`TRACE [MAIN]: Request body preview (first 200 chars): ${requestText.substring(0, 200)} - ${requestId}`)
+    console.log(`TRACE [MAIN]: Request body preview (last 200 chars): ${requestText.substring(Math.max(0, requestText.length - 200))} - ${requestId}`)
 
     console.log(`TRACE [MAIN]: Parsing request JSON - ${requestId}`)
     let requestData: TransformationRequest;
@@ -104,201 +263,161 @@ serve(async (req) => {
       const parseStartTime = Date.now()
       requestData = JSON.parse(requestText);
       console.log(`TRACE [MAIN]: JSON parsed successfully in ${Date.now() - parseStartTime}ms - ${requestId}`)
+      console.log(`TRACE [MAIN]: Request data keys: ${Object.keys(requestData).join(', ')} - ${requestId}`)
     } catch (parseError) {
       console.error(`ERROR [MAIN]: Failed to parse request JSON - ${requestId}`)
       console.error(`ERROR [MAIN]: Parse error type: ${parseError instanceof Error ? parseError.constructor.name : typeof parseError}`)
       console.error(`ERROR [MAIN]: Parse error message: ${parseError instanceof Error ? parseError.message : String(parseError)}`)
-      throw new Error(`Invalid JSON in request body: ${parseError instanceof Error ? parseError.message : 'Unknown parse error'}`)
+      console.error(`ERROR [MAIN]: Invalid JSON content (first 500 chars): ${requestText.substring(0, 500)}`)
+      return new Response(
+        JSON.stringify({
+          error: "Invalid JSON in request body",
+          details: parseError instanceof Error ? parseError.message : "Unknown parse error",
+          requestId
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
-    console.log(`TRACE [REQUEST]: Request keys: ${Object.keys(requestData).join(', ')} - ${requestId}`)
-    console.log(`INFO [REQUEST]: Transformation type: ${requestData.transformationType?.name || 'Not provided'} - ${requestId}`)
-    console.log(`INFO [REQUEST]: Transformation ID: ${requestData.transformationType?.id || 'Not provided'} - ${requestId}`)
-    console.log(`INFO [REQUEST]: API key present: ${!!requestData.apiKey} - ${requestId}`)
-    console.log(`INFO [REQUEST]: PDF data present: ${!!requestData.pdfBase64} - ${requestId}`)
-    console.log(`INFO [REQUEST]: Field mappings count: ${requestData.transformationType?.fieldMappings?.length || 0} - ${requestId}`)
+    const { pdfBase64, transformationType, additionalInstructions, apiKey } = requestData;
 
-    if (requestData.pageGroupConfig?.enabled) {
-      console.log(`INFO [REQUEST]: Page group processing enabled - ${requestId}`)
-      console.log(`INFO [REQUEST]: Number of pages: ${requestData.pageGroupConfig.numberOfPages} - ${requestId}`)
-      console.log(`INFO [REQUEST]: Processed page numbers: ${requestData.pageGroupConfig.processedPageNumbers?.join(', ') || 'none'} - ${requestId}`)
+    console.log(`INFO [MAIN]: PDF base64 length: ${pdfBase64?.length || 0} chars - ${requestId}`)
+    console.log(`INFO [MAIN]: Transformation type: ${transformationType?.name} (ID: ${transformationType?.id}) - ${requestId}`)
+    console.log(`INFO [MAIN]: Filename template: ${transformationType?.filenameTemplate} - ${requestId}`)
+    console.log(`INFO [MAIN]: Field mappings count: ${transformationType?.fieldMappings?.length || 0} - ${requestId}`)
+    console.log(`INFO [MAIN]: Additional instructions length: ${additionalInstructions?.length || 0} chars - ${requestId}`)
+    console.log(`INFO [MAIN]: API key present: ${!!apiKey} - ${requestId}`);
+
+    if (!apiKey) {
+      throw new Error('Google Gemini API key not configured')
     }
 
-    console.log('===============================================')
-    console.log(`INFO [VALIDATION]: VALIDATING REQUEST DATA - ${requestId}`)
-    console.log('===============================================')
-
-    const { pdfBase64, transformationType, additionalInstructions, apiKey, pageGroupConfig } = requestData
-
-    if (!pdfBase64 || !transformationType || !apiKey) {
-      console.error(`ERROR [VALIDATION]: Missing required fields - ${requestId}`)
-      console.error(`  - pdfBase64 present: ${!!pdfBase64}`)
-      console.error(`  - transformationType present: ${!!transformationType}`)
-      console.error(`  - apiKey present: ${!!apiKey}`)
-      throw new Error('Missing required fields: pdfBase64, transformationType, and apiKey are required')
+    if (!transformationType) {
+      throw new Error('Transformation type not provided')
     }
 
-    console.log(`INFO [VALIDATION]: All required fields present - ${requestId}`)
-
-    const fieldMappings = transformationType.fieldMappings || []
-    console.log(`TRACE [VALIDATION]: Processing ${fieldMappings.length} field mappings - ${requestId}`)
-
-    console.log('===============================================')
-    console.log(`INFO [PDF]: DECODING PDF - ${requestId}`)
-    console.log('===============================================')
-
-    const pdfBytes = Uint8Array.from(atob(pdfBase64), c => c.charCodeAt(0))
-    console.log(`INFO [PDF]: PDF decoded, size: ${pdfBytes.length} bytes - ${requestId}`)
-
-    console.log('===============================================')
-    console.log(`INFO [PDF]: LOADING PDF DOCUMENT - ${requestId}`)
-    console.log('===============================================')
-
-    const pdfDoc = await PDFDocument.load(pdfBytes)
-    const totalPages = pdfDoc.getPageCount()
-    console.log(`INFO [PDF]: PDF loaded successfully - ${requestId}`)
-    console.log(`INFO [PDF]: Total pages: ${totalPages} - ${requestId}`)
-
-    console.log('===============================================')
-    console.log(`INFO [GEMINI]: INITIALIZING AI CLIENT - ${requestId}`)
-    console.log('===============================================')
-
+    console.log('Initializing Gemini AI...');
     const genAI = new GoogleGenerativeAI(apiKey)
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" })
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' })
 
-    console.log(`INFO [GEMINI]: AI client initialized - ${requestId}`)
+    // Combine instructions
+    const fullInstructions = additionalInstructions
+      ? `${transformationType.defaultInstructions}\n\nAdditional Instructions: ${additionalInstructions}`
+      : transformationType.defaultInstructions
 
-    console.log('===============================================')
-    console.log(`INFO [FIELDS]: ANALYZING FIELD MAPPINGS - ${requestId}`)
-    console.log('===============================================')
+    console.log('Full instructions length:', fullInstructions.length);
 
-    const aiFields = fieldMappings.filter(m => m.type === 'ai' || m.type === 'mapped')
-    const mappedFields = fieldMappings.filter(m => m.type === 'mapped')
-    const hardcodedFields = fieldMappings.filter(m => m.type === 'hardcoded')
+    // NEW APPROACH: Process fields page by page to ensure accurate extraction
+    console.log('=== PAGE-AWARE FIELD EXTRACTION ===')
 
-    console.log(`INFO [FIELDS]: AI fields: ${aiFields.length} - ${requestId}`)
-    console.log(`INFO [FIELDS]: Mapped fields: ${mappedFields.length} - ${requestId}`)
-    console.log(`INFO [FIELDS]: Hardcoded fields: ${hardcodedFields.length} - ${requestId}`)
+    let extractedData: any = {}
 
-    if (aiFields.length > 0) {
-      console.log(`TRACE [FIELDS]: AI field names: ${aiFields.map(f => f.fieldName).join(', ')} - ${requestId}`)
-    }
+    if (transformationType.fieldMappings && transformationType.fieldMappings.length > 0) {
+      console.log('Processing field mappings:', transformationType.fieldMappings.length);
 
-    console.log('===============================================')
-    console.log(`INFO [PROCESSING]: STARTING DATA EXTRACTION - ${requestId}`)
-    console.log('===============================================')
-
-    const extractedData: Record<string, any> = {}
-
-    console.log('===============================================')
-    console.log(`INFO [HARDCODED]: PROCESSING HARDCODED FIELDS - ${requestId}`)
-    console.log('===============================================')
-
-    hardcodedFields.forEach(mapping => {
-      console.log(`TRACE [HARDCODED]: Setting ${mapping.fieldName} = "${mapping.value}" - ${requestId}`)
-      extractedData[mapping.fieldName] = mapping.value
-    })
-
-    console.log(`INFO [HARDCODED]: Processed ${hardcodedFields.length} hardcoded fields - ${requestId}`)
-
-    if (aiFields.length > 0) {
-      console.log('===============================================')
-      console.log(`INFO [PAGE_GROUP]: DETERMINING PROCESSING MODE - ${requestId}`)
-      console.log('===============================================')
-
-      const isPageGroupProcessing = pageGroupConfig?.enabled && pageGroupConfig.numberOfPages > 1
-
-      if (isPageGroupProcessing) {
-        console.log(`INFO [PAGE_GROUP]: Multi-page processing enabled - ${requestId}`)
-        console.log(`INFO [PAGE_GROUP]: Number of pages in group: ${pageGroupConfig.numberOfPages} - ${requestId}`)
-
-        const processedPageNumbers = pageGroupConfig.processedPageNumbers || []
-        console.log(`INFO [PAGE_GROUP]: Already processed pages: ${processedPageNumbers.join(', ') || 'none'} - ${requestId}`)
-
-        for (let pageNum = 1; pageNum <= pageGroupConfig.numberOfPages; pageNum++) {
-          if (processedPageNumbers.includes(pageNum)) {
-            console.log(`INFO [PAGE_GROUP]: Skipping page ${pageNum} (already processed) - ${requestId}`)
-            continue
+      // First, handle all hardcoded fields (no AI needed)
+      for (const mapping of transformationType.fieldMappings) {
+        if (mapping.type === 'hardcoded') {
+          console.log(`✓ Hardcoded field "${mapping.fieldName}": ${mapping.value}`)
+          // Apply boolean normalization for hardcoded boolean fields
+          if (mapping.dataType === 'boolean') {
+            extractedData[mapping.fieldName] = normalizeBooleanValue(mapping.value)
+          } else if (mapping.dataType === 'string' || !mapping.dataType) {
+            // Convert hardcoded string fields to uppercase
+            extractedData[mapping.fieldName] = typeof mapping.value === 'string' && mapping.value !== ''
+              ? mapping.value.toUpperCase()
+              : mapping.value
+          } else {
+            extractedData[mapping.fieldName] = mapping.value
           }
+        }
+      }
 
-          console.log('===============================================')
-          console.log(`INFO [PAGE_${pageNum}]: PROCESSING PAGE ${pageNum} - ${requestId}`)
-          console.log('===============================================')
+      // Group remaining fields by page number for AI extraction
+      const aiFields = transformationType.fieldMappings.filter(m => m.type === 'ai' || m.type === 'mapped')
 
-          const pageFields = aiFields.filter(f => !f.pageNumberInGroup || f.pageNumberInGroup === pageNum)
-          console.log(`INFO [PAGE_${pageNum}]: Fields to extract: ${pageFields.length} - ${requestId}`)
-          console.log(`TRACE [PAGE_${pageNum}]: Field names: ${pageFields.map(f => f.fieldName).join(', ')} - ${requestId}`)
+      if (aiFields.length > 0) {
+        const pageGroups = groupFieldsByPage(aiFields)
 
-          if (pageFields.length === 0) {
-            console.log(`INFO [PAGE_${pageNum}]: No fields to extract, skipping - ${requestId}`)
-            continue
-          }
+        // Process each page group separately
+        for (const [pageNum, pageFields] of pageGroups.entries()) {
+          console.log(`\n📄 Processing Page ${pageNum} with ${pageFields.length} fields`)
 
-          console.log(`INFO [PAGE_${pageNum}]: Extracting page ${pageNum} from PDF - ${requestId}`)
-          const singlePageDoc = await PDFDocument.create()
-          const [copiedPage] = await singlePageDoc.copyPages(pdfDoc, [pageNum - 1])
-          singlePageDoc.addPage(copiedPage)
-          const singlePageBytes = await singlePageDoc.save()
-          const singlePageBase64 = btoa(String.fromCharCode(...singlePageBytes))
+          // Extract the specific page from the PDF
+          const pageSpecificPdfBase64 = await extractSpecificPage(pdfBase64, pageNum)
 
-          console.log(`INFO [PAGE_${pageNum}]: Page extracted, size: ${singlePageBytes.length} bytes - ${requestId}`)
+          // Build field mapping instructions for this specific page
+          let fieldMappingInstructions = '\n\nFIELD EXTRACTION INSTRUCTIONS:\n'
+          fieldMappingInstructions += `IMPORTANT: You are analyzing a single page extracted from a larger document. Extract ONLY from the content visible on THIS page.\n\n`
 
-          console.log('===============================================')
-          console.log(`INFO [AI_PAGE_${pageNum}]: BUILDING EXTRACTION PROMPT - ${requestId}`)
-          console.log('===============================================')
-
-          const fieldDescriptions = pageFields.map(f => {
-            let desc = `- ${f.fieldName}`
-            if (f.dataType) desc += ` (${f.dataType})`
-
-            // For mapped fields, tell AI to extract FROM coordinates
-            if (f.type === 'mapped') {
-              desc += `: Extract data from PDF coordinates ${f.value}`
-            } else if (f.value) {
-              desc += `: ${f.value}`
+          pageFields.forEach(mapping => {
+            if (mapping.type === 'mapped') {
+              const dataTypeNote = mapping.dataType === 'string' ? ' (format as UPPER CASE string)' :
+                                  mapping.dataType === 'number' ? ' (format as number)' :
+                                  mapping.dataType === 'integer' ? ' (format as integer)' :
+                                  mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' :
+                                  mapping.dataType === 'boolean' ? ' (format as boolean: respond with ONLY "True" or "False" in proper case - capital T or F, lowercase remaining letters)' : ''
+              fieldMappingInstructions += `- "${mapping.fieldName}": Extract data from PDF coordinates ${mapping.value}${dataTypeNote}\n`
+            } else {
+              // AI type
+              const dataTypeNote = mapping.dataType === 'string' ? ' (format as UPPER CASE string)' :
+                                  mapping.dataType === 'number' ? ' (format as number)' :
+                                  mapping.dataType === 'integer' ? ' (format as integer)' :
+                                  mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' :
+                                  mapping.dataType === 'boolean' ? ' (format as boolean: respond with ONLY "True" or "False" in proper case - capital T or F, lowercase remaining letters)' : ''
+              fieldMappingInstructions += `- "${mapping.fieldName}": ${mapping.value || 'Extract from PDF document'}${dataTypeNote}\n`
             }
+          })
 
-            return desc
-          }).join('\n')
+          const pagePrompt = `
+You are a data extraction AI analyzing a single page from a PDF document. Please analyze the provided page and extract the requested information according to the following instructions:
 
-          console.log(`TRACE [AI_PAGE_${pageNum}]: Field descriptions:\n${fieldDescriptions} - ${requestId}`)
+EXTRACTION INSTRUCTIONS:
+${fullInstructions}${fieldMappingInstructions}
 
-          const baseInstructions = transformationType.defaultInstructions || 'Extract the following fields from this document'
-          const finalInstructions = additionalInstructions
-            ? `${baseInstructions}\n\nAdditional Instructions: ${additionalInstructions}`
-            : baseInstructions
+OUTPUT FORMAT:
+Please format the extracted data as JSON with the following structure:
+{
+  "extractedData": {
+    // Include ONLY the fields requested above
+  }
+}
 
-          console.log(`TRACE [AI_PAGE_${pageNum}]: Base instructions length: ${baseInstructions.length} chars - ${requestId}`)
-          console.log(`TRACE [AI_PAGE_${pageNum}]: Additional instructions: ${additionalInstructions ? 'Yes' : 'No'} - ${requestId}`)
+IMPORTANT GUIDELINES:
+1. You are seeing ONLY page ${pageNum} of this document - extract information from THIS page only
+2. Only extract information that is clearly visible on THIS page
+3. If a field is not found on this page, use empty string ("") for text fields, 0 for numbers, null for optional fields
+4. For datetime fields, use the format yyyy-MM-ddThh:mm:ss (e.g., "2024-03-15T14:30:00")
+5. For boolean fields, respond with ONLY "True" or "False" (proper case: capital first letter, lowercase remaining)
+6. CRITICAL: For all string data type fields, convert the extracted value to UPPER CASE before including it in the output
+7. Be precise and accurate with the extracted data
+8. Ensure all field names match exactly what's needed
 
-          const prompt = `${finalInstructions}\n\n${fieldDescriptions}\n\nIMPORTANT: Return ONLY a valid JSON object with the extracted data. Use null for missing values. No markdown, no explanations, just the JSON object with "extractedData" as the root key.`
+Please provide only the JSON output without any additional explanation or formatting.
+`
 
-          console.log(`TRACE [AI_PAGE_${pageNum}]: Final prompt length: ${prompt.length} chars - ${requestId}`)
-
-          console.log('===============================================')
-          console.log(`INFO [AI_PAGE_${pageNum}]: SENDING REQUEST TO GEMINI - ${requestId}`)
-          console.log('===============================================')
+          console.log(`🤖 Calling Gemini AI for Page ${pageNum}...`)
+          console.log(`   Fields to extract: ${pageFields.map(f => f.fieldName).join(', ')}`)
 
           const result = await model.generateContent([
             {
               inlineData: {
-                data: singlePageBase64,
-                mimeType: "application/pdf"
+                mimeType: 'application/pdf',
+                data: pageSpecificPdfBase64
               }
             },
-            prompt
+            pagePrompt
           ])
 
-          console.log(`INFO [AI_PAGE_${pageNum}]: Received response from Gemini - ${requestId}`)
+          const response = await result.response
+          let extractedContent = response.text()
 
-          console.log('===============================================')
-          console.log(`INFO [AI_PAGE_${pageNum}]: PARSING GEMINI RESPONSE - ${requestId}`)
-          console.log('===============================================')
+          console.log(`✅ Page ${pageNum} AI response received (length: ${extractedContent.length})`)
 
-          let extractedContent = result.response.text()
-          console.log(`TRACE [AI_PAGE_${pageNum}]: Raw response length: ${extractedContent.length} chars - ${requestId}`)
-          console.log(`TRACE [AI_PAGE_${pageNum}]: Raw response preview: ${extractedContent.substring(0, 100)}... - ${requestId}`)
-
+          // Clean up the response
           extractedContent = extractedContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
 
           // Parse and merge with existing data
@@ -308,263 +427,333 @@ serve(async (req) => {
 
             // Apply boolean normalization and string uppercase conversion
             pageFields.forEach(field => {
-              const parts = field.fieldName.split('.')
-
-              // Check if we're dealing with an array field (e.g., details.fieldName)
-              if (parts.length === 2) {
-                const [arrayName, propertyName] = parts
-                const arrayData = pageData[arrayName]
-
-                if (Array.isArray(arrayData)) {
-                  // Process ALL items in the array
-                  arrayData.forEach(item => {
-                    const currentValue = item[propertyName]
-                    console.log(`DEBUG [NORMALIZE]: Field="${field.fieldName}" DataType="${field.dataType}" Property="${propertyName}" Value="${currentValue}" Type="${typeof currentValue}"`)
-
-                    if (field.dataType?.toLowerCase() === 'boolean' && currentValue !== undefined) {
-                      item[propertyName] = normalizeBooleanValue(currentValue)
-                      console.log(`DEBUG [NORMALIZE]: After normalization: ${propertyName} = "${item[propertyName]}"`)
-                    } else if ((field.dataType === 'string' || !field.dataType) && currentValue !== undefined) {
-                      if (typeof currentValue === 'string' && currentValue !== '') {
-                        item[propertyName] = currentValue.toUpperCase()
-                      }
-                    }
-                  })
-                }
-              } else {
-                // Handle non-array fields
-                const currentValue = pageData[field.fieldName]
-
-                if (field.dataType?.toLowerCase() === 'boolean' && currentValue !== undefined) {
-                  pageData[field.fieldName] = normalizeBooleanValue(currentValue)
-                } else if ((field.dataType === 'string' || !field.dataType) && currentValue !== undefined) {
-                  if (typeof currentValue === 'string' && currentValue !== '') {
-                    pageData[field.fieldName] = currentValue.toUpperCase()
-                  }
+              if (field.dataType === 'boolean' && pageData.hasOwnProperty(field.fieldName)) {
+                pageData[field.fieldName] = normalizeBooleanValue(pageData[field.fieldName])
+              } else if ((field.dataType === 'string' || !field.dataType) && pageData.hasOwnProperty(field.fieldName)) {
+                // Convert string fields to uppercase
+                if (typeof pageData[field.fieldName] === 'string' && pageData[field.fieldName] !== '') {
+                  pageData[field.fieldName] = pageData[field.fieldName].toUpperCase()
                 }
               }
             })
 
             // Merge page-specific data into final result
             Object.assign(extractedData, pageData)
-            console.log(`DEBUG [FINAL]: extractedData.details = ${JSON.stringify(extractedData.details)}`)
 
             console.log(`✅ Page ${pageNum} data extracted successfully:`, Object.keys(pageData).join(', '))
           } catch (parseError) {
             console.error(`❌ Failed to parse Page ${pageNum} response:`, parseError)
             // Set empty values for failed fields
             pageFields.forEach(field => {
-              if (!extractedData[field.fieldName]) {
-                extractedData[field.fieldName] = null
+              if (!extractedData.hasOwnProperty(field.fieldName)) {
+                extractedData[field.fieldName] = ''
               }
             })
           }
         }
-      } else {
-        console.log(`INFO [SINGLE_PAGE]: Processing entire document as single unit - ${requestId}`)
-        console.log('===============================================')
-        console.log(`INFO [AI]: BUILDING EXTRACTION PROMPT - ${requestId}`)
-        console.log('===============================================')
+      }
+    } else {
+      // No field mappings - use legacy single-pass extraction
+      console.log('⚠️ No field mappings defined, using legacy extraction mode')
 
-        const fieldDescriptions = aiFields.map(f => {
-          let desc = `- ${f.fieldName}`
-          if (f.dataType) desc += ` (${f.dataType})`
+      const prompt = `
+You are a data extraction AI for PDF transformation and renaming. Please analyze the provided PDF document and extract the requested information according to the following instructions:
 
-          // For mapped fields, tell AI to extract FROM coordinates
-          if (f.type === 'mapped') {
-            desc += `: Extract data from PDF coordinates ${f.value}`
-          } else if (f.value) {
-            desc += `: ${f.value}`
+EXTRACTION INSTRUCTIONS:
+${fullInstructions}
+
+OUTPUT FORMAT:
+Please format the extracted data as JSON with the following structure:
+{
+  "extractedData": {
+    // Include all the fields needed for the filename template
+  }
+}
+
+IMPORTANT GUIDELINES:
+1. Only extract information that is clearly visible in the document
+2. If a field is not found, use empty string ("") for text fields, 0 for numbers, null for optional fields
+3. For datetime fields, use the format yyyy-MM-ddThh:mm:ss (e.g., "2024-03-15T14:30:00")
+4. Be precise and accurate with the extracted data
+5. The extracted data will be used to rename the PDF file using the template: ${transformationType.filenameTemplate}
+6. Ensure all field names match exactly what's needed for the filename template
+
+Please provide only the JSON output without any additional explanation or formatting.
+`
+
+      console.log('Prompt length:', prompt.length);
+      console.log('Calling Gemini AI (legacy mode)...');
+
+      const result = await model.generateContent([
+        {
+          inlineData: {
+            mimeType: 'application/pdf',
+            data: pdfBase64
           }
+        },
+        prompt
+      ])
 
-          return desc
-        }).join('\n')
+      const response = await result.response
+      let extractedContent = response.text()
 
-        console.log(`TRACE [AI]: Field descriptions:\n${fieldDescriptions} - ${requestId}`)
+      console.log('=== AI RESPONSE ANALYSIS (Legacy) ===')
+      console.log('Raw AI response length:', extractedContent.length)
 
-        const baseInstructions = transformationType.defaultInstructions || 'Extract the following fields from this document'
-        const finalInstructions = additionalInstructions
-          ? `${baseInstructions}\n\nAdditional Instructions: ${additionalInstructions}`
-          : baseInstructions
+      // Clean up the response
+      extractedContent = extractedContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
 
-        console.log(`TRACE [AI]: Base instructions length: ${baseInstructions.length} chars - ${requestId}`)
-        console.log(`TRACE [AI]: Additional instructions: ${additionalInstructions ? 'Yes' : 'No'} - ${requestId}`)
+      // Parse the extracted data
+      try {
+        const parsedResponse = JSON.parse(extractedContent)
+        extractedData = parsedResponse.extractedData || parsedResponse || {}
 
-        const prompt = `${finalInstructions}\n\n${fieldDescriptions}\n\nIMPORTANT: Return ONLY a valid JSON object with the extracted data. Use null for missing values. No markdown, no explanations, just the JSON object with "extractedData" as the root key.`
-
-        console.log(`TRACE [AI]: Final prompt length: ${prompt.length} chars - ${requestId}`)
-
-        console.log('===============================================')
-        console.log(`INFO [AI]: SENDING REQUEST TO GEMINI - ${requestId}`)
-        console.log('===============================================')
-
-        const result = await model.generateContent([
-          {
-            inlineData: {
-              data: pdfBase64,
-              mimeType: "application/pdf"
-            }
-          },
-          prompt
-        ])
-
-        console.log(`INFO [AI]: Received response from Gemini - ${requestId}`)
-
-        console.log('===============================================')
-        console.log(`INFO [AI]: PARSING GEMINI RESPONSE - ${requestId}`)
-        console.log('===============================================')
-
-        let extractedContent = result.response.text()
-        console.log(`TRACE [AI]: Raw response length: ${extractedContent.length} chars - ${requestId}`)
-        console.log(`TRACE [AI]: Raw response preview: ${extractedContent.substring(0, 100)}... - ${requestId}`)
-
-        extractedContent = extractedContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-
-        try {
-          const parsedResponse = JSON.parse(extractedContent)
-          const responseData = parsedResponse.extractedData || parsedResponse || {}
-
-          console.log(`TRACE [AI]: Parsed response keys: ${Object.keys(responseData).join(', ')} - ${requestId}`)
-
-          // Apply boolean normalization and string uppercase conversion
-          aiFields.forEach(field => {
-            const parts = field.fieldName.split('.')
-
-            // Check if we're dealing with an array field (e.g., details.fieldName)
-            if (parts.length === 2) {
-              const [arrayName, propertyName] = parts
-              const arrayData = responseData[arrayName]
-
-              if (Array.isArray(arrayData)) {
-                // Process ALL items in the array
-                arrayData.forEach(item => {
-                  const currentValue = item[propertyName]
-                  console.log(`DEBUG [NORMALIZE]: Field="${field.fieldName}" DataType="${field.dataType}" Property="${propertyName}" Value="${currentValue}" Type="${typeof currentValue}"`)
-
-                  if (field.dataType?.toLowerCase() === 'boolean' && currentValue !== undefined) {
-                    item[propertyName] = normalizeBooleanValue(currentValue)
-                    console.log(`DEBUG [NORMALIZE]: After normalization: ${propertyName} = "${item[propertyName]}"`)
-                  } else if ((field.dataType === 'string' || !field.dataType) && currentValue !== undefined) {
-                    if (typeof currentValue === 'string' && currentValue !== '') {
-                      item[propertyName] = currentValue.toUpperCase()
-                    }
-                  }
-                })
-              }
-            } else {
-              // Handle non-array fields
-              const currentValue = responseData[field.fieldName]
-
-              if (field.dataType?.toLowerCase() === 'boolean' && currentValue !== undefined) {
-                responseData[field.fieldName] = normalizeBooleanValue(currentValue)
-              } else if ((field.dataType === 'string' || !field.dataType) && currentValue !== undefined) {
-                if (typeof currentValue === 'string' && currentValue !== '') {
-                  responseData[field.fieldName] = currentValue.toUpperCase()
-                }
-              }
-            }
-          })
-
-          Object.assign(extractedData, responseData)
-          console.log(`DEBUG [FINAL]: extractedData.details = ${JSON.stringify(extractedData.details)}`)
-          console.log(`INFO [AI]: Extracted data keys: ${Object.keys(responseData).join(', ')} - ${requestId}`)
-        } catch (parseError) {
-          console.error(`ERROR [AI]: Failed to parse Gemini response - ${requestId}`, parseError)
-          console.error(`ERROR [AI]: Raw content: ${extractedContent.substring(0, 500)} - ${requestId}`)
-          throw new Error(`Failed to parse AI response: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`)
+        // Ensure extractedData is always a valid object
+        if (typeof extractedData !== 'object' || extractedData === null || Array.isArray(extractedData)) {
+          console.warn('Invalid extracted data format, using fallback object')
+          extractedData = {}
         }
+
+        // Ensure we have at least some basic data structure
+        if (Object.keys(extractedData).length === 0) {
+          console.warn('Extracted data is empty, creating fallback structure')
+          extractedData = {
+            documentType: 'unknown',
+            extractionFailed: true,
+            originalFilename: 'unknown',
+            extractedAt: new Date().toISOString()
+          }
+        }
+
+      } catch (parseError) {
+        console.error('=== CRITICAL JSON PARSE ERROR (Legacy) ===')
+        console.error('Parse error:', parseError)
+
+        // Create a valid fallback structure
+        extractedData = {
+          documentType: 'unknown',
+          extractionFailed: true,
+          parseError: parseError instanceof Error ? parseError.message : 'Unknown error',
+          originalFilename: 'unknown',
+          extractedAt: new Date().toISOString()
+        }
+        console.log('Created fallback extracted data structure')
       }
     }
 
     console.log('===============================================')
-    console.log(`INFO [EXTRACTION]: DATA EXTRACTION COMPLETE - ${requestId}`)
+    console.log(`INFO [VALIDATION]: FINAL EXTRACTED DATA VALIDATION - ${requestId}`)
     console.log('===============================================')
-    console.log(`INFO [EXTRACTION]: Total fields extracted: ${Object.keys(extractedData).length} - ${requestId}`)
-    console.log(`TRACE [EXTRACTION]: Extracted field names: ${Object.keys(extractedData).join(', ')} - ${requestId}`)
+    console.log(`TRACE [VALIDATION]: Extracted data keys: ${Object.keys(extractedData).join(', ')} - ${requestId}`)
+    console.log(`TRACE [VALIDATION]: Extracted data key count: ${Object.keys(extractedData).length} - ${requestId}`)
+    console.log(`TRACE [VALIDATION]: Extracted data type: ${typeof extractedData} - ${requestId}`)
+    console.log(`TRACE [VALIDATION]: Extracted data is array: ${Array.isArray(extractedData)} - ${requestId}`)
 
+    // Check for circular references
+    console.log(`TRACE [VALIDATION]: Checking for circular references - ${requestId}`)
+    const hasCircular = hasCircularReference(extractedData)
+    console.log(`TRACE [VALIDATION]: Has circular reference: ${hasCircular} - ${requestId}`)
+    if (hasCircular) {
+      console.error(`ERROR [VALIDATION]: Circular reference detected in extractedData! - ${requestId}`)
+    }
+
+    // Log full extracted data structure
+    try {
+      const dataPreview = JSON.stringify(extractedData, null, 2)
+      console.log(`TRACE [VALIDATION]: Full extracted data structure (first 1000 chars): ${dataPreview.substring(0, 1000)} - ${requestId}`)
+    } catch (previewError) {
+      console.error(`ERROR [VALIDATION]: Cannot preview extracted data: ${previewError} - ${requestId}`)
+    }
+
+    // Validate that the final extracted data can be serialized to JSON
+    let finalJsonString: string
+    try {
+      console.log(`TRACE [VALIDATION]: Attempting JSON.stringify on extractedData - ${requestId}`)
+      const serializeStartTime = Date.now()
+      finalJsonString = JSON.stringify(extractedData)
+      console.log(`INFO [VALIDATION]: JSON serialization successful in ${Date.now() - serializeStartTime}ms - ${requestId}`)
+      console.log(`INFO [VALIDATION]: Serialized JSON length: ${finalJsonString.length} chars - ${requestId}`)
+      console.log(`TRACE [VALIDATION]: Serialized JSON preview (first 200 chars): ${finalJsonString.substring(0, 200)} - ${requestId}`)
+      console.log(`TRACE [VALIDATION]: Serialized JSON preview (last 200 chars): ${finalJsonString.substring(Math.max(0, finalJsonString.length - 200))} - ${requestId}`)
+    } catch (serializeError) {
+      console.error(`ERROR [VALIDATION]: CRITICAL - Cannot serialize extracted data to JSON - ${requestId}`)
+      console.error(`ERROR [VALIDATION]: Serialize error type: ${serializeError instanceof Error ? serializeError.constructor.name : typeof serializeError}`)
+      console.error(`ERROR [VALIDATION]: Serialize error message: ${serializeError instanceof Error ? serializeError.message : String(serializeError)}`)
+      console.error(`ERROR [VALIDATION]: Stack trace:`, serializeError instanceof Error ? serializeError.stack : 'No stack trace available')
+
+      // Create an even simpler fallback
+      console.log(`TRACE [VALIDATION]: Creating minimal fallback structure - ${requestId}`)
+      extractedData = {
+        error: 'Serialization failed',
+        message: serializeError instanceof Error ? serializeError.message : 'Unknown error',
+        timestamp: new Date().toISOString()
+      }
+      finalJsonString = JSON.stringify(extractedData)
+      console.log(`INFO [VALIDATION]: Fallback JSON created, length: ${finalJsonString.length} - ${requestId}`)
+    }
+    
+    // Generate new filename using the template
     console.log('===============================================')
-    console.log(`INFO [FILENAME]: GENERATING FILENAME - ${requestId}`)
+    console.log(`INFO [FILENAME]: FILENAME GENERATION - ${requestId}`)
     console.log('===============================================')
+    let newFilename = transformationType.filenameTemplate
+    console.log(`TRACE [FILENAME]: Original filename template: ${newFilename} - ${requestId}`)
+    console.log(`TRACE [FILENAME]: Number of placeholders to replace: ${Object.keys(extractedData).length} - ${requestId}`)
 
-    const filenameTemplate = transformationType.filenameTemplate || 'transformed_document'
-    console.log(`TRACE [FILENAME]: Template: ${filenameTemplate} - ${requestId}`)
-
-    let newFilename = filenameTemplate
-    const matches = filenameTemplate.matchAll(/\{([^}]+)\}/g)
-
-    console.log(`TRACE [FILENAME]: Starting template substitution - ${requestId}`)
-
-    for (const match of matches) {
-      const fieldName = match[1]
-      const fieldValue = extractedData[fieldName]
-
-      console.log(`TRACE [FILENAME]: Replacing {${fieldName}} with "${fieldValue}" - ${requestId}`)
-
-      if (fieldValue !== undefined && fieldValue !== null) {
-        const sanitizedValue = String(fieldValue)
-          .replace(/[^a-zA-Z0-9_-]/g, '_')
-          .replace(/_+/g, '_')
-          .replace(/^_|_$/g, '')
-
-        console.log(`TRACE [FILENAME]: Sanitized value: "${sanitizedValue}" - ${requestId}`)
-        newFilename = newFilename.replace(`{${fieldName}}`, sanitizedValue)
+    // Replace placeholders in filename template with extracted data
+    for (const [key, value] of Object.entries(extractedData)) {
+      const placeholder = `{{${key}}}`
+      if (newFilename.includes(placeholder)) {
+        const cleanValue = String(value || '').replace(/[<>:"/\\|?*]/g, '_').trim()
+        console.log(`TRACE [FILENAME]: Replacing ${placeholder} with "${cleanValue}" - ${requestId}`);
+        newFilename = newFilename.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), cleanValue)
       } else {
-        console.warn(`WARNING [FILENAME]: Field {${fieldName}} is missing or null, replacing with 'unknown' - ${requestId}`)
-        newFilename = newFilename.replace(`{${fieldName}}`, 'unknown')
+        console.log(`TRACE [FILENAME]: Placeholder {{${key}}} not found in template - ${requestId}`)
       }
     }
 
+    // Ensure the filename ends with .pdf
     if (!newFilename.toLowerCase().endsWith('.pdf')) {
       console.log(`TRACE [FILENAME]: Adding .pdf extension - ${requestId}`)
       newFilename += '.pdf'
     }
 
-    console.log(`INFO [FILENAME]: Generated filename: ${newFilename} - ${requestId}`)
-    console.log(`TRACE [FILENAME]: Filename length: ${newFilename.length} characters - ${requestId}`)
+    // Remove any remaining unreplaced placeholders
+    const remainingPlaceholders = newFilename.match(/\{\{[^}]+\}\}/g)
+    if (remainingPlaceholders) {
+      console.log(`WARNING [FILENAME]: Found ${remainingPlaceholders.length} unreplaced placeholders: ${remainingPlaceholders.join(', ')} - ${requestId}`)
+    }
+    newFilename = newFilename.replace(/\{\{[^}]+\}\}/g, 'MISSING')
+
+    console.log(`INFO [FILENAME]: Final generated filename: ${newFilename} - ${requestId}`)
 
     console.log('===============================================')
-    console.log(`INFO [RESPONSE]: PREPARING RESPONSE - ${requestId}`)
+    console.log(`INFO [RESPONSE]: BUILDING RESPONSE - ${requestId}`)
     console.log('===============================================')
-    
+    console.log(`TRACE [RESPONSE]: Extracted data size: ${JSON.stringify(extractedData).length} characters - ${requestId}`)
+    console.log(`TRACE [RESPONSE]: Building response object - ${requestId}`)
+
     const responseData = {
-      success: true,
-      newFilename,
-      extractedData,
-      requestId
+        success: true,
+        extractedData: extractedData,
+        newFilename: newFilename,
+        message: 'PDF transformation completed successfully',
+        requestId: requestId
+    };
+
+    console.log(`TRACE [RESPONSE]: Response object created - ${requestId}`)
+    console.log(`TRACE [RESPONSE]: Response object keys: ${Object.keys(responseData).join(', ')} - ${requestId}`)
+    console.log(`TRACE [RESPONSE]: Checking response for circular references - ${requestId}`)
+    const responseHasCircular = hasCircularReference(responseData)
+    console.log(`TRACE [RESPONSE]: Response has circular reference: ${responseHasCircular} - ${requestId}`)
+
+    // Validate response can be serialized
+    let responseJson: string;
+    try {
+      console.log(`TRACE [RESPONSE]: Attempting to serialize response to JSON - ${requestId}`)
+      const responseSerializeStartTime = Date.now()
+      responseJson = JSON.stringify(responseData);
+      console.log(`INFO [RESPONSE]: Response JSON serialization successful in ${Date.now() - responseSerializeStartTime}ms - ${requestId}`)
+      console.log(`INFO [RESPONSE]: Response JSON length: ${responseJson.length} chars - ${requestId}`)
+      console.log(`TRACE [RESPONSE]: Response JSON preview (first 300 chars): ${responseJson.substring(0, 300)} - ${requestId}`)
+    } catch (serializeError) {
+      console.error(`ERROR [RESPONSE]: CRITICAL - Cannot serialize response to JSON - ${requestId}`)
+      console.error(`ERROR [RESPONSE]: Serialize error type: ${serializeError instanceof Error ? serializeError.constructor.name : typeof serializeError}`)
+      console.error(`ERROR [RESPONSE]: Serialize error message: ${serializeError instanceof Error ? serializeError.message : String(serializeError)}`)
+      console.error(`ERROR [RESPONSE]: Stack trace:`, serializeError instanceof Error ? serializeError.stack : 'No stack trace available')
+      return new Response(
+        JSON.stringify({
+          error: "Response serialization failed",
+          details: serializeError instanceof Error ? serializeError.message : "Unknown serialization error",
+          requestId
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
-    
-    console.log(`TRACE [RESPONSE]: Response data keys: ${Object.keys(responseData).join(', ')} - ${requestId}`)
-    console.log(`TRACE [RESPONSE]: Response data size: ${JSON.stringify(responseData).length} bytes - ${requestId}`)
-    console.log(`INFO [RESPONSE]: Sending successful response - ${requestId}`)
+
+    const totalTime = Date.now() - requestStartTime
     console.log('===============================================')
-    console.log(`INFO [MAIN]: REQUEST COMPLETED SUCCESSFULLY - ${requestId}`)
+    console.log(`INFO [MAIN]: REQUEST SUCCESS - ${requestId}`)
+    console.log(`INFO [MAIN]: Total processing time: ${totalTime}ms`)
+    console.log(`INFO [MAIN]: Sending response with status 200`)
     console.log('===============================================')
 
     return new Response(
-      JSON.stringify(responseData),
-      {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      }
+      responseJson,
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     )
 
   } catch (error) {
+    const totalTime = Date.now() - requestStartTime
     console.log('===============================================')
-    console.error(`ERROR [MAIN]: CRITICAL ERROR OCCURRED - ${requestId}`)
+    console.error(`ERROR [MAIN]: REQUEST FAILED - ${requestId}`)
+    console.error(`ERROR [MAIN]: Total time before failure: ${totalTime}ms`)
     console.log('===============================================')
+
     console.error(`ERROR [MAIN]: Error type: ${error instanceof Error ? error.constructor.name : typeof error}`)
     console.error(`ERROR [MAIN]: Error message: ${error instanceof Error ? error.message : String(error)}`)
     console.error(`ERROR [MAIN]: Stack trace:`, error instanceof Error ? error.stack : 'No stack trace available')
+
+    // Provide more detailed error information
+    let errorDetails = "Unknown error";
+    if (error instanceof Error) {
+      errorDetails = error.message;
+
+      // Check for specific error types and provide better messages
+      if (error.message.includes("Unexpected end of JSON input")) {
+        console.error(`ERROR [MAIN]: Detected JSON parsing error - AI returned incomplete JSON`)
+        errorDetails = "The AI returned invalid or incomplete JSON data. This usually happens when the PDF content is unclear or the extraction instructions need to be more specific. Please try with a clearer PDF or adjust your transformation instructions.";
+      } else if (error.message.includes("JSON.parse")) {
+        console.error(`ERROR [MAIN]: Detected JSON parsing error - Invalid JSON format`)
+        errorDetails = "The AI returned data that couldn't be processed as valid JSON. Please check your transformation instructions and try again with a clearer PDF document.";
+      } else if (error.message.includes("API key")) {
+        console.error(`ERROR [MAIN]: Detected API key error`)
+        errorDetails = "Google Gemini API key is missing or invalid. Please check your API configuration in Settings.";
+      } else if (error.message.includes("quota") || error.message.includes("rate limit")) {
+        console.error(`ERROR [MAIN]: Detected rate limit error`)
+        errorDetails = "API rate limit exceeded. Please wait a moment and try again.";
+      } else if (error.message.includes("overloaded") || error.message.includes("503")) {
+        console.error(`ERROR [MAIN]: Detected service overload error`)
+        errorDetails = "The AI service is temporarily overloaded. Please wait a moment and try again.";
+      } else if (error.message.includes("Maximum call stack")) {
+        console.error(`ERROR [MAIN]: CRITICAL - Maximum call stack size exceeded!`)
+        errorDetails = "Maximum call stack size exceeded. This indicates a recursive operation or circular reference in the data structure.";
+      }
+    }
+
+    const errorResponse = {
+      error: "PDF transformation failed",
+      details: errorDetails,
+      requestId: requestId,
+      timestamp: new Date().toISOString()
+    };
+
+    console.log(`TRACE [MAIN]: Building error response - ${requestId}`)
+    let errorResponseJson: string
+    try {
+      errorResponseJson = JSON.stringify(errorResponse)
+      console.log(`TRACE [MAIN]: Error response JSON created, length: ${errorResponseJson.length} - ${requestId}`)
+    } catch (jsonError) {
+      console.error(`ERROR [MAIN]: CRITICAL - Cannot even serialize error response! - ${requestId}`)
+      console.error(`ERROR [MAIN]: JSON error:`, jsonError)
+      errorResponseJson = JSON.stringify({
+        error: "Critical error - cannot serialize error response",
+        requestId: requestId
+      })
+    }
+
+    console.log('===============================================')
+    console.log(`INFO [MAIN]: Sending error response with status 500 - ${requestId}`)
     console.log('===============================================')
 
     return new Response(
-      JSON.stringify({
-        error: error instanceof Error ? error.message : 'Unknown error occurred',
-        requestId
-      }),
+      errorResponseJson,
       {
         status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     )
   }
