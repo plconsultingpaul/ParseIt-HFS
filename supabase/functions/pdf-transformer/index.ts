@@ -85,7 +85,31 @@ serve(async (req) => {
     console.log(`INFO [REQUEST]: PARSING REQUEST BODY - ${requestId}`)
     console.log('===============================================')
 
-    const requestData: TransformationRequest = await req.json()
+    console.log(`TRACE [MAIN]: Reading request body - ${requestId}`)
+    let requestText: string;
+    try {
+      const readStartTime = Date.now()
+      requestText = await req.text();
+      console.log(`TRACE [MAIN]: Request body read in ${Date.now() - readStartTime}ms, size: ${requestText.length} chars - ${requestId}`)
+    } catch (readError) {
+      console.error(`ERROR [MAIN]: Failed to read request body - ${requestId}`)
+      console.error(`ERROR [MAIN]: Error type: ${readError instanceof Error ? readError.constructor.name : typeof readError}`)
+      console.error(`ERROR [MAIN]: Error message: ${readError instanceof Error ? readError.message : String(readError)}`)
+      throw new Error(`Failed to read request body: ${readError instanceof Error ? readError.message : 'Unknown error'}`)
+    }
+
+    console.log(`TRACE [MAIN]: Parsing request JSON - ${requestId}`)
+    let requestData: TransformationRequest;
+    try {
+      const parseStartTime = Date.now()
+      requestData = JSON.parse(requestText);
+      console.log(`TRACE [MAIN]: JSON parsed successfully in ${Date.now() - parseStartTime}ms - ${requestId}`)
+    } catch (parseError) {
+      console.error(`ERROR [MAIN]: Failed to parse request JSON - ${requestId}`)
+      console.error(`ERROR [MAIN]: Parse error type: ${parseError instanceof Error ? parseError.constructor.name : typeof parseError}`)
+      console.error(`ERROR [MAIN]: Parse error message: ${parseError instanceof Error ? parseError.message : String(parseError)}`)
+      throw new Error(`Invalid JSON in request body: ${parseError instanceof Error ? parseError.message : 'Unknown parse error'}`)
+    }
 
     console.log(`TRACE [REQUEST]: Request keys: ${Object.keys(requestData).join(', ')} - ${requestId}`)
     console.log(`INFO [REQUEST]: Transformation type: ${requestData.transformationType?.name || 'Not provided'} - ${requestId}`)
