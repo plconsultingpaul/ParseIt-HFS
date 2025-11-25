@@ -1817,6 +1817,11 @@ async function sendOffice365Email(config, email, attachment) {
             }
           }
         ],
+        from: {
+          emailAddress: {
+            address: email.from
+          }
+        },
         ...(email.cc ? {
           ccRecipients: [
             {
