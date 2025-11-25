@@ -148,7 +148,7 @@ serve(async (req) => {
     console.log(`INFO [FIELDS]: ANALYZING FIELD MAPPINGS - ${requestId}`)
     console.log('===============================================')
 
-    const aiFields = fieldMappings.filter(m => m.type === 'ai')
+    const aiFields = fieldMappings.filter(m => m.type === 'ai' || m.type === 'mapped')
     const mappedFields = fieldMappings.filter(m => m.type === 'mapped')
     const hardcodedFields = fieldMappings.filter(m => m.type === 'hardcoded')
 
@@ -176,22 +176,6 @@ serve(async (req) => {
     })
 
     console.log(`INFO [HARDCODED]: Processed ${hardcodedFields.length} hardcoded fields - ${requestId}`)
-
-    console.log('===============================================')
-    console.log(`INFO [MAPPED]: PROCESSING MAPPED FIELDS - ${requestId}`)
-    console.log('===============================================')
-
-    mappedFields.forEach(mapping => {
-      console.log(`TRACE [MAPPED]: Setting ${mapping.fieldName} = "${mapping.value}" - ${requestId}`)
-
-      if (mapping.dataType === 'boolean') {
-        extractedData[mapping.fieldName] = normalizeBooleanValue(mapping.value)
-      } else {
-        extractedData[mapping.fieldName] = mapping.value
-      }
-    })
-
-    console.log(`INFO [MAPPED]: Processed ${mappedFields.length} mapped fields - ${requestId}`)
 
     if (aiFields.length > 0) {
       console.log('===============================================')
@@ -242,7 +226,14 @@ serve(async (req) => {
           const fieldDescriptions = pageFields.map(f => {
             let desc = `- ${f.fieldName}`
             if (f.dataType) desc += ` (${f.dataType})`
-            if (f.value) desc += `: ${f.value}`
+
+            // For mapped fields, tell AI to extract FROM coordinates
+            if (f.type === 'mapped') {
+              desc += `: Extract data from PDF coordinates ${f.value}`
+            } else if (f.value) {
+              desc += `: ${f.value}`
+            }
+
             return desc
           }).join('\n')
 
@@ -354,7 +345,14 @@ serve(async (req) => {
         const fieldDescriptions = aiFields.map(f => {
           let desc = `- ${f.fieldName}`
           if (f.dataType) desc += ` (${f.dataType})`
-          if (f.value) desc += `: ${f.value}`
+
+          // For mapped fields, tell AI to extract FROM coordinates
+          if (f.type === 'mapped') {
+            desc += `: Extract data from PDF coordinates ${f.value}`
+          } else if (f.value) {
+            desc += `: ${f.value}`
+          }
+
           return desc
         }).join('\n')
 
