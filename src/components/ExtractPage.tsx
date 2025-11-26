@@ -29,9 +29,7 @@ export default function ExtractPage({
   const { user, getUserExtractionTypes } = useAuth();
   const { workflowSteps } = useSupabaseData();
   const [allowedExtractionTypes, setAllowedExtractionTypes] = useState<ExtractionType[]>([]);
-  const [selectedExtractionType, setSelectedExtractionType] = useState<string>(
-    extractionTypes[0]?.id || ''
-  );
+  const [selectedExtractionType, setSelectedExtractionType] = useState<string>('');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [pdfPages, setPdfPages] = useState<File[]>([]);
   const [additionalInstructions, setAdditionalInstructions] = useState('');
@@ -39,9 +37,7 @@ export default function ExtractPage({
   const [uploadMode, setUploadMode] = useState<'manual' | 'auto'>('manual');
   const [detectionResult, setDetectionResult] = useState<DetectionResult | null>(null);
   const [processingMode, setProcessingMode] = useState<'extraction' | 'transformation'>('extraction');
-  const [selectedTransformationType, setSelectedTransformationType] = useState<string>(
-    transformationTypes[0]?.id || ''
-  );
+  const [selectedTransformationType, setSelectedTransformationType] = useState<string>('');
 
   const currentExtractionType = extractionTypes.find(type => type.id === selectedExtractionType);
   const currentTransformationType = transformationTypes.find(type => type.id === selectedTransformationType);
@@ -70,6 +66,28 @@ export default function ExtractPage({
 
     filterExtractionTypes();
   }, [extractionTypes, user?.id, user?.role, user?.isAdmin, getUserExtractionTypes]);
+
+  // Set selected extraction type to first allowed type
+  React.useEffect(() => {
+    if (allowedExtractionTypes.length > 0) {
+      // Only update if current selection is not in allowed list
+      const isCurrentValid = allowedExtractionTypes.some(t => t.id === selectedExtractionType);
+      if (!isCurrentValid) {
+        setSelectedExtractionType(allowedExtractionTypes[0].id);
+      }
+    }
+  }, [allowedExtractionTypes]);
+
+  // Set selected transformation type to first allowed transformation type
+  React.useEffect(() => {
+    if (transformationTypes.length > 0) {
+      // Only update if current selection is empty or not in list
+      const isCurrentValid = transformationTypes.some(t => t.id === selectedTransformationType);
+      if (!isCurrentValid) {
+        setSelectedTransformationType(transformationTypes[0].id);
+      }
+    }
+  }, [transformationTypes]);
 
   // Initialize upload mode from extraction type default, then user preference
   React.useEffect(() => {

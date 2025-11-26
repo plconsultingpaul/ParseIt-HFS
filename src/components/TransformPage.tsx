@@ -26,9 +26,7 @@ export default function TransformPage({
 }: TransformPageProps) {
   const { user } = useAuth();
   const [allowedTransformationTypes, setAllowedTransformationTypes] = useState<TransformationType[]>([]);
-  const [selectedTransformationType, setSelectedTransformationType] = useState<string>(
-    transformationTypes?.[0]?.id || ''
-  );
+  const [selectedTransformationType, setSelectedTransformationType] = useState<string>('');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [pdfPages, setPdfPages] = useState<File[]>([]);
   const [additionalInstructions, setAdditionalInstructions] = useState('');
@@ -64,8 +62,12 @@ export default function TransformPage({
 
   // Update selected type when allowed types change
   React.useEffect(() => {
-    if (allowedTransformationTypes.length > 0 && !selectedTransformationType) {
-      setSelectedTransformationType(allowedTransformationTypes[0].id);
+    if (allowedTransformationTypes.length > 0) {
+      // Update if current selection is empty or not in allowed list
+      const isCurrentValid = allowedTransformationTypes.some(t => t.id === selectedTransformationType);
+      if (!isCurrentValid) {
+        setSelectedTransformationType(allowedTransformationTypes[0].id);
+      }
     }
   }, [allowedTransformationTypes]);
 
