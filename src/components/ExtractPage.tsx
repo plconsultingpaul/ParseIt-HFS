@@ -8,6 +8,7 @@ import MultiPageProcessor from './extract/MultiPageProcessor';
 import MultiPageTransformer from './transform/MultiPageTransformer';
 import { useSupabaseData } from '../hooks/useSupabaseData';
 import type { DetectionResult } from '../types';
+import Select from './common/Select';
 
 interface ExtractPageProps {
   extractionTypes: ExtractionType[];
@@ -42,47 +43,30 @@ export default function ExtractPage({
   const currentExtractionType = extractionTypes.find(type => type.id === selectedExtractionType);
   const currentTransformationType = transformationTypes.find(type => type.id === selectedTransformationType);
 
-  // Create a stable dependency key for user
-  const userKey = React.useMemo(() => {
-    if (!user) return 'no-user';
-    return `${user.id}-${user.role}-${user.isAdmin}`;
-  }, [user?.id, user?.role, user?.isAdmin]);
-
   // Filter extraction types based on user permissions
   React.useEffect(() => {
     const filterExtractionTypes = async () => {
       if (!user) {
-        setAllowedExtractionTypes(prev => prev.length === 0 ? prev : []);
+        setAllowedExtractionTypes([]);
         return;
       }
 
       if (user.isAdmin || user.role === 'admin') {
         // Admins see all extraction types
-        setAllowedExtractionTypes(prev => {
-          if (prev === extractionTypes) return prev;
-          return extractionTypes;
-        });
+        setAllowedExtractionTypes(extractionTypes);
       } else if (user.role === 'user') {
         // Regular users see only their assigned extraction types
         const userTypeIds = await getUserExtractionTypes(user.id);
         const filtered = extractionTypes.filter(type => userTypeIds.includes(type.id));
-        setAllowedExtractionTypes(prev => {
-          if (prev.length === filtered.length && prev.every((t, i) => t.id === filtered[i]?.id)) {
-            return prev;
-          }
-          return filtered;
-        });
+        setAllowedExtractionTypes(filtered);
       } else {
         // Vendors and others see all (existing behavior)
-        setAllowedExtractionTypes(prev => {
-          if (prev === extractionTypes) return prev;
-          return extractionTypes;
-        });
+        setAllowedExtractionTypes(extractionTypes);
       }
     };
 
     filterExtractionTypes();
-  }, [extractionTypes, userKey, getUserExtractionTypes]);
+  }, [extractionTypes, user?.id, user?.role, user?.isAdmin, getUserExtractionTypes]);
 
   // Set selected extraction type to first allowed type
   React.useEffect(() => {
@@ -93,7 +77,7 @@ export default function ExtractPage({
         setSelectedExtractionType(allowedExtractionTypes[0].id);
       }
     }
-  }, [allowedExtractionTypes, selectedExtractionType]);
+  }, [allowedExtractionTypes]);
 
   // Set selected transformation type to first allowed transformation type
   React.useEffect(() => {
@@ -104,7 +88,7 @@ export default function ExtractPage({
         setSelectedTransformationType(transformationTypes[0].id);
       }
     }
-  }, [transformationTypes, selectedTransformationType]);
+  }, [transformationTypes]);
 
   // Initialize upload mode from extraction type default, then user preference
   React.useEffect(() => {
@@ -121,6 +105,22 @@ export default function ExtractPage({
       setUploadMode(user.preferredUploadMode);
     }
   }, [user?.preferredUploadMode, user?.role, currentExtractionType?.defaultUploadMode]);
+
+  // Set initial upload mode when component mounts
+  React.useEffect(() => {
+    if (user?.role === 'vendor') {
+      // Force vendors to use AI auto-detect mode
+      setUploadMode('auto');
+      // Force vendors to transformation mode only
+      setProcessingMode('transformation');
+    } else if (currentExtractionType?.defaultUploadMode) {
+      // Use extraction type's default upload mode if configured
+      setUploadMode(currentExtractionType.defaultUploadMode);
+    } else if (user?.preferredUploadMode) {
+      // Fall back to user preference
+      setUploadMode(user.preferredUploadMode);
+    }
+  }, [user]);
 
   const handlePdfUpload = (file: File, pages: File[]) => {
     setUploadedFile(file);
@@ -174,20 +174,15 @@ export default function ExtractPage({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             {/* Left Column - Extraction Type */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
-                Extraction Type {uploadMode === 'auto' ? '(Fallback)' : ''}
-              </label>
-              <select
+              <Select
+                label={`Extraction Type ${uploadMode === 'auto' ? '(Fallback)' : ''}`}
                 value={selectedExtractionType}
-                onChange={(e) => handleSelectExtractionType(e.target.value)}
-                className="w-full px-4 py-3 bg-purple-50 dark:bg-gray-700 border border-purple-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-gray-100 font-medium focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
-              >
-                {allowedExtractionTypes.map((type) => (
-                  <option key={type.id} value={type.id}>
-                    {type.name}
-                  </option>
-                ))}
-              </select>
+                onValueChange={handleSelectExtractionType}
+                options={allowedExtractionTypes.map((type) => ({
+                  value: type.id,
+                  label: type.name
+                }))}
+              />
               {uploadMode === 'auto' && (
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   This type will be used for pages where AI cannot detect a specific extraction type
@@ -234,7 +229,7 @@ export default function ExtractPage({
                       className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
                         uploadMode === 'manual'
                           ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
-                          : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                          : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 border border-transparent hover:border-purple-400 dark:hover:border-purple-500'
                       } ${currentExtractionType?.lockUploadMode ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       Manual Selection
@@ -245,7 +240,7 @@ export default function ExtractPage({
                       className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
                         uploadMode === 'auto'
                           ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
-                          : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                          : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 border border-transparent hover:border-purple-400 dark:hover:border-purple-500'
                       } ${currentExtractionType?.lockUploadMode ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       AI Auto-Detect
@@ -268,7 +263,10 @@ export default function ExtractPage({
 
                 {/* Upload Section */}
                 {uploadMode === 'manual' ? (
-                  <PdfUploadSection onPdfUpload={handlePdfUpload} />
+                  <PdfUploadSection
+                    onPdfUpload={handlePdfUpload}
+                    extractionType={currentExtractionType}
+                  />
                 ) : (
                   <AutoDetectPdfUploadSection
                     extractionTypes={extractionTypes}
@@ -324,6 +322,27 @@ export default function ExtractPage({
         </div>
       )}
 
+      {/* JSON Multi-Page Mode Indicator */}
+      {uploadedFile && currentExtractionType && pdfPages.length > 1 &&
+       currentExtractionType.formatType === 'JSON' &&
+       currentExtractionType.jsonMultiPageProcessing && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-2xl p-6 shadow-sm">
+          <div className="flex items-start space-x-4">
+            <div className="bg-blue-100 dark:bg-blue-800 p-3 rounded-lg">
+              <CheckCircle className="h-6 w-6 text-blue-600 dark:text-blue-300" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100 mb-2">
+                Multi-Page JSON Processing Enabled
+              </h3>
+              <p className="text-blue-800 dark:text-blue-200 text-sm leading-relaxed">
+                All pages from each PDF will be analyzed together to produce a single JSON output per PDF. Each PDF is treated as a separate document.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Multi-page Processor */}
       {uploadedFile && currentExtractionType && pdfPages.length > 0 && (
         <MultiPageProcessor
@@ -370,7 +389,7 @@ export default function ExtractPage({
                 <textarea
                   value={additionalInstructions}
                   onChange={(e) => handleUpdateAdditionalInstructions(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-vertical"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-vertical hover:border-purple-400 dark:hover:border-purple-500 transition-colors"
                   rows={3}
                   placeholder="Add any specific instructions for this extraction..."
                 />
