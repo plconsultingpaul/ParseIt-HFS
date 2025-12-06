@@ -29,6 +29,7 @@ export default function SingleFileProcessor({
 }: SingleFileProcessorProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [extractedData, setExtractedData] = useState('');
+  const [workflowOnlyData, setWorkflowOnlyData] = useState('');
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractionError, setExtractionError] = useState('');
   const [sendSuccess, setSendSuccess] = useState(false);
@@ -39,8 +40,98 @@ export default function SingleFileProcessor({
   const [workflowExecutionLog, setWorkflowExecutionLog] = useState<WorkflowExecutionLog | null>(null);
 
   const isJsonType = currentExtractionType?.formatType === 'JSON';
-  const previewButtonText = isJsonType ? 'Preview JSON' : 'Preview XML';
+  const previewButtonText = 'Preview Mappings';
   const dataLabel = isJsonType ? 'JSON' : 'XML';
+
+  const filterOutWorkflowOnlyFields = (data: any, wfoFieldMappings: any[]): any => {
+    if (!data || !wfoFieldMappings || wfoFieldMappings.length === 0) {
+      return data;
+    }
+
+    try {
+      const wfoFieldNames = wfoFieldMappings.map(m => m.fieldName);
+
+      const filterObject = (obj: any): any => {
+        if (!obj || typeof obj !== 'object') return obj;
+
+        if (Array.isArray(obj)) {
+          return obj.map(item => filterObject(item));
+        }
+
+        const filtered: any = {};
+        for (const key of Object.keys(obj)) {
+          if (!wfoFieldNames.includes(key)) {
+            filtered[key] = obj[key];
+          }
+        }
+        return filtered;
+      };
+
+      return filterObject(data);
+    } catch (error) {
+      console.error('Error filtering workflow-only fields:', error);
+      return data;
+    }
+  };
+
+  const separateWorkflowOnlyData = (extractedData: string, fieldMappings: any[]) => {
+    if (!fieldMappings || fieldMappings.length === 0) {
+      return { outputData: extractedData, workflowData: '{}' };
+    }
+
+    const workflowOnlyFields = fieldMappings.filter(m => m.isWorkflowOnly);
+
+    if (workflowOnlyFields.length === 0) {
+      return { outputData: extractedData, workflowData: '{}' };
+    }
+
+    try {
+      const parsed = JSON.parse(extractedData);
+      const wfoFieldNames = workflowOnlyFields.map(m => m.fieldName);
+      const nonWfoFieldNames = fieldMappings
+        .filter(m => !m.isWorkflowOnly)
+        .map(m => m.fieldName);
+
+      const filterForOutput = (obj: any): any => {
+        if (!obj || typeof obj !== 'object') return obj;
+        if (Array.isArray(obj)) {
+          return obj.map(item => filterForOutput(item));
+        }
+        const filtered: any = {};
+        for (const key of Object.keys(obj)) {
+          if (!wfoFieldNames.includes(key)) {
+            filtered[key] = obj[key];
+          }
+        }
+        return filtered;
+      };
+
+      const filterForWorkflow = (obj: any): any => {
+        if (!obj || typeof obj !== 'object') return obj;
+        if (Array.isArray(obj)) {
+          return obj.map(item => filterForWorkflow(item));
+        }
+        const filtered: any = {};
+        for (const key of Object.keys(obj)) {
+          if (wfoFieldNames.includes(key)) {
+            filtered[key] = obj[key];
+          }
+        }
+        return filtered;
+      };
+
+      const outputData = filterForOutput(parsed);
+      const workflowData = filterForWorkflow(parsed);
+
+      return {
+        outputData: JSON.stringify(outputData, null, 2),
+        workflowData: JSON.stringify(workflowData, null, 2)
+      };
+    } catch (error) {
+      console.error('Error separating workflow data:', error);
+      return { outputData: extractedData, workflowData: '{}' };
+    }
+  };
 
   const handlePreviewData = async () => {
     if (!uploadedFile || !currentExtractionType) return;
@@ -61,8 +152,14 @@ export default function SingleFileProcessor({
         apiKey: apiConfig.googleApiKey || settingsConfig.geminiApiKey,
         arraySplitConfigs: currentExtractionType.arraySplitConfigs
       });
-      
-      setExtractedData(result);
+
+      // Separate workflow-only data
+      const { outputData, workflowData } = separateWorkflowOnlyData(
+        result,
+        currentExtractionType.fieldMappings || []
+      );
+      setExtractedData(outputData);
+      setWorkflowOnlyData(workflowData);
     } catch (error) {
       setExtractionError(error instanceof Error ? error.message : 'Failed to extract data');
     } finally {
@@ -163,10 +260,10 @@ export default function SingleFileProcessor({
       }
 
       if (isJsonType) {
-        // For JSON types, get ParseIt ID and inject it before sending to API
+        // For JSON types, get Parse-It ID and inject it before sending to API
         let parseitId: number | undefined;
         try {
-          // Get a fresh ParseIt ID for each submission
+          // Get a fresh Parse-It ID for each submission
           const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
           const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
           
@@ -181,22 +278,34 @@ export default function SingleFileProcessor({
           });
 
           if (!response.ok) {
-            throw new Error('Failed to get ParseIt ID');
+            throw new Error('Failed to get Parse-It ID');
           }
 
           parseitId = await response.json();
-          
-          // Replace ParseIt ID placeholder with actual ID
+
+          // Replace Parse-It ID placeholder with actual ID
           let finalJsonData = dataToSend;
           if (currentExtractionType.parseitIdMapping && parseitId) {
-            finalJsonData = finalJsonData.replace(/{{PARSEIT_ID_PLACEHOLDER}}/g, parseitId.toString());
+            finalJsonData = finalJsonData.replace(/{{PARSE_IT_ID_PLACEHOLDER}}/g, parseitId.toString());
           }
           
-          // Update the displayed extracted data with the final data (including ParseIt ID)
+          // Update the displayed extracted data with the final data (including Parse-It ID)
           setExtractedData(finalJsonData);
-          
-          // Send JSON data to API with ParseIt ID
-          const apiResponseData = await sendToApi(finalJsonData, currentExtractionType, apiConfig);
+
+          // Strip workflow-only fields before sending to API
+          let apiJsonData = finalJsonData;
+          if (currentExtractionType.fieldMappings && currentExtractionType.fieldMappings.length > 0) {
+            const wfoFields = currentExtractionType.fieldMappings.filter((m: any) => m.isWorkflowOnly);
+            if (wfoFields.length > 0) {
+              const parsed = JSON.parse(finalJsonData);
+              const filtered = filterOutWorkflowOnlyFields(parsed, wfoFields);
+              apiJsonData = JSON.stringify(filtered);
+              console.log(`Stripped ${wfoFields.length} workflow-only fields before API call`);
+            }
+          }
+
+          // Send JSON data to API with Parse-It ID (WFO fields excluded)
+          const apiResponseData = await sendToApi(apiJsonData, currentExtractionType, apiConfig);
           
           setApiResponse(JSON.stringify(apiResponseData, null, 2));
           setApiResponseError(null);
@@ -372,6 +481,7 @@ export default function SingleFileProcessor({
 
   const clearExtractedData = () => {
     setExtractedData('');
+    setWorkflowOnlyData('');
     setExtractionError('');
     setCopySuccess(false);
     setWorkflowExecutionLogId('');
@@ -672,48 +782,68 @@ export default function SingleFileProcessor({
         </div>
       )}
 
-      {/* Extracted Data Display */}
+      {/* Split Screen Preview Display */}
       {extractedData && (
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl border border-purple-100 overflow-hidden">
-          <div className="p-6 border-b border-gray-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-xl font-bold text-gray-900">Extracted {dataLabel} Data</h3>
-                <p className="text-gray-600 mt-1">
-                  {extractedData.length.toLocaleString()} characters extracted
-                </p>
+        <div className="space-y-4">
+          {/* Action Buttons Row */}
+          <div className="flex items-center justify-end space-x-3">
+            <button
+              onClick={handleCopyToClipboard}
+              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors duration-200 flex items-center space-x-2"
+            >
+              <Copy className="h-4 w-4" />
+              <span>{copySuccess ? 'Copied!' : 'Copy'}</span>
+            </button>
+            <button
+              onClick={handleDownloadData}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors duration-200 flex items-center space-x-2"
+            >
+              <Download className="h-4 w-4" />
+              <span>Download</span>
+            </button>
+            <button
+              onClick={clearExtractedData}
+              className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg transition-colors duration-200 flex items-center space-x-2"
+            >
+              <X className="h-4 w-4" />
+              <span>Clear</span>
+            </button>
+          </div>
+
+          {/* Split Screen Grid */}
+          <div className="grid grid-cols-2 gap-6">
+            {/* Regular Output Data */}
+            <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl border border-blue-100 overflow-hidden">
+              <div className="p-6 border-b border-gray-200">
+                <h3 className="text-xl font-bold text-gray-900">Output Data</h3>
+                <p className="text-gray-600 mt-1">Fields sent to API/SFTP</p>
               </div>
-              <div className="flex items-center space-x-3">
-                <button
-                  onClick={handleCopyToClipboard}
-                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors duration-200 flex items-center space-x-2"
-                >
-                  <Copy className="h-4 w-4" />
-                  <span>{copySuccess ? 'Copied!' : 'Copy'}</span>
-                </button>
-                <button
-                  onClick={handleDownloadData}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors duration-200 flex items-center space-x-2"
-                >
-                  <Download className="h-4 w-4" />
-                  <span>Download</span>
-                </button>
-                <button
-                  onClick={clearExtractedData}
-                  className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg transition-colors duration-200 flex items-center space-x-2"
-                >
-                  <X className="h-4 w-4" />
-                  <span>Clear</span>
-                </button>
+              <div className="p-6">
+                <div className="bg-gray-50 rounded-xl p-4 max-h-96 overflow-y-auto">
+                  <pre className="text-sm text-gray-800 whitespace-pre-wrap font-mono">
+                    {extractedData}
+                  </pre>
+                </div>
               </div>
             </div>
-          </div>
-          
-          <div className="p-6">
-            <div className="bg-gray-50 rounded-xl p-4 max-h-96 overflow-y-auto">
-              <pre className="text-sm text-gray-800 whitespace-pre-wrap font-mono">
-                {extractedData}
-              </pre>
+
+            {/* Workflow Only Data */}
+            <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl border border-green-100 overflow-hidden">
+              <div className="p-6 border-b border-gray-200">
+                <h3 className="text-xl font-bold text-gray-900">Workflow Only Data</h3>
+                <p className="text-gray-600 mt-1">Fields available for workflow processing</p>
+              </div>
+              <div className="p-6">
+                <div className="bg-gray-50 rounded-xl p-4 max-h-96 overflow-y-auto">
+                  {workflowOnlyData === '{}' ? (
+                    <p className="text-gray-500 italic">No workflow-only fields configured</p>
+                  ) : (
+                    <pre className="text-sm text-gray-800 whitespace-pre-wrap font-mono">
+                      {workflowOnlyData}
+                    </pre>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
