@@ -1,6 +1,19 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { ExtractionType, VendorExtractionRule } from '../types';
 import { withRetry } from './retryHelper';
+import { geminiConfigService } from '../services/geminiConfigService';
+
+async function getActiveModelName(): Promise<string> {
+  try {
+    const config = await geminiConfigService.getActiveConfiguration();
+    if (config && config.modelName) {
+      return config.modelName;
+    }
+  } catch (error) {
+    console.warn('Failed to fetch active Gemini model, using default:', error);
+  }
+  return 'gemini-2.5-pro';
+}
 
 export interface DetectionRequest {
   pdfFile: File;
@@ -33,7 +46,8 @@ export async function detectExtractionType({
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
+    const activeModelName = await getActiveModelName();
+    const model = genAI.getGenerativeModel({ model: activeModelName });
 
     // Convert PDF to base64
     const pdfBase64 = await fileToBase64(pdfFile);
