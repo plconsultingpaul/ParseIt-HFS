@@ -66,6 +66,7 @@ export function useSupabaseData() {
     clientId: '',
     clientSecret: '',
     monitoredEmail: '',
+    defaultSendFromEmail: '',
     gmailClientId: '',
     gmailClientSecret: '',
     gmailRefreshToken: '',
@@ -93,48 +94,65 @@ export function useSupabaseData() {
   const [loading, setLoading] = useState(true);
 
   const loadData = async () => {
+    console.log('[useSupabaseData] loadData() called - Starting data load');
     setLoading(true);
     try {
       // Load all data using service functions
+      console.log('[useSupabaseData] Loading extraction and transformation types...');
       const [extractionTypesData, transformationTypesData] = await Promise.all([
         fetchExtractionTypes(),
         fetchTransformationTypes()
       ]);
+      console.log('[useSupabaseData] Types loaded successfully');
       setExtractionTypes(extractionTypesData);
       setTransformationTypes(transformationTypesData);
 
+      console.log('[useSupabaseData] Loading configs (SFTP, Settings, API, Company)...');
       const [sftpConfigData, settingsConfigData, apiConfigData, companyBrandingData] = await Promise.all([
         fetchSftpConfig(),
         fetchSettingsConfig(),
         fetchApiConfig(),
         fetchCompanyBranding()
       ]);
+      console.log('[useSupabaseData] Configs loaded successfully');
       setSftpConfig(sftpConfigData);
       setSettingsConfig(settingsConfigData);
       setApiConfig(apiConfigData);
       setCompanyBranding(companyBrandingData);
 
+      console.log('[useSupabaseData] Loading email config and rules...');
       const [emailConfigData, emailRulesData] = await Promise.all([
         fetchEmailConfig(),
         fetchEmailRules()
       ]);
+      console.log('[useSupabaseData] Email config loaded from DB:', {
+        ...emailConfigData,
+        clientSecret: emailConfigData.clientSecret ? '***HIDDEN***' : '(empty)',
+        gmailClientSecret: emailConfigData.gmailClientSecret ? '***HIDDEN***' : '(empty)',
+        gmailRefreshToken: emailConfigData.gmailRefreshToken ? '***HIDDEN***' : '(empty)'
+      });
       setEmailConfig(emailConfigData);
       setEmailRules(emailRulesData);
 
+      console.log('[useSupabaseData] Loading workflows and steps...');
       const [workflowsData, workflowStepsData] = await Promise.all([
         fetchWorkflows(),
         fetchWorkflowSteps()
       ]);
+      console.log('[useSupabaseData] Workflows loaded successfully');
       setWorkflows(workflowsData);
       setWorkflowSteps(workflowStepsData);
 
+      console.log('[useSupabaseData] Loading users and extraction logs...');
       const [usersData, extractionLogsData] = await Promise.all([
         loadUsers(),
         fetchExtractionLogs()
       ]);
+      console.log('[useSupabaseData] Users and logs loaded successfully');
       setUsers(usersData);
       setExtractionLogs(extractionLogsData);
 
+      console.log('[useSupabaseData] Loading processed emails and polling logs...');
       const [processedEmailsData, emailPollingLogsData, workflowExecutionLogsData, sftpPollingLogsData, featureFlagsData] = await Promise.all([
         fetchProcessedEmails(),
         fetchEmailPollingLogs(),
@@ -142,19 +160,22 @@ export function useSupabaseData() {
         fetchSftpPollingLogs(),
         fetchFeatureFlags()
       ]);
+      console.log('[useSupabaseData] All data loaded successfully');
       setProcessedEmails(processedEmailsData);
       setEmailPollingLogs(emailPollingLogsData);
       setWorkflowExecutionLogs(workflowExecutionLogsData);
       setSftpPollingLogs(sftpPollingLogsData);
       setFeatureFlags(featureFlagsData);
     } catch (error) {
-      console.error('Error loading data:', error);
+      console.error('[useSupabaseData] ERROR loading data:', error);
     } finally {
+      console.log('[useSupabaseData] loadData() complete - setting loading to false');
       setLoading(false);
     }
   };
 
   useEffect(() => {
+    console.log('[useSupabaseData] useEffect mounted - calling loadData()');
     loadData();
   }, []);
 
@@ -352,6 +373,16 @@ export function useSupabaseData() {
     setCompanyBranding(updatedBranding);
   };
 
+  const refreshCompanyBranding = async (): Promise<void> => {
+    try {
+      const updatedBranding = await fetchCompanyBranding();
+      setCompanyBranding(updatedBranding);
+    } catch (error) {
+      console.error('Error refreshing company branding:', error);
+      throw error;
+    }
+  };
+
   const handleUpdateFeatureFlags = async (flags: FeatureFlag[]): Promise<void> => {
     try {
       for (const flag of flags) {
@@ -476,6 +507,7 @@ export function useSupabaseData() {
     refreshSftpPollingLogs,
     refreshProcessedEmails,
     refreshWorkflowSteps,
+    refreshCompanyBranding,
     logExtraction
   };
 }
