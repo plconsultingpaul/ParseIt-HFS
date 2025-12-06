@@ -303,7 +303,16 @@ export default function MultiPageTransformer({
         const isDetectedType = pageTransformationType.id === pageTransformationTypes[pageIndex]?.id;
 
         // Check if we have a page group config for this page
-        const currentGroupConfig = pageGroupConfigs && pageGroupConfigs[pageIndex];
+        // Extract group order from filename (e.g., "state2_group_1_pages_3-3.pdf" -> group 1)
+        let currentGroupConfig = undefined;
+        if (pageGroupConfigs && pageGroupConfigs.length > 0) {
+          const groupMatch = pageFile.name.match(/_group_(\d+)_/);
+          if (groupMatch) {
+            const groupOrder = parseInt(groupMatch[1], 10);
+            currentGroupConfig = pageGroupConfigs.find(cfg => cfg.groupOrder === groupOrder);
+            console.log(`TRACE [handleTransformAll]: Extracted group order ${groupOrder} from filename, found config: ${!!currentGroupConfig} - ${sessionId}`);
+          }
+        }
 
         // Determine which workflow to use: prioritize page group config over transformation type
         const activeWorkflowId = currentGroupConfig?.workflowId || pageTransformationType.workflowId;
@@ -341,7 +350,10 @@ export default function MultiPageTransformer({
               ...(currentGroupConfig.filenameTemplate && { filenameTemplate: currentGroupConfig.filenameTemplate })
             } : pageTransformationType,
             additionalInstructions,
-            apiKey
+            apiKey,
+            sessionId,
+            groupOrder: currentGroupConfig?.groupOrder || null,
+            pageIndex: pageIndex
           };
 
           console.log(`TRACE [handleTransformAll]: Request body keys: ${Object.keys(requestBody).join(', ')} - ${sessionId}`);
@@ -460,7 +472,9 @@ export default function MultiPageTransformer({
               pdfStoragePath: uploadData.path,
               originalPdfFilename: pageFile.name,
               pdfBase64: pdfBase64,
-              formatType: 'JSON' // Transformations are always JSON-based
+              formatType: 'JSON', // Transformations are always JSON-based
+              sessionId: sessionId,
+              groupOrder: currentGroupConfig?.groupOrder || null
             };
            console.log('=== WORKFLOW REQUEST ===');
            console.log('Workflow request body (extractedData):', JSON.stringify(transformResult.extractedData));
