@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, MoveUp, MoveDown, Brain, FileText, ChevronDown, ChevronUp, Database } from 'lucide-react';
+import { Plus, Trash2, MoveUp, MoveDown, Brain, FileText, ChevronDown, ChevronUp, Database, ArrowRight } from 'lucide-react';
 import type { PageGroupConfig, Workflow, TransformationFieldMapping } from '../../types';
 
 interface PageGroupConfigEditorProps {
@@ -263,13 +263,62 @@ export default function PageGroupConfigEditor({
                   </p>
                 </div>
 
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    <div className="flex items-center space-x-2">
-                      <Brain className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                      <span>Smart Detection Pattern (Optional)</span>
-                    </div>
-                  </label>
+                {config.groupOrder > 1 && (
+                  <div className="md:col-span-2">
+                    <label className="flex items-center space-x-3 cursor-pointer p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={config.followsPreviousGroup || false}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          const updatedConfigs = configs.map((cfg, i) => {
+                            if (i === index) {
+                              if (checked) {
+                                return {
+                                  ...cfg,
+                                  followsPreviousGroup: true,
+                                  smartDetectionPattern: undefined,
+                                  useAiDetection: false,
+                                  detectionConfidenceThreshold: undefined,
+                                  fallbackBehavior: undefined
+                                };
+                              } else {
+                                return {
+                                  ...cfg,
+                                  followsPreviousGroup: false
+                                };
+                              }
+                            }
+                            return cfg;
+                          });
+                          setConfigs(updatedConfigs);
+                          onChange(updatedConfigs);
+                        }}
+                        className="w-5 h-5 text-blue-600 border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-blue-500"
+                      />
+                      <div className="flex items-center space-x-2">
+                        <ArrowRight className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                          Follows Previous Group
+                        </span>
+                      </div>
+                    </label>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 ml-1">
+                      {config.followsPreviousGroup
+                        ? `This group will start immediately after Group ${config.groupOrder - 1} ends`
+                        : 'Enable to automatically process pages after the previous group'}
+                    </p>
+                  </div>
+                )}
+
+                {!config.followsPreviousGroup && (
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      <div className="flex items-center space-x-2">
+                        <Brain className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                        <span>Smart Detection Pattern (Optional)</span>
+                      </div>
+                    </label>
                   <input
                     type="text"
                     value={config.smartDetectionPattern || ''}
@@ -277,14 +326,26 @@ export default function PageGroupConfigEditor({
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="e.g., Transport Bourassa, or If there is a dollar amount after TOTAL CDN"
                   />
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    {config.smartDetectionPattern
-                      ? 'Text pattern or description to detect this page group'
-                      : 'Will use fixed page positions'}
-                  </p>
-                </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      {config.smartDetectionPattern
+                        ? 'Text pattern or description to detect this page group'
+                        : 'Will use fixed page positions'}
+                    </p>
+                  </div>
+                )}
 
-                {config.smartDetectionPattern && (
+                {config.followsPreviousGroup && (
+                  <div className="md:col-span-2">
+                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-3">
+                      <p className="text-sm text-blue-700 dark:text-blue-300">
+                        <strong>Note:</strong> Smart Detection is disabled because this group follows the previous group.
+                        Pages will be processed sequentially starting from where Group {config.groupOrder - 1} ended.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {!config.followsPreviousGroup && config.smartDetectionPattern && (
                   <>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -390,6 +451,47 @@ export default function PageGroupConfigEditor({
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     Custom filename template for this page group. Use {`{{fieldName}}`} placeholders. If not set, the transformation type's default template will be used.
                   </p>
+
+                  {/* Show available fields from previous groups */}
+                  {config.groupOrder > 1 && (
+                    <div className="mt-3 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg">
+                      <div className="flex items-start space-x-2">
+                        <ArrowRight className="h-4 w-4 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-green-800 dark:text-green-300 mb-1">
+                            Cross-Group Field Access Available
+                          </p>
+                          <p className="text-xs text-green-700 dark:text-green-400">
+                            You can reference fields from previous groups in this group's filename template and workflow.
+                          </p>
+                          <div className="mt-2 space-y-1">
+                            {configs.slice(0, index).map((prevConfig, prevIndex) => {
+                              const prevGroupFields = prevConfig.fieldMappings?.map(fm => fm.fieldName) || [];
+                              if (prevGroupFields.length === 0) return null;
+                              return (
+                                <div key={prevIndex} className="text-xs">
+                                  <span className="font-semibold text-green-800 dark:text-green-300">
+                                    Group {prevConfig.groupOrder} fields:
+                                  </span>
+                                  <span className="text-green-700 dark:text-green-400 ml-2">
+                                    {prevGroupFields.map(field => `{{group${prevConfig.groupOrder}_${field}}}`).join(', ')}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                            {configs.slice(0, index).every(c => !c.fieldMappings || c.fieldMappings.length === 0) && (
+                              <p className="text-xs text-green-600 dark:text-green-500 italic">
+                                No field mappings defined in previous groups yet. Add field mappings to earlier groups to reference them here.
+                              </p>
+                            )}
+                          </div>
+                          <p className="text-xs text-green-600 dark:text-green-500 mt-2 italic">
+                            Example: Use {`{{group1_bolNumber}}`} to reference the bolNumber field from Group 1
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
