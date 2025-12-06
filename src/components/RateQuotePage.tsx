@@ -4,7 +4,7 @@ import { DollarSign, Info } from 'lucide-react';
 export default function RateQuotePage() {
   return (
     <div className="space-y-6">
-      <div className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm rounded-xl shadow-xl border border-teal-100 dark:border-gray-700 p-8">
+      <div className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm rounded-xl shadow-xl border border-purple-100 dark:border-gray-700 p-8">
         <div className="text-center max-w-2xl mx-auto">
           <div className="bg-green-100 dark:bg-green-900/50 p-4 rounded-full w-20 h-20 mx-auto mb-6 flex items-center justify-center">
             <DollarSign className="h-10 w-10 text-green-600 dark:text-green-400" />
