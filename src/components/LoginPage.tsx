@@ -56,32 +56,28 @@ export default function LoginPage({ companyBranding, onLogin }: LoginPageProps) 
         {/* Header */}
         <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-8 text-center">
           <div className="flex items-center justify-center space-x-3 mb-4">
-            {companyBranding?.logoUrl && (
+            {companyBranding?.logoUrl ? (
               <img
                 src={companyBranding.logoUrl}
                 alt="Company Logo"
                 className="h-12 w-auto max-w-32 object-contain bg-white/20 p-2 rounded-lg"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }}
               />
-            )}
-            <div className="bg-white/20 p-3 rounded-full w-16 h-16 flex items-center justify-center">
-              <FileText className="h-8 w-8 text-white" />
-            </div>
-          </div>
-          <div className="flex items-center justify-center space-x-2 mb-2">
-            <h1 className="text-2xl font-bold text-white">ParseIt</h1>
-            {companyBranding?.showCompanyName && companyBranding?.companyName && (
-              <>
-                <span className="text-purple-200">•</span>
-                <span className="text-xl font-semibold text-white">
-                  {companyBranding.companyName}
-                </span>
-              </>
+            ) : (
+              <div className="bg-white/20 p-3 rounded-full w-16 h-16 flex items-center justify-center">
+                <FileText className="h-8 w-8 text-white" />
+              </div>
             )}
           </div>
-          <p className="text-purple-100">PDF Data Extraction Application</p>
+          <h1 className="text-2xl font-bold text-white mb-2">
+            {companyBranding?.showCompanyName && companyBranding?.companyName
+              ? companyBranding.companyName
+              : 'Parse-It'}
+          </h1>
+          <p className="text-purple-100">
+            {companyBranding?.showCompanyName && companyBranding?.companyName
+              ? 'Powered by Parse-It'
+              : 'PDF Data Extraction Application'}
+          </p>
         </div>
 
         {/* Login Form */}
