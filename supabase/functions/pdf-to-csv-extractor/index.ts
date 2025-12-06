@@ -12,6 +12,7 @@ interface FieldMapping {
   value: string;
   dataType?: "string" | "number" | "integer" | "datetime" | "phone" | "boolean";
   maxLength?: number;
+  isWorkflowOnly?: boolean;
 }
 
 interface ExtractionRequest {
@@ -142,6 +143,15 @@ Deno.serve(async (req: Request) => {
 
     const delimiter = requestData.delimiter || ',';
     const includeHeaders = requestData.includeHeaders !== false;
+
+    // Filter out workflow-only fields for final output
+    const outputFieldMappings = requestData.fieldMappings.filter(mapping => !mapping.isWorkflowOnly);
+    const workflowOnlyCount = requestData.fieldMappings.length - outputFieldMappings.length;
+
+    console.log('[EdgeFunction] Field mappings filtered:');
+    console.log('[EdgeFunction] - Total field mappings:', requestData.fieldMappings.length);
+    console.log('[EdgeFunction] - Output field mappings:', outputFieldMappings.length);
+    console.log('[EdgeFunction] - Workflow-only fields (excluded):', workflowOnlyCount);
 
     console.log('[EdgeFunction] Initializing Gemini AI...');
     const initStartTime = performance.now();
@@ -301,11 +311,11 @@ Please analyze the PDF and return the extracted data as a JSON array.`;
     const csvLines: string[] = [];
 
     if (includeHeaders) {
-      csvLines.push(generateCsvHeader(requestData.fieldMappings, delimiter));
+      csvLines.push(generateCsvHeader(outputFieldMappings, delimiter));
     }
 
     for (const row of extractedData) {
-      csvLines.push(generateCsvRow(row, requestData.fieldMappings, delimiter));
+      csvLines.push(generateCsvRow(row, outputFieldMappings, delimiter));
     }
 
     const csvContent = csvLines.join('\n');
@@ -316,6 +326,8 @@ Please analyze the PDF and return the extracted data as a JSON array.`;
     console.log('[EdgeFunction] - Total lines:', csvLines.length);
     console.log('[EdgeFunction] - CSV content length:', csvContent.length, 'characters');
     console.log('[EdgeFunction] - CSV size:', (csvContent.length / 1024).toFixed(2), 'KB');
+    console.log('[EdgeFunction] - Fields included in output:', outputFieldMappings.length);
+    console.log('[EdgeFunction] - Workflow-only fields excluded:', workflowOnlyCount);
 
     const requestEndTime = performance.now();
     const totalDuration = ((requestEndTime - requestStartTime) / 1000).toFixed(2);
@@ -335,7 +347,9 @@ Please analyze the PDF and return the extracted data as a JSON array.`;
         success: true,
         csvContent,
         rowCount: extractedData.length,
-        fieldCount: requestData.fieldMappings.length
+        fieldCount: outputFieldMappings.length,
+        totalFieldCount: requestData.fieldMappings.length,
+        workflowOnlyFieldCount: workflowOnlyCount
       }),
       {
         status: 200,
