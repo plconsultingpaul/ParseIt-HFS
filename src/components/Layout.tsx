@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { Settings, FileText, LogOut, User, HelpCircle, Menu, X, BarChart3, RefreshCw, Database, Building, Package, ClipboardCheck, Building2, DollarSign, Users as UsersIcon, BookUser, ClipboardList } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Settings, FileText, LogOut, User, HelpCircle, Menu, X, BarChart3, RefreshCw, Database, Building, Package, ClipboardCheck, Building2, DollarSign, Users as UsersIcon, BookUser, ClipboardList, Brain } from 'lucide-react';
 import type { User as UserType } from '../types';
 import type { CompanyBranding } from '../types';
 import DarkModeToggle from './DarkModeToggle';
 import PermissionDeniedModal from './common/PermissionDeniedModal';
+import { geminiConfigService } from '../services/geminiConfigService';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -17,6 +18,7 @@ interface LayoutProps {
 export default function Layout({ children, currentPage, onNavigate, user, companyBranding, onLogout }: LayoutProps) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isSidebarHovered, setIsSidebarHovered] = useState(false);
+  const [activeModelName, setActiveModelName] = useState<string>('');
   const [permissionDenied, setPermissionDenied] = useState<{
     isOpen: boolean;
     message: string;
@@ -25,6 +27,25 @@ export default function Layout({ children, currentPage, onNavigate, user, compan
     isOpen: false,
     message: ''
   });
+
+  useEffect(() => {
+    const fetchActiveModel = async () => {
+      try {
+        const config = await geminiConfigService.getActiveConfiguration();
+        if (config && config.modelName) {
+          const displayName = config.modelName
+            .split('-')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' ');
+          setActiveModelName(displayName);
+        }
+      } catch (error) {
+        console.error('Failed to fetch active Gemini model:', error);
+      }
+    };
+
+    fetchActiveModel();
+  }, []);
 
   // Determine if sidebar should be expanded (either not collapsed or being hovered)
   const isSidebarExpanded = !isSidebarCollapsed || isSidebarHovered;
@@ -308,6 +329,20 @@ export default function Layout({ children, currentPage, onNavigate, user, compan
             })}
           </div>
         </nav>
+
+        {/* Active Gemini Model */}
+        {activeModelName && (
+          <div className="px-3 py-2 border-t border-purple-100 dark:border-gray-700 flex-shrink-0">
+            <div className={`flex items-center ${isSidebarExpanded ? 'space-x-2 px-3 py-2' : 'justify-center py-2'} bg-blue-50 dark:bg-blue-900/20 rounded-lg`}>
+              <Brain className="h-4 w-4 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+              {isSidebarExpanded && (
+                <span className="text-xs font-medium text-blue-700 dark:text-blue-300 truncate">
+                  {activeModelName}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* User Info & Logout */}
         <div className="p-3 border-t border-purple-100 dark:border-gray-700 flex-shrink-0 bg-white/90 dark:bg-gray-800/90">
