@@ -11,6 +11,8 @@ import VendorSetupPage from './components/VendorSetupPage';
 import CheckInSetupPage from './components/CheckInSetupPage';
 import ClientSetupPage from './components/ClientSetupPage';
 import OrderEntryPage from './components/OrderEntryPage';
+import OrderEntrySubmissionsPage from './components/OrderEntrySubmissionsPage';
+import OrderEntrySubmissionDetailPage from './components/OrderEntrySubmissionDetailPage';
 import RateQuotePage from './components/RateQuotePage';
 import AddressBookPage from './components/AddressBookPage';
 import DriverCheckinPage from './components/DriverCheckinPage';
@@ -53,7 +55,8 @@ export default function App() {
     getUserTransformationTypes,
     updateUserTransformationTypes
   } = useAuth();
-  const [currentPage, setCurrentPage] = useState<'extract' | 'vendor-setup' | 'checkin-setup' | 'client-setup' | 'transform' | 'types' | 'settings' | 'logs' | 'order-entry' | 'rate-quote' | 'client-users' | 'address-book'>('extract');
+  const [currentPage, setCurrentPage] = useState<'extract' | 'vendor-setup' | 'checkin-setup' | 'client-setup' | 'transform' | 'types' | 'settings' | 'logs' | 'order-entry' | 'order-submissions' | 'order-submission-detail' | 'rate-quote' | 'client-users' | 'address-book'>('extract');
+  const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
   const {
     extractionTypes,
     transformationTypes,
@@ -136,7 +139,7 @@ export default function App() {
     return <LoginPage companyBranding={companyBranding} onLogin={login} />;
   }
 
-  const handleNavigate = (page: 'extract' | 'vendor-setup' | 'checkin-setup' | 'client-setup' | 'transform' | 'types' | 'settings' | 'logs' | 'order-entry' | 'rate-quote' | 'client-users') => {
+  const handleNavigate = (page: 'extract' | 'vendor-setup' | 'checkin-setup' | 'client-setup' | 'transform' | 'types' | 'settings' | 'logs' | 'order-entry' | 'order-submissions' | 'rate-quote' | 'client-users') => {
     // Check for settings permission
     if (page === 'settings') {
       const nonTypePermissions = {
@@ -410,7 +413,23 @@ export default function App() {
         />
       )}
       {currentPage === 'order-entry' && (
-        <OrderEntryPage />
+        <OrderEntryPage currentUser={user} />
+      )}
+      {currentPage === 'order-submissions' && (
+        <OrderEntrySubmissionsPage
+          currentUser={user}
+          onViewDetail={(id) => {
+            setSelectedSubmissionId(id);
+            setCurrentPage('order-submission-detail');
+          }}
+        />
+      )}
+      {currentPage === 'order-submission-detail' && selectedSubmissionId && (
+        <OrderEntrySubmissionDetailPage
+          currentUser={user}
+          submissionId={selectedSubmissionId}
+          onBack={() => setCurrentPage('order-submissions')}
+        />
       )}
       {currentPage === 'rate-quote' && (
         <RateQuotePage />
