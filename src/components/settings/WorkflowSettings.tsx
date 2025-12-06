@@ -9,6 +9,7 @@ import WorkflowDetail from './workflow/WorkflowDetail';
 import WorkflowSelectionModal from './workflow/WorkflowSelectionModal';
 import WorkflowCopyModal from './workflow/WorkflowCopyModal';
 import WorkflowDeleteModal from './workflow/WorkflowDeleteModal';
+import WorkflowCreateModal from './workflow/WorkflowCreateModal';
 
 interface WorkflowSettingsProps {
   apiConfig: ApiConfig;
@@ -16,24 +17,26 @@ interface WorkflowSettingsProps {
 }
 
 export default function WorkflowSettings({ apiConfig, refreshData }: WorkflowSettingsProps) {
-  const { workflows, workflowSteps, refreshWorkflowSteps } = useSupabaseData();
+  const { workflows, workflowSteps, extractionTypes, refreshWorkflowSteps } = useSupabaseData();
   const {
     localWorkflows,
     isSaving,
     saveSuccess,
     isCopying,
     isDeleting,
+    isCreating,
     addWorkflow,
     updateWorkflow,
     deleteWorkflow,
     copyWorkflow,
     saveWorkflows
-  } = useWorkflowManagement(workflows, workflowSteps, refreshData);
+  } = useWorkflowManagement(workflows, workflowSteps, refreshData, refreshWorkflowSteps);
 
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
   const [showWorkflowSelectionModal, setShowWorkflowSelectionModal] = useState(false);
   const [showCopyModal, setShowCopyModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [workflowToCopy, setWorkflowToCopy] = useState<any>(null);
   const [workflowToDelete, setWorkflowToDelete] = useState<any>(null);
 
@@ -41,8 +44,16 @@ export default function WorkflowSettings({ apiConfig, refreshData }: WorkflowSet
   const selectedWorkflowSteps = workflowSteps.filter(step => step.workflowId === selectedWorkflowId);
 
   const handleAddWorkflow = () => {
-    const newWorkflowId = addWorkflow();
-    setSelectedWorkflowId(newWorkflowId);
+    setShowCreateModal(true);
+  };
+
+  const handleConfirmCreate = async (name: string, description: string) => {
+    try {
+      const newWorkflowId = await addWorkflow(name, description);
+      setSelectedWorkflowId(newWorkflowId);
+    } catch (error) {
+      throw error;
+    }
   };
 
   const handleDeleteWorkflow = (workflowId: string) => {
@@ -135,6 +146,15 @@ export default function WorkflowSettings({ apiConfig, refreshData }: WorkflowSet
         </div>
       )}
 
+      {/* Create Workflow Modal */}
+      <WorkflowCreateModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onConfirmCreate={handleConfirmCreate}
+        isCreating={isCreating}
+        existingNames={localWorkflows.map(w => w.name)}
+      />
+
       {/* Workflow Selection Modal */}
       <WorkflowSelectionModal
         isOpen={showWorkflowSelectionModal}
@@ -180,6 +200,7 @@ export default function WorkflowSettings({ apiConfig, refreshData }: WorkflowSet
               workflow={selectedWorkflow}
               steps={selectedWorkflowSteps}
               apiConfig={apiConfig}
+              extractionTypes={extractionTypes}
               onUpdateSteps={async (steps) => {
                 const validSteps = steps.filter(step => step != null);
                 await updateWorkflowSteps(selectedWorkflow.id, validSteps);
