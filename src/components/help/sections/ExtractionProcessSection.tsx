@@ -19,7 +19,7 @@ export default function ExtractionProcessSection() {
             <ol className="text-purple-700 space-y-2 list-decimal list-inside">
               <li>AI extracts data according to your instructions</li>
               <li>Data is formatted as XML using your template</li>
-              <li>ParseIt ID is automatically assigned</li>
+              <li>Parse-It ID is automatically assigned</li>
               <li>Both XML and PDF files are uploaded to SFTP server</li>
               <li>Multi-page PDFs are split into individual files</li>
             </ol>
@@ -29,7 +29,7 @@ export default function ExtractionProcessSection() {
             <ol className="text-purple-700 space-y-2 list-decimal list-inside">
               <li>AI extracts data according to your instructions</li>
               <li>Data is formatted as JSON using your template</li>
-              <li>ParseIt ID is automatically assigned</li>
+              <li>Parse-It ID is automatically assigned</li>
               <li>JSON data is sent to your configured API endpoint</li>
               <li>PDF is also uploaded to SFTP for backup</li>
             </ol>
