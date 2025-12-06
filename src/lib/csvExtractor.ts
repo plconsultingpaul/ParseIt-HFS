@@ -1,6 +1,19 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { FieldMapping } from '../types';
 import { withRetry } from './retryHelper';
+import { geminiConfigService } from '../services/geminiConfigService';
+
+async function getActiveModelName(): Promise<string> {
+  try {
+    const config = await geminiConfigService.getActiveConfiguration();
+    if (config && config.modelName) {
+      return config.modelName;
+    }
+  } catch (error) {
+    console.warn('Failed to fetch active Gemini model, using default:', error);
+  }
+  return 'gemini-2.5-pro';
+}
 
 export interface ExtractionResult {
   templateData: string;
@@ -140,7 +153,8 @@ export async function extractCsvFromPDF(request: CsvExtractionRequest): Promise<
   console.log('[csvExtractor] Initializing Gemini AI...');
   const initStartTime = performance.now();
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
+  const activeModelName = await getActiveModelName();
+  const model = genAI.getGenerativeModel({ model: activeModelName });
   const initEndTime = performance.now();
   console.log(`[csvExtractor] Gemini initialized in ${((initEndTime - initStartTime) / 1000).toFixed(3)}s`);
 
@@ -379,7 +393,8 @@ export async function extractCsvFromMultiPagePDF(request: CsvMultiPageExtraction
   console.log('[csvExtractor] Initializing Gemini AI...');
   const initStartTime = performance.now();
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
+  const activeModelName = await getActiveModelName();
+  const model = genAI.getGenerativeModel({ model: activeModelName });
   const initEndTime = performance.now();
   console.log(`[csvExtractor] Gemini initialized in ${((initEndTime - initStartTime) / 1000).toFixed(3)}s`);
 
