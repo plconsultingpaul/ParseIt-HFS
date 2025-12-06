@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Key, Globe, TestTube, Link, FileText, Settings } from 'lucide-react';
+import { Save, Key, Globe, TestTube, Link, FileText, Settings, Sparkles } from 'lucide-react';
 import type { ApiConfig, SecondaryApiConfig } from '../../types';
 import SecondaryApiSettings from './SecondaryApiSettings';
 import ApiSpecsSettings from './ApiSpecsSettings';
+import GeminiConfigSettings from './GeminiConfigSettings';
 import { fetchSecondaryApiConfigs } from '../../services/configService';
 
 interface ApiSettingsProps {
@@ -10,7 +11,7 @@ interface ApiSettingsProps {
   onUpdateApiConfig: (config: ApiConfig) => Promise<void>;
 }
 
-type ApiTab = 'configuration' | 'specs';
+type ApiTab = 'configuration' | 'gemini' | 'specs';
 
 export default function ApiSettings({ apiConfig, onUpdateApiConfig }: ApiSettingsProps) {
   const [activeTab, setActiveTab] = useState<ApiTab>('configuration');
@@ -20,8 +21,6 @@ export default function ApiSettings({ apiConfig, onUpdateApiConfig }: ApiSetting
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string; data?: any } | null>(null);
   const [isTesting, setIsTesting] = useState(false);
-  const [isTestingGemini, setIsTestingGemini] = useState(false);
-  const [geminiTestResult, setGeminiTestResult] = useState<{ success: boolean; message: string; data?: any } | null>(null);
 
   useEffect(() => {
     loadSecondaryApis();
@@ -112,59 +111,6 @@ export default function ApiSettings({ apiConfig, onUpdateApiConfig }: ApiSetting
     }
   };
 
-  const handleTestGeminiApi = async () => {
-    setIsTestingGemini(true);
-    setGeminiTestResult(null);
-
-    try {
-      if (!localConfig.googleApiKey) {
-        setGeminiTestResult({
-          success: false,
-          message: 'Please enter a Google Gemini API key first'
-        });
-        return;
-      }
-
-      const { GoogleGenerativeAI } = await import('@google/generative-ai');
-      const genAI = new GoogleGenerativeAI(localConfig.googleApiKey);
-
-      const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
-
-      const result = await model.generateContent('Test');
-      const response = await result.response;
-      const text = response.text();
-
-      setGeminiTestResult({
-        success: true,
-        message: 'Google Gemini API connection successful!',
-        data: {
-          model: 'gemini-2.0-flash-exp',
-          responseLength: text.length,
-          status: 'API key is valid and working'
-        }
-      });
-    } catch (error: any) {
-      let errorMessage = 'Connection failed';
-
-      if (error.message?.includes('API_KEY_INVALID') || error.message?.includes('API key not valid')) {
-        errorMessage = 'Invalid API key. Please check your Google Gemini API key.';
-      } else if (error.message?.includes('quota')) {
-        errorMessage = 'API quota exceeded. Please check your Google Cloud Console.';
-      } else if (error.message?.includes('not found')) {
-        errorMessage = 'Model not found. Your API key may not have access to this model.';
-      } else if (error.message) {
-        errorMessage = `API Error: ${error.message}`;
-      }
-
-      setGeminiTestResult({
-        success: false,
-        message: errorMessage
-      });
-    } finally {
-      setIsTestingGemini(false);
-    }
-  };
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -221,6 +167,19 @@ export default function ApiSettings({ apiConfig, onUpdateApiConfig }: ApiSetting
             <div className="flex items-center gap-2">
               <FileText className="w-4 h-4" />
               API Specifications
+            </div>
+          </button>
+          <button
+            onClick={() => setActiveTab('gemini')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'gemini'
+                ? 'border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4" />
+              Gemini AI
             </div>
           </button>
         </nav>
@@ -333,89 +292,6 @@ export default function ApiSettings({ apiConfig, onUpdateApiConfig }: ApiSetting
           <SecondaryApiSettings />
         </div>
 
-        {/* Google Gemini API Settings */}
-        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 shadow-sm">
-          <div className="flex items-center space-x-3 mb-6">
-            <div className="bg-blue-100 dark:bg-blue-900/50 p-2 rounded-lg">
-              <Key className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-            </div>
-            <div>
-              <h4 className="font-semibold text-gray-900 dark:text-gray-100">Google Gemini API</h4>
-              <p className="text-sm text-gray-500 dark:text-gray-400">API key for PDF data extraction</p>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Google Gemini API Key
-            </label>
-            <input
-              type="password"
-              value={localConfig.googleApiKey}
-              onChange={(e) => updateConfig('googleApiKey', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
-              placeholder="Enter your Google Gemini API key"
-            />
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Get your API key from{' '}
-              <a
-                href="https://makersuite.google.com/app/apikey"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 underline"
-              >
-                Google AI Studio
-              </a>
-            </p>
-            <div className="mt-3">
-              <button
-                onClick={handleTestGeminiApi}
-                disabled={isTestingGemini || !localConfig.googleApiKey}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
-              >
-                <TestTube className="h-4 w-4" />
-                <span>{isTestingGemini ? 'Testing...' : 'Test Gemini API'}</span>
-              </button>
-            </div>
-
-            {geminiTestResult && (
-              <div className={`mt-3 border rounded-lg p-4 ${
-                geminiTestResult.success
-                  ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700'
-                  : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700'
-              }`}>
-                <div className="flex items-center space-x-2">
-                  <div className={`w-4 h-4 rounded-full ${
-                    geminiTestResult.success ? 'bg-green-500' : 'bg-red-500'
-                  }`}></div>
-                  <span className={`font-semibold ${
-                    geminiTestResult.success
-                      ? 'text-green-800 dark:text-green-300'
-                      : 'text-red-800 dark:text-red-300'
-                  }`}>
-                    {geminiTestResult.success ? 'API Test Passed' : 'API Test Failed'}
-                  </span>
-                </div>
-                <p className={`text-sm mt-1 ${
-                  geminiTestResult.success
-                    ? 'text-green-700 dark:text-green-400'
-                    : 'text-red-700 dark:text-red-400'
-                }`}>
-                  {geminiTestResult.message}
-                </p>
-                {geminiTestResult.data && (
-                  <div className="mt-3 bg-white dark:bg-gray-700 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
-                    <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">API Response:</p>
-                    <pre className="text-xs text-gray-800 dark:text-gray-200 whitespace-pre-wrap font-mono">
-                      {JSON.stringify(geminiTestResult.data, null, 2)}
-                    </pre>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
 
         {/* Usage Information */}
         <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
@@ -424,8 +300,8 @@ export default function ApiSettings({ apiConfig, onUpdateApiConfig }: ApiSetting
             <li>• JSON extraction types will send data to: <code className="bg-blue-100 px-1 rounded">Base API Path + JSON Path</code></li>
             <li>• Data is sent as POST request with JSON body</li>
             <li>• Authorization header is added if API password is provided</li>
-            <li>• Google Gemini API is used for PDF data extraction</li>
             <li>• Use "Test TruckMate API" to verify your API connection with /WHOAMI endpoint</li>
+            <li>• Configure Google Gemini API in the "Gemini AI" tab for PDF data extraction</li>
           </ul>
         </div>
 
@@ -441,6 +317,10 @@ export default function ApiSettings({ apiConfig, onUpdateApiConfig }: ApiSetting
         </div>
           </div>
         </>
+      )}
+
+      {activeTab === 'gemini' && (
+        <GeminiConfigSettings />
       )}
 
       {activeTab === 'specs' && (
