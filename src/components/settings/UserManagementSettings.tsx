@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Save, Users, Shield, User as UserIcon, Eye, EyeOff, Settings, FileText, Server, Key, Mail, Filter, Database, GitBranch, Brain, RefreshCw } from 'lucide-react';
 import type { User, ExtractionType, TransformationType } from '../../types';
+import Select from '../common/Select';
 
 interface UserManagementSettingsProps {
   currentUser: User;
@@ -1126,22 +1127,21 @@ export default function UserManagementSettings({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Role
-                </label>
-                <select
+                <Select
+                  label="Role"
                   value={newUser.role}
-                  onChange={(e) => setNewUser(prev => ({ 
-                    ...prev, 
-                    role: e.target.value as 'admin' | 'user' | 'vendor',
-                    isAdmin: e.target.value === 'admin'
+                  onValueChange={(value) => setNewUser(prev => ({
+                    ...prev,
+                    role: value as 'admin' | 'user' | 'vendor',
+                    isAdmin: value === 'admin'
                   }))}
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                >
-                  <option value="user">User</option>
-                  <option value="vendor">Vendor</option>
-                  <option value="admin">Administrator</option>
-                </select>
+                  options={[
+                    { value: 'user', label: 'User' },
+                    { value: 'vendor', label: 'Vendor' },
+                    { value: 'admin', label: 'Administrator' }
+                  ]}
+                  searchable={false}
+                />
               </div>
 
               <div>
