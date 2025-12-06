@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import type { User, AuthState, UserPermissions } from '../types';
 
@@ -349,7 +349,7 @@ export function useAuth() {
     }
   };
 
-  const getUserExtractionTypes = useCallback(async (userId: string): Promise<string[]> => {
+  const getUserExtractionTypes = async (userId: string): Promise<string[]> => {
     try {
       const { data, error } = await supabase
         .from('user_extraction_types')
@@ -363,9 +363,9 @@ export function useAuth() {
       console.error('Get user extraction types error:', error);
       return [];
     }
-  }, []);
+  };
 
-  const updateUserExtractionTypes = useCallback(async (userId: string, extractionTypeIds: string[]): Promise<{ success: boolean; message: string }> => {
+  const updateUserExtractionTypes = async (userId: string, extractionTypeIds: string[]): Promise<{ success: boolean; message: string }> => {
     try {
       // First, delete all existing mappings for this user
       const { error: deleteError } = await supabase
@@ -400,9 +400,9 @@ export function useAuth() {
         message: 'Failed to update extraction type permissions'
       };
     }
-  }, []);
+  };
 
-  const getUserTransformationTypes = useCallback(async (userId: string): Promise<string[]> => {
+  const getUserTransformationTypes = async (userId: string): Promise<string[]> => {
     try {
       const { data, error } = await supabase
         .from('user_transformation_types')
@@ -416,9 +416,9 @@ export function useAuth() {
       console.error('Get user transformation types error:', error);
       return [];
     }
-  }, []);
+  };
 
-  const updateUserTransformationTypes = useCallback(async (userId: string, transformationTypeIds: string[]): Promise<{ success: boolean; message: string }> => {
+  const updateUserTransformationTypes = async (userId: string, transformationTypeIds: string[]): Promise<{ success: boolean; message: string }> => {
     try {
       const { error: deleteError } = await supabase
         .from('user_transformation_types')
@@ -451,7 +451,7 @@ export function useAuth() {
         message: 'Failed to update transformation type permissions'
       };
     }
-  }, []);
+  };
 
   return {
     ...authState,
