@@ -343,45 +343,82 @@ export default function PageProcessorCard({
   const handleShowExtractedData = () => {
     console.log('[PageProcessorCard] ========================================');
     console.log('[PageProcessorCard] Show Extracted Data clicked');
-    console.log('[PageProcessorCard] - dataLabel:', dataLabel);
-    console.log('[PageProcessorCard] - extractedData type:', typeof pageState.extractedData);
-    console.log('[PageProcessorCard] - extractedData length:', pageState.extractedData?.length || 0);
-    console.log('[PageProcessorCard] - extractedData preview (first 300 chars):', pageState.extractedData?.substring(0, 300));
-    console.log('[PageProcessorCard] ========================================');
 
-    setModalTitle(`Page ${pageIndex + 1} - Extracted ${dataLabel} Data`);
+    setModalTitle(`Page ${pageIndex + 1} - Extracted Mappings`);
 
     // Format JSON data for better display
-    let displayData = pageState.extractedData;
+    let outputData = pageState.extractedData;
+    let workflowData = pageState.workflowOnlyData || '{}';
+
     if (isJsonType) {
       try {
         const parsedJson = JSON.parse(pageState.extractedData);
-        displayData = JSON.stringify(parsedJson, null, 2);
+        outputData = JSON.stringify(parsedJson, null, 2);
+
+        if (pageState.workflowOnlyData && pageState.workflowOnlyData !== '{}') {
+          const parsedWorkflow = JSON.parse(pageState.workflowOnlyData);
+          workflowData = JSON.stringify(parsedWorkflow, null, 2);
+        }
       } catch (error) {
-        // If parsing fails, use original data
-        displayData = pageState.extractedData;
+        outputData = pageState.extractedData;
       }
     }
-    
+
     setModalContent(
       <div className="space-y-4">
-        <div className="flex items-center space-x-3 mb-4">
-          <FileText className="h-6 w-6 text-purple-600 dark:text-purple-400" />
-          <h4 className="text-lg font-semibold text-purple-800 dark:text-purple-300">Extracted {dataLabel} Data</h4>
+        <div className="grid grid-cols-2 gap-6">
+          {/* Regular Output Data */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-blue-100 dark:border-blue-900">
+            <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+              <h4 className="text-lg font-bold text-gray-900 dark:text-gray-100">Output Data</h4>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Fields sent to API/SFTP</p>
+            </div>
+            <div className="p-4">
+              <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 max-h-96 overflow-y-auto">
+                <pre className="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap font-mono leading-relaxed">
+                  {outputData}
+                </pre>
+              </div>
+            </div>
+          </div>
+
+          {/* Workflow Only Data */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-green-100 dark:border-green-900">
+            <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+              <h4 className="text-lg font-bold text-gray-900 dark:text-gray-100">Workflow Only Data</h4>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Fields for workflow processing</p>
+            </div>
+            <div className="p-4">
+              <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 max-h-96 overflow-y-auto">
+                {workflowData === '{}' ? (
+                  <p className="text-gray-500 dark:text-gray-400 italic">No workflow-only fields configured</p>
+                ) : (
+                  <pre className="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap font-mono leading-relaxed">
+                    {workflowData}
+                  </pre>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
-        <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
-          <pre className="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap font-mono max-h-96 overflow-y-auto leading-relaxed">
-            {displayData}
-          </pre>
-        </div>
-        <div className="flex justify-end">
+
+        <div className="flex justify-end space-x-3">
           <button
-            onClick={() => navigator.clipboard.writeText(displayData)}
-            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 dark:bg-purple-700 dark:hover:bg-purple-600 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2"
+            onClick={() => navigator.clipboard.writeText(outputData)}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2"
           >
             <Copy className="h-4 w-4" />
-            <span>Copy {dataLabel}</span>
+            <span>Copy Output Data</span>
           </button>
+          {workflowData !== '{}' && (
+            <button
+              onClick={() => navigator.clipboard.writeText(workflowData)}
+              className="px-4 py-2 bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2"
+            >
+              <Copy className="h-4 w-4" />
+              <span>Copy Workflow Data</span>
+            </button>
+          )}
         </div>
       </div>
     );
@@ -706,7 +743,7 @@ export default function PageProcessorCard({
               ) : (
                 <>
                   <FileText className="h-4 w-4" />
-                  <span>Preview {dataLabel}</span>
+                  <span>Preview Mappings</span>
                 </>
               )}
             </button>
