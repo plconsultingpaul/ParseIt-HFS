@@ -8,33 +8,76 @@ import type { ExtractionWorkflow, WorkflowStep } from '../types';
 export function useWorkflowManagement(
   initialWorkflows: ExtractionWorkflow[],
   workflowSteps: WorkflowStep[],
-  refreshData?: () => Promise<void>
+  refreshData?: () => Promise<void>,
+  refreshWorkflowSteps?: () => Promise<void>
 ) {
   const [localWorkflows, setLocalWorkflows] = useState<ExtractionWorkflow[]>(initialWorkflows);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
 
   // Update local workflows when props change
   React.useEffect(() => {
     setLocalWorkflows(initialWorkflows);
   }, [initialWorkflows]);
 
-  const addWorkflow = useCallback(() => {
-    const newWorkflow: ExtractionWorkflow = {
-      id: `temp-${Date.now()}`,
-      name: 'New Workflow',
-      description: '',
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    
-    const updatedWorkflows = [...localWorkflows, newWorkflow];
-    setLocalWorkflows(updatedWorkflows);
-    return newWorkflow.id;
-  }, [localWorkflows]);
+  const addWorkflow = useCallback(async (name: string, description?: string): Promise<string> => {
+    console.log('=== ADD WORKFLOW START ===');
+    console.log('Workflow name:', name);
+    console.log('Workflow description:', description);
+
+    setIsCreating(true);
+
+    try {
+      // Insert directly into database
+      const { data, error } = await supabase
+        .from('extraction_workflows')
+        .insert({
+          name: name.trim(),
+          description: description?.trim() || '',
+          is_active: true
+        })
+        .select('id, name, description, is_active, created_at, updated_at')
+        .single();
+
+      if (error) throw error;
+
+      console.log('✅ Workflow created in database:', data);
+
+      // Create the workflow object for local state
+      const newWorkflow: ExtractionWorkflow = {
+        id: data.id,
+        name: data.name,
+        description: data.description || '',
+        isActive: data.is_active,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at
+      };
+
+      // Update local state
+      const updatedWorkflows = [...localWorkflows, newWorkflow];
+      setLocalWorkflows(updatedWorkflows);
+
+      console.log('✅ Add workflow completed successfully');
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+
+      return data.id;
+
+    } catch (error) {
+      console.error('❌ Add workflow failed:', error);
+      console.error('❌ Add workflow error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : 'No stack trace'
+      });
+      throw error;
+    } finally {
+      console.log('🏁 Add workflow process finished, resetting isCreating flag');
+      setIsCreating(false);
+    }
+  }, [localWorkflows, refreshData]);
 
   const updateWorkflow = useCallback((workflowId: string, updates: Partial<ExtractionWorkflow>) => {
     const updatedWorkflows = localWorkflows.map(workflow =>
@@ -177,10 +220,12 @@ export function useWorkflowManagement(
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
 
-      // Trigger a data refresh to reload steps from database
-      console.log('🔄 Triggering data refresh to reload steps...');
-      await refreshData();
-      console.log('✅ Data refresh completed');
+      // Refresh workflow steps to ensure copied steps are loaded
+      if (refreshWorkflowSteps) {
+        console.log('🔄 Refreshing workflow steps...');
+        await refreshWorkflowSteps();
+        console.log('✅ Workflow steps refreshed');
+      }
 
       return permanentWorkflowId;
 
@@ -218,6 +263,7 @@ export function useWorkflowManagement(
     saveSuccess,
     isCopying,
     isDeleting,
+    isCreating,
     addWorkflow,
     updateWorkflow,
     deleteWorkflow,
