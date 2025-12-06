@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { X } from 'lucide-react';
 import GettingStartedSection from './sections/GettingStartedSection';
 import UploadModesSection from './sections/UploadModesSection';
@@ -22,15 +22,28 @@ interface HelpModalProps {
 }
 
 export default function HelpModal({ isOpen, onClose }: HelpModalProps) {
+  useEffect(() => {
+    if (isOpen) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 p-4 pt-20">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-6xl w-full max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 p-4 pt-12 overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-6xl w-full max-h-[90vh] flex flex-col my-4">
         <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-t-2xl">
           <div>
-            <h2 className="text-2xl font-bold text-white">ParseIt Help Center</h2>
-            <p className="text-blue-100 mt-1">Complete guide to using ParseIt for PDF data extraction</p>
+            <h2 className="text-2xl font-bold text-white">Parse-It Help Center</h2>
+            <p className="text-blue-100 mt-1">Complete guide to using Parse-It for PDF data extraction</p>
           </div>
           <button
             onClick={onClose}
