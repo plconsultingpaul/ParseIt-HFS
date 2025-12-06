@@ -28,6 +28,9 @@ interface TransformationRequest {
   }
   additionalInstructions?: string
   apiKey: string
+  sessionId?: string
+  groupOrder?: number
+  pageIndex?: number
 }
 
 // Generate unique request ID for tracing
@@ -282,7 +285,7 @@ serve(async (req: Request) => {
       );
     }
 
-    const { pdfBase64, transformationType, additionalInstructions, apiKey } = requestData;
+    const { pdfBase64, transformationType, additionalInstructions, apiKey, sessionId, groupOrder, pageIndex } = requestData;
 
     console.log(`INFO [MAIN]: PDF base64 length: ${pdfBase64?.length || 0} chars - ${requestId}`)
     console.log(`INFO [MAIN]: Transformation type: ${transformationType?.name} (ID: ${transformationType?.id}) - ${requestId}`)
@@ -290,6 +293,9 @@ serve(async (req: Request) => {
     console.log(`INFO [MAIN]: Field mappings count: ${transformationType?.fieldMappings?.length || 0} - ${requestId}`)
     console.log(`INFO [MAIN]: Additional instructions length: ${additionalInstructions?.length || 0} chars - ${requestId}`)
     console.log(`INFO [MAIN]: API key present: ${!!apiKey} - ${requestId}`);
+    console.log(`INFO [MAIN]: Session ID: ${sessionId || 'none'} - ${requestId}`);
+    console.log(`INFO [MAIN]: Group Order: ${groupOrder || 'none'} - ${requestId}`);
+    console.log(`INFO [MAIN]: Page Index: ${pageIndex !== undefined ? pageIndex : 'none'} - ${requestId}`);
 
     if (!apiKey) {
       throw new Error('Google Gemini API key not configured')
@@ -575,6 +581,41 @@ Please provide only the JSON output without any additional explanation or format
       console.log(`INFO [VALIDATION]: Serialized JSON length: ${finalJsonString.length} chars - ${requestId}`)
       console.log(`TRACE [VALIDATION]: Serialized JSON preview (first 200 chars): ${finalJsonString.substring(0, 200)} - ${requestId}`)
       console.log(`TRACE [VALIDATION]: Serialized JSON preview (last 200 chars): ${finalJsonString.substring(Math.max(0, finalJsonString.length - 200))} - ${requestId}`)
+
+      // Save extracted fields to extraction_group_data if session tracking is enabled
+      if (sessionId && groupOrder !== undefined && pageIndex !== undefined) {
+        try {
+          console.log(`INFO [GROUP_DATA]: Saving extracted fields for session ${sessionId}, group ${groupOrder}, page ${pageIndex} - ${requestId}`)
+          const supabaseUrl = Deno.env.get('SUPABASE_URL')
+          const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+
+          if (supabaseUrl && supabaseServiceKey) {
+            const saveResponse = await fetch(`${supabaseUrl}/rest/v1/extraction_group_data`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${supabaseServiceKey}`,
+                'Content-Type': 'application/json',
+                'apikey': supabaseServiceKey,
+                'Prefer': 'return=representation'
+              },
+              body: JSON.stringify({
+                session_id: sessionId,
+                group_order: groupOrder,
+                page_index: pageIndex,
+                extracted_fields: extractedData
+              })
+            })
+
+            if (saveResponse.ok) {
+              console.log(`INFO [GROUP_DATA]: Successfully saved extracted fields for group ${groupOrder} - ${requestId}`)
+            } else {
+              console.error(`ERROR [GROUP_DATA]: Failed to save extracted fields: ${saveResponse.status} - ${requestId}`)
+            }
+          }
+        } catch (saveError) {
+          console.error(`ERROR [GROUP_DATA]: Exception saving extracted fields: ${saveError} - ${requestId}`)
+        }
+      }
     } catch (serializeError) {
       console.error(`ERROR [VALIDATION]: CRITICAL - Cannot serialize extracted data to JSON - ${requestId}`)
       console.error(`ERROR [VALIDATION]: Serialize error type: ${serializeError instanceof Error ? serializeError.constructor.name : typeof serializeError}`)
@@ -592,23 +633,68 @@ Please provide only the JSON output without any additional explanation or format
       console.log(`INFO [VALIDATION]: Fallback JSON created, length: ${finalJsonString.length} - ${requestId}`)
     }
     
+    // Retrieve and merge previous group data if this is a "Follow Previous Group"
+    let mergedData = { ...extractedData }
+    if (sessionId && groupOrder && groupOrder > 1 && pageIndex !== undefined && pageIndex > 0) {
+      try {
+        console.log(`INFO [PREV_GROUPS]: This is a "Follow Previous Group" - retrieving immediately preceding page (page ${pageIndex - 1}) - ${requestId}`)
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')
+        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+
+        if (supabaseUrl && supabaseServiceKey) {
+          // Query for the immediately preceding page index only
+          const prevGroupsResponse = await fetch(
+            `${supabaseUrl}/rest/v1/extraction_group_data?session_id=eq.${sessionId}&page_index=eq.${pageIndex - 1}`,
+            {
+              headers: {
+                'Authorization': `Bearer ${supabaseServiceKey}`,
+                'Content-Type': 'application/json',
+                'apikey': supabaseServiceKey
+              }
+            }
+          )
+
+          if (prevGroupsResponse.ok) {
+            const prevGroups = await prevGroupsResponse.json()
+            console.log(`INFO [PREV_GROUPS]: Found ${prevGroups.length} record(s) for preceding page - ${requestId}`)
+
+            if (prevGroups.length > 0) {
+              const prevGroup = prevGroups[0] // Should only be one result
+              const groupPrefix = `group${prevGroup.group_order}_`
+              const prevFields = prevGroup.extracted_fields || {}
+
+              for (const [fieldName, fieldValue] of Object.entries(prevFields)) {
+                const prefixedFieldName = `${groupPrefix}${fieldName}`
+                mergedData[prefixedFieldName] = fieldValue
+                console.log(`TRACE [PREV_GROUPS]: Added ${prefixedFieldName} = ${fieldValue} from page ${pageIndex - 1} - ${requestId}`)
+              }
+
+              console.log(`INFO [PREV_GROUPS]: Merged data now has ${Object.keys(mergedData).length} total fields - ${requestId}`)
+            } else {
+              console.warn(`WARNING [PREV_GROUPS]: No data found for preceding page ${pageIndex - 1} - ${requestId}`)
+            }
+          }
+        }
+      } catch (prevGroupError) {
+        console.error(`ERROR [PREV_GROUPS]: Failed to retrieve previous group data: ${prevGroupError} - ${requestId}`)
+      }
+    }
+
     // Generate new filename using the template
     console.log('===============================================')
     console.log(`INFO [FILENAME]: FILENAME GENERATION - ${requestId}`)
     console.log('===============================================')
     let newFilename = transformationType.filenameTemplate
     console.log(`TRACE [FILENAME]: Original filename template: ${newFilename} - ${requestId}`)
-    console.log(`TRACE [FILENAME]: Number of placeholders to replace: ${Object.keys(extractedData).length} - ${requestId}`)
+    console.log(`TRACE [FILENAME]: Number of placeholders to replace: ${Object.keys(mergedData).length} - ${requestId}`)
 
-    // Replace placeholders in filename template with extracted data
-    for (const [key, value] of Object.entries(extractedData)) {
+    // Replace placeholders in filename template with extracted data (including previous group data)
+    for (const [key, value] of Object.entries(mergedData)) {
       const placeholder = `{{${key}}}`
       if (newFilename.includes(placeholder)) {
         const cleanValue = String(value || '').replace(/[<>:"/\\|?*]/g, '_').trim()
         console.log(`TRACE [FILENAME]: Replacing ${placeholder} with "${cleanValue}" - ${requestId}`);
         newFilename = newFilename.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), cleanValue)
-      } else {
-        console.log(`TRACE [FILENAME]: Placeholder {{${key}}} not found in template - ${requestId}`)
       }
     }
 
@@ -636,9 +722,13 @@ Please provide only the JSON output without any additional explanation or format
     const responseData = {
         success: true,
         extractedData: extractedData,
+        mergedData: mergedData,
         newFilename: newFilename,
         message: 'PDF transformation completed successfully',
-        requestId: requestId
+        requestId: requestId,
+        sessionId: sessionId,
+        groupOrder: groupOrder,
+        pageIndex: pageIndex
     };
 
     console.log(`TRACE [RESPONSE]: Response object created - ${requestId}`)
