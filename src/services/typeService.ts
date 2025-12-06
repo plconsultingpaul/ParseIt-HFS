@@ -50,8 +50,13 @@ export async function fetchExtractionTypes(): Promise<ExtractionType[]> {
       csvIncludeHeaders: type.csv_include_headers,
       csvRowDetectionInstructions: type.csv_row_detection_instructions,
       csvMultiPageProcessing: type.csv_multi_page_processing,
+      jsonMultiPageProcessing: type.json_multi_page_processing,
       defaultUploadMode: type.default_upload_mode as 'manual' | 'auto' | undefined,
       lockUploadMode: type.lock_upload_mode || false,
+      pageProcessingMode: type.page_processing_mode as 'all' | 'single' | 'range' | undefined,
+      pageProcessingSinglePage: type.page_processing_single_page,
+      pageProcessingRangeStart: type.page_processing_range_start,
+      pageProcessingRangeEnd: type.page_processing_range_end,
       arraySplitConfigs: (arraySplitsByType.get(type.id) || []).map(split => ({
         id: split.id,
         extractionTypeId: split.extraction_type_id,
@@ -134,8 +139,13 @@ export async function updateExtractionTypes(types: ExtractionType[]): Promise<vo
           csv_include_headers: type.csvIncludeHeaders !== false,
           csv_row_detection_instructions: type.csvRowDetectionInstructions || null,
           csv_multi_page_processing: type.csvMultiPageProcessing || false,
+          json_multi_page_processing: type.jsonMultiPageProcessing || false,
           default_upload_mode: type.defaultUploadMode || null,
           lock_upload_mode: type.lockUploadMode || false,
+          page_processing_mode: type.pageProcessingMode || 'all',
+          page_processing_single_page: type.pageProcessingSinglePage || 1,
+          page_processing_range_start: type.pageProcessingRangeStart || 1,
+          page_processing_range_end: type.pageProcessingRangeEnd || 1,
           updated_at: new Date().toISOString()
         })
         .eq('id', type.id);
@@ -184,8 +194,13 @@ export async function updateExtractionTypes(types: ExtractionType[]): Promise<vo
           csv_include_headers: type.csvIncludeHeaders !== false,
           csv_row_detection_instructions: type.csvRowDetectionInstructions || null,
           csv_multi_page_processing: type.csvMultiPageProcessing || false,
+          json_multi_page_processing: type.jsonMultiPageProcessing || false,
           default_upload_mode: type.defaultUploadMode || null,
-          lock_upload_mode: type.lockUploadMode || false
+          lock_upload_mode: type.lockUploadMode || false,
+          page_processing_mode: type.pageProcessingMode || 'all',
+          page_processing_single_page: type.pageProcessingSinglePage || 1,
+          page_processing_range_start: type.pageProcessingRangeStart || 1,
+          page_processing_range_end: type.pageProcessingRangeEnd || 1
         };
 
         console.log('  Mapped data for database:', mappedData);
@@ -385,6 +400,7 @@ export async function fetchTransformationTypes(): Promise<TransformationType[]> 
         useAiDetection: pg.use_ai_detection || false,
         fallbackBehavior: pg.fallback_behavior as 'skip' | 'fixed_position' | 'error' | undefined,
         detectionConfidenceThreshold: pg.detection_confidence_threshold || 0.7,
+        followsPreviousGroup: pg.follows_previous_group || false,
         createdAt: pg.created_at,
         updatedAt: pg.updated_at
       }))
@@ -579,6 +595,7 @@ export async function updateTransformationTypes(types: TransformationType[]): Pr
               use_ai_detection: config.useAiDetection || false,
               fallback_behavior: config.fallbackBehavior || 'skip',
               detection_confidence_threshold: config.detectionConfidenceThreshold || 0.7,
+              follows_previous_group: config.followsPreviousGroup || false,
               updated_at: new Date().toISOString()
             })
             .eq('id', config.id);
@@ -598,7 +615,8 @@ export async function updateTransformationTypes(types: TransformationType[]): Pr
             field_mappings: config.fieldMappings ? JSON.stringify(config.fieldMappings) : null,
             use_ai_detection: config.useAiDetection || false,
             fallback_behavior: config.fallbackBehavior || 'skip',
-            detection_confidence_threshold: config.detectionConfidenceThreshold || 0.7
+            detection_confidence_threshold: config.detectionConfidenceThreshold || 0.7,
+            follows_previous_group: config.followsPreviousGroup || false
           }));
 
           const { error } = await supabase
