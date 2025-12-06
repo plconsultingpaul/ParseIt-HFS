@@ -65,7 +65,7 @@ export default function ExtractPage({
     };
 
     filterExtractionTypes();
-  }, [extractionTypes, user?.id, user?.role, user?.isAdmin, getUserExtractionTypes]);
+  }, [extractionTypes, user, getUserExtractionTypes]);
 
   // Set selected extraction type to first allowed type
   React.useEffect(() => {
@@ -76,7 +76,7 @@ export default function ExtractPage({
         setSelectedExtractionType(allowedExtractionTypes[0].id);
       }
     }
-  }, [allowedExtractionTypes]);
+  }, [allowedExtractionTypes, selectedExtractionType]);
 
   // Set selected transformation type to first allowed transformation type
   React.useEffect(() => {
@@ -87,7 +87,7 @@ export default function ExtractPage({
         setSelectedTransformationType(transformationTypes[0].id);
       }
     }
-  }, [transformationTypes]);
+  }, [transformationTypes, selectedTransformationType]);
 
   // Initialize upload mode from extraction type default, then user preference
   React.useEffect(() => {
@@ -104,22 +104,6 @@ export default function ExtractPage({
       setUploadMode(user.preferredUploadMode);
     }
   }, [user?.preferredUploadMode, user?.role, currentExtractionType?.defaultUploadMode]);
-
-  // Set initial upload mode when component mounts
-  React.useEffect(() => {
-    if (user?.role === 'vendor') {
-      // Force vendors to use AI auto-detect mode
-      setUploadMode('auto');
-      // Force vendors to transformation mode only
-      setProcessingMode('transformation');
-    } else if (currentExtractionType?.defaultUploadMode) {
-      // Use extraction type's default upload mode if configured
-      setUploadMode(currentExtractionType.defaultUploadMode);
-    } else if (user?.preferredUploadMode) {
-      // Fall back to user preference
-      setUploadMode(user.preferredUploadMode);
-    }
-  }, [user]);
 
   const handlePdfUpload = (file: File, pages: File[]) => {
     setUploadedFile(file);
