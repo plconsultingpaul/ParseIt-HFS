@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
-import { Users, Building2 } from 'lucide-react';
+import { Users, Building2, ClipboardList, FileText } from 'lucide-react';
 import type { User, ExtractionType, TransformationType, Client } from '../types';
 import ClientManagementSettings from './settings/ClientManagementSettings';
 import ClientUsersManagementSettings from './settings/ClientUsersManagementSettings';
+import OrderEntryConfigSettings from './settings/OrderEntryConfigSettings';
+import OrderEntrySubmissionsPage from './OrderEntrySubmissionsPage';
+import { useSupabaseData } from '../hooks/useSupabaseData';
 
 interface ClientSetupPageProps {
   currentUser: User;
@@ -15,7 +18,7 @@ interface ClientSetupPageProps {
   updateUserPassword: (userId: string, newPassword: string) => Promise<{ success: boolean; message: string }>;
 }
 
-type ClientSetupTab = 'clients' | 'users';
+type ClientSetupTab = 'clients' | 'users' | 'orderEntry' | 'submissions';
 
 export default function ClientSetupPage({
   currentUser,
@@ -27,6 +30,7 @@ export default function ClientSetupPage({
   deleteUser,
   updateUserPassword
 }: ClientSetupPageProps) {
+  const { workflows } = useSupabaseData();
   const isClientUser = currentUser.role === 'client';
   const isClientAdmin = isClientUser && currentUser.isClientAdmin === true;
   const hasSystemUserManagement = currentUser.permissions.userManagement === true;
@@ -36,7 +40,9 @@ export default function ClientSetupPage({
 
   const tabs = [
     ...(!isClientUser && hasSystemUserManagement ? [{ id: 'clients' as ClientSetupTab, label: 'Client Management', icon: Building2, description: 'Manage client companies and access' }] : []),
-    ...(isClientAdmin || hasSystemUserManagement ? [{ id: 'users' as ClientSetupTab, label: 'User Management', icon: Users, description: 'Manage client users and permissions' }] : [])
+    ...(isClientAdmin || hasSystemUserManagement ? [{ id: 'users' as ClientSetupTab, label: 'User Management', icon: Users, description: 'Manage client users and permissions' }] : []),
+    ...(!isClientUser && hasSystemUserManagement ? [{ id: 'orderEntry' as ClientSetupTab, label: 'Order Entry', icon: ClipboardList, description: 'Configure order entry forms and API' }] : []),
+    ...(!isClientUser && hasSystemUserManagement ? [{ id: 'submissions' as ClientSetupTab, label: 'Submissions', icon: FileText, description: 'View order entry submissions' }] : [])
   ];
 
   const renderTabContent = () => {
@@ -59,6 +65,17 @@ export default function ClientSetupPage({
             updateUserPassword={updateUserPassword}
           />
         ) : <PermissionDenied />;
+      case 'orderEntry':
+        return (!isClientUser && hasSystemUserManagement) ? (
+          <OrderEntryConfigSettings
+            currentUser={currentUser}
+            workflows={workflows}
+          />
+        ) : <PermissionDenied />;
+      case 'submissions':
+        return (!isClientUser && hasSystemUserManagement) ? (
+          <OrderEntrySubmissionsPage currentUser={currentUser} />
+        ) : <PermissionDenied />;
       default:
         return null;
     }
@@ -75,12 +92,12 @@ export default function ClientSetupPage({
               onClick={() => setActiveTab(tab.id)}
               className={`flex-1 flex items-center justify-center space-x-2 px-4 py-3 rounded-md transition-all duration-200 ${
                 activeTab === tab.id
-                  ? 'bg-white dark:bg-gray-600 text-teal-700 dark:text-teal-300 shadow-sm font-medium'
-                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600'
+                  ? 'bg-white dark:bg-gray-600 text-purple-700 dark:text-purple-300 shadow-sm font-medium'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 hover:ring-2 hover:ring-purple-400 dark:hover:ring-purple-500'
               }`}
             >
               <Icon className={`h-4 w-4 ${
-                activeTab === tab.id ? 'text-teal-600 dark:text-teal-400' : 'text-gray-500 dark:text-gray-400'
+                activeTab === tab.id ? 'text-purple-600 dark:text-purple-400' : 'text-gray-500 dark:text-gray-400'
               }`} />
               <span className="text-sm font-medium">{tab.label}</span>
             </button>
@@ -88,7 +105,7 @@ export default function ClientSetupPage({
         })}
       </div>
 
-      <div className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm rounded-xl shadow-xl border border-teal-100 dark:border-gray-700 p-6">
+      <div className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm rounded-xl shadow-xl border border-purple-100 dark:border-gray-700 p-6">
         {renderTabContent()}
       </div>
     </div>
