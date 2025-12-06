@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Plus, Trash2 } from 'lucide-react';
+import Select from '../../common/Select';
+import ApiEndpointConfigSection from './ApiEndpointConfigSection';
 
 interface StepConfigFormProps {
   step: any;
@@ -7,6 +10,7 @@ interface StepConfigFormProps {
   apiConfig: any;
   onSave: (stepData: any) => void;
   onCancel: () => void;
+  extractionType?: any;
 }
 
 interface TransformationRule {
@@ -14,7 +18,7 @@ interface TransformationRule {
   transformation: string;
 }
 
-export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCancel }: StepConfigFormProps) {
+export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCancel, extractionType }: StepConfigFormProps) {
   const [stepName, setStepName] = useState(step?.stepName || step?.step_name || 'New Step');
   const [stepType, setStepType] = useState(step?.stepType || step?.step_type || 'api_call');
   const [method, setMethod] = useState('POST');
@@ -40,8 +44,9 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
   const [ccUser, setCcUser] = useState(false);
   const [nextStepOnSuccess, setNextStepOnSuccess] = useState('');
   const [nextStepOnFailure, setNextStepOnFailure] = useState('');
-  const [responseDataPath, setResponseDataPath] = useState('');
-  const [updateJsonPath, setUpdateJsonPath] = useState('');
+  const [responseDataMappings, setResponseDataMappings] = useState<Array<{ responsePath: string; updatePath: string }>>([
+    { responsePath: '', updatePath: '' }
+  ]);
   const [useApiResponseForFilename, setUseApiResponseForFilename] = useState(false);
   const [filenameSourcePath, setFilenameSourcePath] = useState('');
   const [fallbackFilename, setFallbackFilename] = useState('');
@@ -67,6 +72,7 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
   });
   const [uploadType, setUploadType] = useState('csv');
   const [escapeSingleQuotesInBody, setEscapeSingleQuotesInBody] = useState(false);
+  const [apiEndpointConfig, setApiEndpointConfig] = useState<any>({});
 
   useEffect(() => {
     console.log('StepConfigForm useEffect - step data:', step);
@@ -102,9 +108,17 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
         setRequestBody(config.requestBody || config.request_body || '');
         setEscapeSingleQuotesInBody(config.escapeSingleQuotesInBody || false);
 
-        // API Call response handling configuration
-        setResponseDataPath(config.responseDataPath || '');
-        setUpdateJsonPath(config.updateJsonPath || '');
+        // API Call response handling configuration - support both old and new formats
+        if (config.responseDataMappings && Array.isArray(config.responseDataMappings)) {
+          setResponseDataMappings(config.responseDataMappings);
+        } else if (config.responseDataPath || config.updateJsonPath) {
+          setResponseDataMappings([{
+            responsePath: config.responseDataPath || '',
+            updatePath: config.updateJsonPath || ''
+          }]);
+        } else {
+          setResponseDataMappings([{ responsePath: '', updatePath: '' }]);
+        }
 
         // SFTP Upload configuration
         setUseApiResponseForFilename(config.useApiResponseForFilename || false);
@@ -151,6 +165,11 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
         setPdfEmailStrategy(config.pdfEmailStrategy || 'all_pages_in_group');
         setSpecificPageToEmail(config.specificPageToEmail || 1);
         setCcUser(config.ccUser || false);
+
+        // API Endpoint configuration
+        if (step?.stepType === 'api_endpoint' || step?.step_type === 'api_endpoint') {
+          setApiEndpointConfig(config);
+        }
       } else {
         console.log('No configJson found in step, using defaults');
 
@@ -181,6 +200,22 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
     setTransformations(updated);
   };
 
+  const addResponseMapping = () => {
+    setResponseDataMappings([...responseDataMappings, { responsePath: '', updatePath: '' }]);
+  };
+
+  const removeResponseMapping = (index: number) => {
+    if (responseDataMappings.length > 1) {
+      setResponseDataMappings(responseDataMappings.filter((_, i) => i !== index));
+    }
+  };
+
+  const updateResponseMapping = (index: number, field: 'responsePath' | 'updatePath', value: string) => {
+    const updated = [...responseDataMappings];
+    updated[index][field] = value;
+    setResponseDataMappings(updated);
+  };
+
   const handleSave = () => {
     let config: any = {};
 
@@ -198,11 +233,16 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
           url,
           headers: parsedHeaders,
           requestBody: method === 'GET' ? '' : requestBody,
-          responseDataPath: responseDataPath.trim() || undefined,
-          updateJsonPath: updateJsonPath.trim() || undefined,
+          responseDataMappings: responseDataMappings.filter(m => m.responsePath || m.updatePath).length > 0
+            ? responseDataMappings.filter(m => m.responsePath && m.updatePath)
+            : undefined,
           escapeSingleQuotesInBody: escapeSingleQuotesInBody
         };
         console.log('Saving API call config:', config);
+        break;
+      case 'api_endpoint':
+        config = apiEndpointConfig;
+        console.log('Saving API endpoint config:', config);
         break;
       case 'data_transform':
         config = {
@@ -278,9 +318,9 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
 
   const availableSteps = allSteps.filter(s => s.id !== step?.id);
 
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
+  return createPortal(
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-6xl h-[90vh] overflow-hidden flex flex-col">
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
           <div>
             <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Add New Step</h3>
@@ -294,7 +334,7 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
           </button>
         </div>
 
-        <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+        <div className="p-6 overflow-y-auto flex-1">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -310,21 +350,21 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Step Type
-              </label>
-              <select
+              <Select
+                label="Step Type"
                 value={stepType}
-                onChange={(e) => setStepType(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
-              >
-                <option value="api_call">API Call</option>
-                <option value="conditional_check">Conditional Check</option>
-                <option value="data_transform">Data Transform</option>
-                <option value="email_action">Email Action</option>
-                <option value="rename_file">Rename File</option>
-                <option value="sftp_upload">SFTP Upload</option>
-              </select>
+                onValueChange={setStepType}
+                options={[
+                  { value: 'api_call', label: 'API Call' },
+                  { value: 'api_endpoint', label: 'API Endpoint' },
+                  { value: 'conditional_check', label: 'Conditional Check' },
+                  { value: 'data_transform', label: 'Data Transform' },
+                  { value: 'email_action', label: 'Email Action' },
+                  { value: 'rename_file', label: 'Rename File' },
+                  { value: 'sftp_upload', label: 'SFTP Upload' }
+                ]}
+                searchable={false}
+              />
             </div>
           </div>
 
@@ -332,19 +372,18 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
           {stepType === 'api_call' && (
             <div className="grid grid-cols-1 md:grid-cols-1 gap-6 mb-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Method
-                </label>
-                <select
+                <Select
+                  label="HTTP Method"
                   value={method}
-                  onChange={(e) => setMethod(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
-                >
-                  <option value="POST">POST</option>
-                  <option value="PUT">PUT</option>
-                  <option value="PATCH">PATCH</option>
-                  <option value="GET">GET</option>
-                </select>
+                  onValueChange={setMethod}
+                  options={[
+                    { value: 'POST', label: 'POST' },
+                    { value: 'PUT', label: 'PUT' },
+                    { value: 'PATCH', label: 'PATCH' },
+                    { value: 'GET', label: 'GET' }
+                  ]}
+                  searchable={false}
+                />
               </div>
             </div>
           )}
@@ -355,17 +394,16 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
               <h6 className="font-medium text-gray-700 dark:text-gray-300 mb-4">PDF Upload Strategy</h6>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Upload Strategy
-                  </label>
-                  <select
+                  <Select
+                    label="Upload Strategy"
                     value={pdfUploadStrategy}
-                    onChange={(e) => setPdfUploadStrategy(e.target.value as 'all_pages_in_group' | 'specific_page_in_group')}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
-                  >
-                    <option value="all_pages_in_group">Upload All Pages in Group</option>
-                    <option value="specific_page_in_group">Upload Specific Page Only</option>
-                  </select>
+                    onValueChange={(value) => setPdfUploadStrategy(value as 'all_pages_in_group' | 'specific_page_in_group')}
+                    options={[
+                      { value: 'all_pages_in_group', label: 'Upload All Pages in Group' },
+                      { value: 'specific_page_in_group', label: 'Upload Specific Page Only' }
+                    ]}
+                    searchable={false}
+                  />
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     Choose whether to upload the entire grouped PDF or just a specific page from the group
                   </p>
@@ -457,39 +495,75 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Response Data Path
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Response Data Mappings
                     </label>
-                    <input
-                      type="text"
-                      value={responseDataPath}
-                      onChange={(e) => setResponseDataPath(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 font-mono text-sm dark:bg-gray-700 dark:text-gray-100"
-                      placeholder="e.g., clients[0].clientId or data.result"
-                    />
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      JSON path to extract data from API response
-                    </p>
+                    <button
+                      type="button"
+                      onClick={addResponseMapping}
+                      className="flex items-center px-3 py-1 text-sm bg-purple-600 text-white rounded-md hover:bg-purple-700"
+                    >
+                      <Plus className="w-4 h-4 mr-1" />
+                      Add Mapping
+                    </button>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Update JSON Path
-                    </label>
-                    <input
-                      type="text"
-                      value={updateJsonPath}
-                      onChange={(e) => setUpdateJsonPath(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 font-mono text-sm dark:bg-gray-700 dark:text-gray-100"
-                      placeholder="e.g., orders.0.consignee.clientId"
-                    />
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      Where to store the response data in extracted JSON
-                    </p>
-                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Extract multiple values from API response and store them in different locations in your extracted JSON data
+                  </p>
+
+                  {responseDataMappings.map((mapping, index) => (
+                    <div key={index} className="flex items-start space-x-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-md">
+                      <div className="flex-1 space-y-2">
+                        <div>
+                          <input
+                            type="text"
+                            value={mapping.responsePath}
+                            onChange={(e) => updateResponseMapping(index, 'responsePath', e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 font-mono text-sm dark:bg-gray-600 dark:text-gray-100"
+                            placeholder="Response path (e.g., clients[0].clientId)"
+                          />
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            JSON path to extract from API response
+                          </p>
+                        </div>
+                        <div>
+                          <input
+                            type="text"
+                            value={mapping.updatePath}
+                            onChange={(e) => updateResponseMapping(index, 'updatePath', e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 font-mono text-sm dark:bg-gray-600 dark:text-gray-100"
+                            placeholder="Update path (e.g., orders.0.consignee.clientId)"
+                          />
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            Where to store in extracted JSON
+                          </p>
+                        </div>
+                      </div>
+                      {responseDataMappings.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeResponseMapping(index)}
+                          className="p-2 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-md flex-shrink-0 mt-1"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
+            )}
+
+            {stepType === 'api_endpoint' && (
+              <ApiEndpointConfigSection
+                config={apiEndpointConfig}
+                onChange={setApiEndpointConfig}
+                allSteps={allSteps}
+                currentStepOrder={step?.stepOrder || step?.step_order}
+                extractionType={extractionType}
+              />
             )}
 
             {stepType === 'data_transform' && (
@@ -539,19 +613,19 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
             {stepType === 'sftp_upload' && (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Upload Type <span className="text-red-500">*</span>
-                  </label>
-                  <select
+                  <Select
+                    label="Upload Type"
                     value={uploadType}
-                    onChange={(e) => setUploadType(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
-                  >
-                    <option value="csv">CSV File</option>
-                    <option value="json">JSON File</option>
-                    <option value="xml">XML File</option>
-                    <option value="pdf">PDF File</option>
-                  </select>
+                    onValueChange={setUploadType}
+                    options={[
+                      { value: 'csv', label: 'CSV File' },
+                      { value: 'json', label: 'JSON File' },
+                      { value: 'xml', label: 'XML File' },
+                      { value: 'pdf', label: 'PDF File' }
+                    ]}
+                    required
+                    searchable={false}
+                  />
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     Select the type of file to upload to SFTP. The default SFTP configuration from Settings will be used.
                   </p>
@@ -698,21 +772,20 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Condition Type
-                    </label>
-                    <select
+                    <Select
+                      label="Condition Type"
                       value={conditionalOperator}
-                      onChange={(e) => setConditionalOperator(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
-                    >
-                      <option value="equals">Equals</option>
-                      <option value="is_null">Is Null</option>
-                      <option value="is_not_null">Is Not Null</option>
-                      <option value="contains">Contains</option>
-                      <option value="greater_than">Greater Than</option>
-                      <option value="less_than">Less Than</option>
-                    </select>
+                      onValueChange={setConditionalOperator}
+                      options={[
+                        { value: 'equals', label: 'Equals' },
+                        { value: 'is_null', label: 'Is Null' },
+                        { value: 'is_not_null', label: 'Is Not Null' },
+                        { value: 'contains', label: 'Contains' },
+                        { value: 'greater_than', label: 'Greater Than' },
+                        { value: 'less_than', label: 'Less Than' }
+                      ]}
+                      searchable={false}
+                    />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -835,19 +908,18 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
 
                 {appendTimestamp && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Timestamp Format
-                    </label>
-                    <select
+                    <Select
+                      label="Timestamp Format"
                       value={timestampFormat}
-                      onChange={(e) => setTimestampFormat(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
-                    >
-                      <option value="YYYYMMDD">YYYYMMDD (e.g., 20250116)</option>
-                      <option value="YYYY-MM-DD">YYYY-MM-DD (e.g., 2025-01-16)</option>
-                      <option value="YYYYMMDD_HHMMSS">YYYYMMDD_HHMMSS (e.g., 20250116_143022)</option>
-                      <option value="YYYY-MM-DD_HH-MM-SS">YYYY-MM-DD_HH-MM-SS (e.g., 2025-01-16_14-30-22)</option>
-                    </select>
+                      onValueChange={setTimestampFormat}
+                      options={[
+                        { value: 'YYYYMMDD', label: 'YYYYMMDD (e.g., 20250116)' },
+                        { value: 'YYYY-MM-DD', label: 'YYYY-MM-DD (e.g., 2025-01-16)' },
+                        { value: 'YYYYMMDD_HHMMSS', label: 'YYYYMMDD_HHMMSS (e.g., 20250116_143022)' },
+                        { value: 'YYYY-MM-DD_HH-MM-SS', label: 'YYYY-MM-DD_HH-MM-SS (e.g., 2025-01-16_14-30-22)' }
+                      ]}
+                      searchable={false}
+                    />
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                       Timestamp will be inserted before the file extension (e.g., invoice_20250116.pdf)
                     </p>
@@ -875,17 +947,16 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
             {stepType === 'email_action' && (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Email Action Type
-                  </label>
-                  <select
+                  <Select
+                    label="Email Action Type"
                     value={emailActionType}
-                    onChange={(e) => setEmailActionType(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
-                  >
-                    <option value="send_email">Send Email</option>
-                    <option value="archive_email">Archive Email</option>
-                  </select>
+                    onValueChange={setEmailActionType}
+                    options={[
+                      { value: 'send_email', label: 'Send Email' },
+                      { value: 'archive_email', label: 'Archive Email' }
+                    ]}
+                    searchable={false}
+                  />
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -962,7 +1033,7 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                     onChange={(e) => setEmailBody(e.target.value)}
                     rows={6}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
-                    placeholder="Dear {{customerName}},&#10;&#10;Your document {{invoiceNumber}} has been processed successfully.&#10;&#10;Please find the attached PDF for your records.&#10;&#10;Best regards,&#10;ParseIt System"
+                    placeholder="Dear {{customerName}},&#10;&#10;Your document {{invoiceNumber}} has been processed successfully.&#10;&#10;Please find the attached PDF for your records.&#10;&#10;Best regards,&#10;Parse-It System"
                   />
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     Use {`{{fieldName}}`} to reference extracted data. Use &#10; for line breaks.
@@ -985,18 +1056,17 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
 
                   {includeAttachment && (
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        Attachment Source
-                      </label>
-                      <select
+                      <Select
+                        label="Attachment Source"
                         value={attachmentSource}
-                        onChange={(e) => setAttachmentSource(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
-                      >
-                        <option value="original_pdf">Original PDF</option>
-                        <option value="extraction_type_filename">Extraction Type Filename</option>
-                        <option value="renamed_pdf">Renamed PDF (from previous step)</option>
-                      </select>
+                        onValueChange={setAttachmentSource}
+                        options={[
+                          { value: 'original_pdf', label: 'Original PDF' },
+                          { value: 'extraction_type_filename', label: 'Extraction Type Filename' },
+                          { value: 'renamed_pdf', label: 'Renamed PDF (from previous step)' }
+                        ]}
+                        searchable={false}
+                      />
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                         Choose whether to attach the original PDF, use the extraction type's filename template, or a renamed version from a previous workflow step
                       </p>
@@ -1009,17 +1079,16 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                     <h6 className="font-medium text-gray-700 dark:text-gray-300 mb-4">PDF Attachment Strategy</h6>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                          Attachment Strategy
-                        </label>
-                        <select
+                        <Select
+                          label="Attachment Strategy"
                           value={pdfEmailStrategy}
-                          onChange={(e) => setPdfEmailStrategy(e.target.value as 'all_pages_in_group' | 'specific_page_in_group')}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
-                        >
-                          <option value="all_pages_in_group">Attach All Pages in Group</option>
-                          <option value="specific_page_in_group">Attach Specific Page Only</option>
-                        </select>
+                          onValueChange={(value) => setPdfEmailStrategy(value as 'all_pages_in_group' | 'specific_page_in_group')}
+                          options={[
+                            { value: 'all_pages_in_group', label: 'Attach All Pages in Group' },
+                            { value: 'specific_page_in_group', label: 'Attach Specific Page Only' }
+                          ]}
+                          searchable={false}
+                        />
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                           Choose whether to attach the entire grouped PDF or just a specific page from the group
                         </p>
@@ -1052,42 +1121,36 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Next Step on Success
-              </label>
-              <select
-                value={nextStepOnSuccess}
-                onChange={(e) => setNextStepOnSuccess(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
-              >
-                <option value="">End workflow</option>
-                {availableSteps.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.stepName || s.step_name}
-                  </option>
-                ))}
-              </select>
+              <Select
+                label="Next Step on Success"
+                value={nextStepOnSuccess || '__none__'}
+                onValueChange={(value) => setNextStepOnSuccess(value === '__none__' ? '' : value)}
+                options={[
+                  { value: '__none__', label: 'End workflow' },
+                  ...availableSteps.map((s) => ({
+                    value: s.id,
+                    label: s.stepName || s.step_name
+                  }))
+                ]}
+              />
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 Step to execute if this step succeeds
               </p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Next Step on Failure
-              </label>
-              <select
-                value={nextStepOnFailure}
-                onChange={(e) => setNextStepOnFailure(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
-              >
-                <option value="">End workflow</option>
-                {availableSteps.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.stepName || s.step_name}
-                  </option>
-                ))}
-              </select>
+              <Select
+                label="Next Step on Failure"
+                value={nextStepOnFailure || '__none__'}
+                onValueChange={(value) => setNextStepOnFailure(value === '__none__' ? '' : value)}
+                options={[
+                  { value: '__none__', label: 'End workflow' },
+                  ...availableSteps.map((s) => ({
+                    value: s.id,
+                    label: s.stepName || s.step_name
+                  }))
+                ]}
+              />
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 Step to execute if this step fails
               </p>
@@ -1095,7 +1158,7 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
           </div>
         </div>
 
-        <div className="flex items-center justify-end px-6 py-4 bg-gray-50 dark:bg-gray-700 border-t border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-end px-6 py-4 bg-gray-50 dark:bg-gray-700 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
           <div className="flex space-x-3">
             <button
               onClick={onCancel}
@@ -1112,6 +1175,7 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
