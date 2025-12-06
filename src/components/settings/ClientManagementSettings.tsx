@@ -234,7 +234,7 @@ export default function ClientManagementSettings({
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
         <span className="ml-3 text-gray-600">Loading clients...</span>
       </div>
     );
@@ -246,8 +246,8 @@ export default function ClientManagementSettings({
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 pt-20">
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
             <div className="text-center mb-6">
-              <div className="bg-teal-100 dark:bg-teal-900/50 p-3 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-                <Plus className="h-8 w-8 text-teal-600 dark:text-teal-400" />
+              <div className="bg-purple-100 dark:bg-purple-900/50 p-3 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                <Plus className="h-8 w-8 text-purple-600 dark:text-purple-400" />
               </div>
               <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">Add New Client</h3>
               <p className="text-gray-600 dark:text-gray-400">Create a new client company with custom access permissions</p>
@@ -263,7 +263,7 @@ export default function ClientManagementSettings({
                   value={newClient.clientName}
                   onChange={(e) => setNewClient(prev => ({ ...prev, clientName: e.target.value }))}
                   placeholder="Enter client name"
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 />
               </div>
 
@@ -276,7 +276,7 @@ export default function ClientManagementSettings({
                   value={newClient.clientId}
                   onChange={(e) => setNewClient(prev => ({ ...prev, clientId: e.target.value }))}
                   placeholder="Enter unique client ID"
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 />
               </div>
 
@@ -286,7 +286,7 @@ export default function ClientManagementSettings({
                   id="newClientActive"
                   checked={newClient.isActive}
                   onChange={(e) => setNewClient(prev => ({ ...prev, isActive: e.target.checked }))}
-                  className="w-4 h-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500"
+                  className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
                 />
                 <label htmlFor="newClientActive" className="text-sm font-medium text-gray-700 dark:text-gray-300">
                   Active
@@ -303,10 +303,10 @@ export default function ClientManagementSettings({
                       id="newClientOrderEntry"
                       checked={newClient.hasOrderEntryAccess}
                       onChange={(e) => setNewClient(prev => ({ ...prev, hasOrderEntryAccess: e.target.checked }))}
-                      className="w-4 h-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500"
+                      className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
                     />
                     <label htmlFor="newClientOrderEntry" className="text-sm text-gray-700 dark:text-gray-300 flex items-center space-x-2">
-                      <FileText className="h-4 w-4 text-teal-600" />
+                      <FileText className="h-4 w-4 text-purple-600" />
                       <span>Order Entry Access</span>
                     </label>
                   </div>
@@ -317,10 +317,10 @@ export default function ClientManagementSettings({
                       id="newClientRateQuote"
                       checked={newClient.hasRateQuoteAccess}
                       onChange={(e) => setNewClient(prev => ({ ...prev, hasRateQuoteAccess: e.target.checked }))}
-                      className="w-4 h-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500"
+                      className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
                     />
                     <label htmlFor="newClientRateQuote" className="text-sm text-gray-700 dark:text-gray-300 flex items-center space-x-2">
-                      <DollarSign className="h-4 w-4 text-teal-600" />
+                      <DollarSign className="h-4 w-4 text-purple-600" />
                       <span>Rate Quote Access</span>
                     </label>
                   </div>
@@ -331,10 +331,10 @@ export default function ClientManagementSettings({
                       id="newClientAddressBook"
                       checked={newClient.hasAddressBookAccess}
                       onChange={(e) => setNewClient(prev => ({ ...prev, hasAddressBookAccess: e.target.checked }))}
-                      className="w-4 h-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500"
+                      className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
                     />
                     <label htmlFor="newClientAddressBook" className="text-sm text-gray-700 dark:text-gray-300 flex items-center space-x-2">
-                      <BookUser className="h-4 w-4 text-teal-600" />
+                      <BookUser className="h-4 w-4 text-purple-600" />
                       <span>Address Book Access</span>
                     </label>
                   </div>
@@ -351,7 +351,7 @@ export default function ClientManagementSettings({
                 <button
                   onClick={handleAddClient}
                   disabled={isCreating}
-                  className="flex-1 px-4 py-3 bg-teal-600 hover:bg-teal-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200"
+                  className="flex-1 px-4 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200"
                 >
                   {isCreating ? 'Creating...' : 'Create Client'}
                 </button>
@@ -560,7 +560,7 @@ export default function ClientManagementSettings({
         </div>
         <button
           onClick={() => setShowAddClientModal(true)}
-          className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
+          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
         >
           <Plus className="h-4 w-4" />
           <span>Add Client</span>
@@ -594,7 +594,7 @@ export default function ClientManagementSettings({
           <p className="text-gray-600 dark:text-gray-400 mb-4">Get started by creating your first client company.</p>
           <button
             onClick={() => setShowAddClientModal(true)}
-            className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2 mx-auto"
+            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2 mx-auto"
           >
             <Plus className="h-4 w-4" />
             <span>Add First Client</span>
@@ -609,8 +609,8 @@ export default function ClientManagementSettings({
             >
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center space-x-3">
-                  <div className="bg-teal-100 dark:bg-teal-900/50 p-2 rounded-lg">
-                    <Building2 className="h-5 w-5 text-teal-600 dark:text-teal-400" />
+                  <div className="bg-purple-100 dark:bg-purple-900/50 p-2 rounded-lg">
+                    <Building2 className="h-5 w-5 text-purple-600 dark:text-purple-400" />
                   </div>
                   <div>
                     <h4 className="font-semibold text-gray-900 dark:text-gray-100">{client.clientName}</h4>
@@ -658,7 +658,7 @@ export default function ClientManagementSettings({
                   <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">Feature Access</p>
                   <div className="flex flex-wrap gap-2">
                     {client.hasOrderEntryAccess ? (
-                      <span className="flex items-center space-x-1 px-2 py-1 bg-teal-100 dark:bg-teal-900/30 text-teal-800 dark:text-teal-300 text-xs rounded-full">
+                      <span className="flex items-center space-x-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 text-xs rounded-full">
                         <CheckCircle className="h-3 w-3" />
                         <span>Order Entry</span>
                       </span>
@@ -669,7 +669,7 @@ export default function ClientManagementSettings({
                       </span>
                     )}
                     {client.hasRateQuoteAccess ? (
-                      <span className="flex items-center space-x-1 px-2 py-1 bg-teal-100 dark:bg-teal-900/30 text-teal-800 dark:text-teal-300 text-xs rounded-full">
+                      <span className="flex items-center space-x-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 text-xs rounded-full">
                         <CheckCircle className="h-3 w-3" />
                         <span>Rate Quote</span>
                       </span>
@@ -680,7 +680,7 @@ export default function ClientManagementSettings({
                       </span>
                     )}
                     {client.hasAddressBookAccess ? (
-                      <span className="flex items-center space-x-1 px-2 py-1 bg-teal-100 dark:bg-teal-900/30 text-teal-800 dark:text-teal-300 text-xs rounded-full">
+                      <span className="flex items-center space-x-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 text-xs rounded-full">
                         <CheckCircle className="h-3 w-3" />
                         <span>Address Book</span>
                       </span>
@@ -698,9 +698,9 @@ export default function ClientManagementSettings({
         </div>
       )}
 
-      <div className="bg-teal-50 dark:bg-teal-900/20 border border-teal-200 dark:border-teal-700 rounded-lg p-4">
-        <h4 className="font-semibold text-teal-800 dark:text-teal-300 mb-2">Client Management Information</h4>
-        <ul className="text-sm text-teal-700 dark:text-teal-400 space-y-1">
+      <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700 rounded-lg p-4">
+        <h4 className="font-semibold text-purple-800 dark:text-purple-300 mb-2">Client Management Information</h4>
+        <ul className="text-sm text-purple-700 dark:text-purple-400 space-y-1">
           <li>• Each client company can have multiple users with individual credentials</li>
           <li>• Enable Order Entry or Rate Quote access at the client level to make these features available to users</li>
           <li>• Client admins can manage users within their organization</li>
