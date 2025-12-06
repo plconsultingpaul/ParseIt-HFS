@@ -5,6 +5,7 @@ export interface FieldMapping {
   dataType?: 'string' | 'number' | 'integer' | 'datetime' | 'phone' | 'boolean';
   maxLength?: number;
   removeIfNull?: boolean;
+  isWorkflowOnly?: boolean;
 }
 
 export interface ArraySplitConfig {
@@ -36,9 +37,14 @@ export interface ExtractionType {
   csvIncludeHeaders?: boolean;
   csvRowDetectionInstructions?: string;
   csvMultiPageProcessing?: boolean;
+  jsonMultiPageProcessing?: boolean;
   defaultUploadMode?: 'manual' | 'auto';
   lockUploadMode?: boolean;
   arraySplitConfigs?: ArraySplitConfig[];
+  pageProcessingMode?: 'all' | 'single' | 'range';
+  pageProcessingSinglePage?: number;
+  pageProcessingRangeStart?: number;
+  pageProcessingRangeEnd?: number;
 }
 
 export interface TransformationFieldMapping {
@@ -63,6 +69,7 @@ export interface PageGroupConfig {
   useAiDetection?: boolean;
   fallbackBehavior?: 'skip' | 'fixed_position' | 'error';
   detectionConfidenceThreshold?: number;
+  followsPreviousGroup?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -119,16 +126,41 @@ export interface ApiConfig {
   customOrderDisplayFields: OrderDisplayMapping[];
 }
 
+export interface SecondaryApiConfig {
+  id?: string;
+  name: string;
+  baseUrl: string;
+  authToken: string;
+  description: string;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface WorkflowStep {
   id: string;
   workflowId: string;
   stepOrder: number;
-  stepType: 'api_call' | 'data_transform' | 'sftp_upload' | 'conditional_check' | 'email_action' | 'rename_pdf';
+  stepType: 'api_call' | 'api_endpoint' | 'data_transform' | 'sftp_upload' | 'conditional_check' | 'email_action' | 'rename_pdf';
   stepName: string;
   configJson: any;
   nextStepOnSuccessId?: string;
   nextStepOnFailureId?: string;
   escapeSingleQuotesInBody?: boolean;
+}
+
+export interface ApiEndpointStepConfig {
+  apiSourceType: 'main' | 'secondary';
+  apiEndpointId?: string;
+  secondaryApiId?: string;
+  httpMethod: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  apiSpecEndpointId?: string;
+  apiPath: string;
+  queryParameterConfig: Record<string, { enabled: boolean; value: string }>;
+  pathVariables?: Record<string, string>;
+  responsePath?: string;
+  updateJsonPath?: string;
+  manualApiEntry?: boolean;
 }
 
 export interface Workflow {
@@ -385,6 +417,45 @@ export interface Client {
   updatedAt: string;
 }
 
+export interface ApiSpec {
+  id: string;
+  api_endpoint_id?: string;
+  secondary_api_id?: string;
+  name: string;
+  file_name: string;
+  spec_content: any;
+  version: string;
+  description: string;
+  uploaded_at: string;
+  updated_at: string;
+}
+
+export interface ApiSpecEndpoint {
+  id: string;
+  api_spec_id: string;
+  path: string;
+  method: string;
+  summary: string;
+  parameters: any[];
+  request_body?: any;
+  responses: any;
+  created_at: string;
+}
+
+export interface ApiEndpointField {
+  id: string;
+  api_spec_endpoint_id: string;
+  field_name: string;
+  field_path: string;
+  field_type: string;
+  is_required: boolean;
+  description: string;
+  example?: string;
+  format?: string;
+  parent_field_id?: string;
+  created_at: string;
+}
+
 export interface ClientAddress {
   id: string;
   clientId: string;
@@ -404,4 +475,163 @@ export interface ClientAddress {
   isConsignee: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export type OrderEntryFieldType = 'text' | 'number' | 'date' | 'datetime' | 'phone' | 'dropdown' | 'file' | 'boolean' | 'zip' | 'postal_code' | 'province' | 'state';
+
+export interface OrderEntryConfig {
+  id: string;
+  apiEndpoint: string;
+  apiMethod: string;
+  apiHeaders: Record<string, string>;
+  apiAuthType: string;
+  apiAuthToken: string;
+  workflowId?: string;
+  isEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrderEntryJsonSchema {
+  id: string;
+  schemaName: string;
+  schemaVersion: string;
+  schemaContent: any;
+  fieldPaths: string[];
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrderEntryFieldGroup {
+  id: string;
+  groupName: string;
+  groupOrder: number;
+  description: string;
+  isCollapsible: boolean;
+  isExpandedByDefault: boolean;
+  backgroundColor: string;
+  borderColor: string;
+  isArrayGroup: boolean;
+  arrayMinRows: number;
+  arrayMaxRows: number;
+  arrayJsonPath: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrderEntryField {
+  id: string;
+  fieldGroupId: string;
+  fieldName: string;
+  fieldLabel: string;
+  fieldType: OrderEntryFieldType;
+  placeholder: string;
+  helpText: string;
+  isRequired: boolean;
+  maxLength?: number;
+  minValue?: number;
+  maxValue?: number;
+  defaultValue: string;
+  dropdownOptions: string[];
+  jsonPath: string;
+  isArrayField: boolean;
+  arrayMinRows: number;
+  arrayMaxRows: number;
+  aiExtractionInstructions: string;
+  validationRegex: string;
+  validationErrorMessage: string;
+  fieldOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrderEntryFieldLayout {
+  id: string;
+  fieldId: string;
+  rowIndex: number;
+  columnIndex: number;
+  widthColumns: number;
+  mobileWidthColumns: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrderEntryPdf {
+  id: string;
+  userId: string;
+  originalFilename: string;
+  storagePath: string;
+  fileSize: number;
+  pageCount: number;
+  extractionStatus: 'pending' | 'processing' | 'completed' | 'failed';
+  extractedData: Record<string, any>;
+  extractionConfidence: Record<string, number>;
+  errorMessage: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrderEntrySubmission {
+  id: string;
+  userId: string;
+  pdfId?: string;
+  submissionData: Record<string, any>;
+  apiResponse: Record<string, any>;
+  apiStatusCode?: number;
+  workflowExecutionLogId?: string;
+  submissionStatus: 'pending' | 'processing' | 'completed' | 'failed';
+  errorMessage: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UserRegistrationToken {
+  id: string;
+  userId: string;
+  token: string;
+  expiresAt: string;
+  isUsed: boolean;
+  usedAt?: string;
+  createdAt: string;
+}
+
+export interface PdfExtractionResult {
+  success: boolean;
+  fieldData: Record<string, any>;
+  confidence: Record<string, number>;
+  errorMessage?: string;
+}
+
+export interface OrderEntryFormData {
+  [key: string]: any;
+}
+
+export interface CompanyBranding {
+  id: string;
+  companyName: string;
+  logoUrl: string;
+  logoStoragePath?: string;
+  showCompanyName: boolean;
+}
+
+export interface ApiError {
+  statusCode: number;
+  statusText: string;
+  details: any;
+  url: string;
+  headers: Record<string, string>;
+}
+
+export interface PageProcessingState {
+  isProcessing: boolean;
+  isExtracting: boolean;
+  extractedData: string;
+  workflowOnlyData?: string;
+  extractionError: string;
+  apiResponse: string;
+  apiError: ApiError | null;
+  success: boolean;
+  workflowExecutionLogId?: string;
+  workflowExecutionLog?: WorkflowExecutionLog | null;
 }
