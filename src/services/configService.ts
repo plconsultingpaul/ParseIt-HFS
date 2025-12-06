@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import type { SftpConfig, SettingsConfig, ApiConfig, CompanyBranding } from '../types';
+import type { SftpConfig, SettingsConfig, ApiConfig, CompanyBranding, SecondaryApiConfig } from '../types';
 
 // API Configuration
 export async function fetchApiConfig(): Promise<ApiConfig> {
@@ -227,6 +227,44 @@ export async function updateSettingsConfig(config: SettingsConfig): Promise<void
 }
 
 // Company Branding
+export async function uploadCompanyLogo(file: File): Promise<{ publicUrl: string; storagePath: string }> {
+  try {
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/svg+xml', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      throw new Error('Invalid file type. Please upload PNG, JPG, SVG, or WebP');
+    }
+
+    const maxSize = 2 * 1024 * 1024;
+    if (file.size > maxSize) {
+      throw new Error('File size must be less than 2MB');
+    }
+
+    const fileExt = file.name.split('.').pop();
+    const fileName = `logo-${Date.now()}.${fileExt}`;
+    const filePath = `company-logos/${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('pdfs')
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: true
+      });
+
+    if (uploadError) {
+      throw new Error(`Upload failed: ${uploadError.message}`);
+    }
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('pdfs')
+      .getPublicUrl(filePath);
+
+    return { publicUrl, storagePath: filePath };
+  } catch (error: any) {
+    console.error('Error uploading logo:', error);
+    throw error;
+  }
+}
+
 export async function fetchCompanyBranding(): Promise<CompanyBranding> {
   try {
     const { data, error } = await supabase
@@ -243,9 +281,8 @@ export async function fetchCompanyBranding(): Promise<CompanyBranding> {
         id: branding.id,
         companyName: branding.company_name || '',
         logoUrl: branding.logo_url || '',
-        showCompanyName: branding.show_company_name || false,
-        createdAt: branding.created_at,
-        updatedAt: branding.updated_at
+        logoStoragePath: branding.logo_storage_path || '',
+        showCompanyName: branding.show_company_name || false
       };
     }
 
@@ -253,6 +290,7 @@ export async function fetchCompanyBranding(): Promise<CompanyBranding> {
       id: '',
       companyName: '',
       logoUrl: '',
+      logoStoragePath: '',
       showCompanyName: false
     };
   } catch (error) {
@@ -271,6 +309,7 @@ export async function updateCompanyBranding(branding: CompanyBranding): Promise<
     const brandingData = {
       company_name: branding.companyName,
       logo_url: branding.logoUrl,
+      logo_storage_path: branding.logoStoragePath || null,
       show_company_name: branding.showCompanyName,
       updated_at: new Date().toISOString()
     };
@@ -289,6 +328,127 @@ export async function updateCompanyBranding(branding: CompanyBranding): Promise<
     }
   } catch (error) {
     console.error('Error updating company branding:', error);
+    throw error;
+  }
+}
+
+// Secondary API Configuration
+export async function fetchSecondaryApiConfigs(): Promise<SecondaryApiConfig[]> {
+  try {
+    const { data, error } = await supabase
+      .from('secondary_api_configs')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    if (data && data.length > 0) {
+      return data.map(config => ({
+        id: config.id,
+        name: config.name,
+        baseUrl: config.base_url,
+        authToken: config.auth_token || '',
+        description: config.description || '',
+        isActive: config.is_active,
+        createdAt: config.created_at,
+        updatedAt: config.updated_at
+      }));
+    }
+
+    return [];
+  } catch (error) {
+    console.error('Error fetching secondary API configs:', error);
+    throw error;
+  }
+}
+
+export async function createSecondaryApiConfig(config: Omit<SecondaryApiConfig, 'id' | 'createdAt' | 'updatedAt'>): Promise<SecondaryApiConfig> {
+  try {
+    const configData = {
+      name: config.name,
+      base_url: config.baseUrl,
+      auth_token: config.authToken || '',
+      description: config.description || '',
+      is_active: config.isActive,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    const { data, error } = await supabase
+      .from('secondary_api_configs')
+      .insert([configData])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return {
+      id: data.id,
+      name: data.name,
+      baseUrl: data.base_url,
+      authToken: data.auth_token || '',
+      description: data.description || '',
+      isActive: data.is_active,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at
+    };
+  } catch (error) {
+    console.error('Error creating secondary API config:', error);
+    throw error;
+  }
+}
+
+export async function updateSecondaryApiConfig(id: string, config: Partial<SecondaryApiConfig>): Promise<void> {
+  try {
+    const updateData: any = {
+      updated_at: new Date().toISOString()
+    };
+
+    if (config.name !== undefined) updateData.name = config.name;
+    if (config.baseUrl !== undefined) updateData.base_url = config.baseUrl;
+    if (config.authToken !== undefined) updateData.auth_token = config.authToken;
+    if (config.description !== undefined) updateData.description = config.description;
+    if (config.isActive !== undefined) updateData.is_active = config.isActive;
+
+    const { error } = await supabase
+      .from('secondary_api_configs')
+      .update(updateData)
+      .eq('id', id);
+
+    if (error) throw error;
+  } catch (error) {
+    console.error('Error updating secondary API config:', error);
+    throw error;
+  }
+}
+
+export async function deleteSecondaryApiConfig(id: string): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from('secondary_api_configs')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+  } catch (error) {
+    console.error('Error deleting secondary API config:', error);
+    throw error;
+  }
+}
+
+export async function toggleSecondaryApiConfig(id: string, isActive: boolean): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from('secondary_api_configs')
+      .update({
+        is_active: isActive,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id);
+
+    if (error) throw error;
+  } catch (error) {
+    console.error('Error toggling secondary API config:', error);
     throw error;
   }
 }
