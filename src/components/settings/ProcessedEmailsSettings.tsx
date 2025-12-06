@@ -108,7 +108,7 @@ export default function ProcessedEmailsSettings({ processedEmails, onRefresh }: 
                 )}
                 {email.parseitId && (
                   <div>
-                    <span className="font-medium text-gray-700 dark:text-gray-300">ParseIt ID:</span>
+                    <span className="font-medium text-gray-700 dark:text-gray-300">Parse-It ID:</span>
                     <p className="text-gray-600 dark:text-gray-400">{email.parseitId}</p>
                   </div>
                 )}
