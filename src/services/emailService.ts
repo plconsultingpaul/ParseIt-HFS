@@ -12,9 +12,11 @@ export async function fetchEmailConfig(): Promise<EmailMonitoringConfig> {
 
     if (error) throw error;
 
+    console.log('[emailService] Raw data from database:', data);
+
     if (data && data.length > 0) {
       const config = data[0];
-      return {
+      const returnConfig = {
         provider: config.provider || 'office365',
         tenantId: config.tenant_id || '',
         clientId: config.client_id || '',
@@ -30,6 +32,13 @@ export async function fetchEmailConfig(): Promise<EmailMonitoringConfig> {
         enableAutoDetect: config.enable_auto_detect || false,
         lastCheck: config.last_check
       };
+      console.log('[emailService] Returning config:', {
+        ...returnConfig,
+        clientSecret: returnConfig.clientSecret ? '***HIDDEN***' : '(empty)',
+        gmailClientSecret: returnConfig.gmailClientSecret ? '***HIDDEN***' : '(empty)',
+        gmailRefreshToken: returnConfig.gmailRefreshToken ? '***HIDDEN***' : '(empty)'
+      });
+      return returnConfig;
     }
 
     return {
