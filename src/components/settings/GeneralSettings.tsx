@@ -91,9 +91,9 @@ export default function GeneralSettings({
 
       {/* Information */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h4 className="font-semibold text-blue-800 mb-2">About ParseIt</h4>
+        <h4 className="font-semibold text-blue-800 mb-2">About Parse-It</h4>
         <p className="text-sm text-blue-700">
-          ParseIt is a PDF data extraction application that uses AI to extract structured data from PDF documents.
+          Parse-It is a PDF data extraction application that uses AI to extract structured data from PDF documents.
           Configure your extraction types, SFTP settings, and email monitoring to automate your document processing workflow.
         </p>
       </div>
