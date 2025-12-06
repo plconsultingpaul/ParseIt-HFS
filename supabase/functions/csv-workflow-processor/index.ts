@@ -32,6 +32,56 @@ interface WorkflowStep {
   next_step_on_failure_id?: string
 }
 
+function filterCsvWorkflowOnlyFields(csvContent: string, fieldMappings: any[]): string {
+  if (!csvContent || !fieldMappings || fieldMappings.length === 0) {
+    return csvContent;
+  }
+
+  try {
+    const lines = csvContent.split('\n');
+    if (lines.length === 0) return csvContent;
+
+    // Get indices of fields that are NOT workflow-only
+    const outputFields = fieldMappings.filter(m => !m.isWorkflowOnly);
+    const outputFieldNames = outputFields.map(m => m.fieldName);
+
+    // Parse header row to find column indices
+    const headerLine = lines[0];
+    const headers = headerLine.split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+
+    // Get indices of columns to keep
+    const columnsToKeep = headers
+      .map((header, index) => ({ header, index }))
+      .filter(col => outputFieldNames.includes(col.header))
+      .map(col => col.index);
+
+    const workflowOnlyCount = headers.length - columnsToKeep.length;
+    console.log(`📊 CSV Filtering: Keeping ${columnsToKeep.length} columns, excluding ${workflowOnlyCount} workflow-only columns`);
+
+    if (columnsToKeep.length === headers.length) {
+      // No workflow-only fields, return original
+      console.log('📊 No workflow-only fields to filter, using original CSV');
+      return csvContent;
+    }
+
+    // Filter each line to keep only non-workflow-only columns
+    const filteredLines = lines.map(line => {
+      const values = line.split(',');
+      const filteredValues = columnsToKeep.map(index => values[index] || '');
+      return filteredValues.join(',');
+    });
+
+    const filteredCsv = filteredLines.join('\n');
+    console.log(`✅ CSV filtered successfully: ${lines.length} rows, ${columnsToKeep.length} columns`);
+    return filteredCsv;
+
+  } catch (error) {
+    console.error('❌ Error filtering CSV workflow-only fields:', error);
+    console.log('⚠️ Returning original CSV content');
+    return csvContent;
+  }
+}
+
 async function createStepLog(
   supabaseUrl: string,
   supabaseServiceKey: string,
@@ -685,22 +735,61 @@ Deno.serve(async (req: Request) => {
             throw new Error(`API response is not valid JSON: ${responseParseError.message}`)
           }
 
-          if (config.responseDataPath && config.updateJsonPath) {
+          // Support both old format (responseDataPath/updateJsonPath) and new format (responseDataMappings)
+          let mappingsToProcess = []
+          if (config.responseDataMappings && Array.isArray(config.responseDataMappings)) {
+            mappingsToProcess = config.responseDataMappings
+            console.log('📋 Using new format: processing', mappingsToProcess.length, 'mapping(s)')
+          } else if (config.responseDataPath && config.updateJsonPath) {
+            mappingsToProcess = [{
+              responsePath: config.responseDataPath,
+              updatePath: config.updateJsonPath
+            }]
+            console.log('📋 Using old format: converted to single mapping')
+          }
+
+          if (mappingsToProcess.length > 0) {
             console.log('🔄 Extracting data from API response...')
-            try {
-              let responseValue = getValueByPath(responseData, config.responseDataPath)
+            for (const mapping of mappingsToProcess) {
+              if (!mapping.responsePath || !mapping.updatePath) {
+                console.warn('⚠️ Skipping mapping with missing responsePath or updatePath:', mapping)
+                continue
+              }
 
-              console.log('📊 Extracted value:', responseValue)
+              try {
+                let responseValue = getValueByPath(responseData, mapping.responsePath)
+                console.log(`📊 Extracted value from "${mapping.responsePath}":`, responseValue)
 
-              const updatePathParts = config.updateJsonPath.split('.')
-              let current = contextData
+                const updatePathParts = mapping.updatePath.split('.')
+                let current = contextData
 
-              for (let j = 0; j < updatePathParts.length - 1; j++) {
-                const part = updatePathParts[j]
+                for (let j = 0; j < updatePathParts.length - 1; j++) {
+                  const part = updatePathParts[j]
 
-                if (part.includes('[') && part.includes(']')) {
-                  const arrayName = part.substring(0, part.indexOf('['))
-                  const arrayIndex = parseInt(part.substring(part.indexOf('[') + 1, part.indexOf(']')))
+                  if (part.includes('[') && part.includes(']')) {
+                    const arrayName = part.substring(0, part.indexOf('['))
+                    const arrayIndex = parseInt(part.substring(part.indexOf('[') + 1, part.indexOf(']')))
+
+                    if (!current[arrayName]) {
+                      current[arrayName] = []
+                    }
+
+                    while (current[arrayName].length <= arrayIndex) {
+                      current[arrayName].push({})
+                    }
+
+                    current = current[arrayName][arrayIndex]
+                  } else {
+                    if (!current[part]) current[part] = {}
+                    current = current[part]
+                  }
+                }
+
+                const finalPart = updatePathParts[updatePathParts.length - 1]
+
+                if (finalPart.includes('[') && finalPart.includes(']')) {
+                  const arrayName = finalPart.substring(0, finalPart.indexOf('['))
+                  const arrayIndex = parseInt(finalPart.substring(finalPart.indexOf('[') + 1, finalPart.indexOf(']')))
 
                   if (!current[arrayName]) {
                     current[arrayName] = []
@@ -710,37 +799,240 @@ Deno.serve(async (req: Request) => {
                     current[arrayName].push({})
                   }
 
-                  current = current[arrayName][arrayIndex]
+                  current[arrayName][arrayIndex] = responseValue
                 } else {
-                  if (!current[part]) current[part] = {}
-                  current = current[part]
+                  current[finalPart] = responseValue
                 }
+
+                console.log(`✅ Updated context data at path "${mapping.updatePath}"`)
+              } catch (extractError) {
+                console.error(`❌ Failed to process mapping "${mapping.responsePath}" -> "${mapping.updatePath}":`, extractError)
               }
-
-              const finalPart = updatePathParts[updatePathParts.length - 1]
-
-              if (finalPart.includes('[') && finalPart.includes(']')) {
-                const arrayName = finalPart.substring(0, finalPart.indexOf('['))
-                const arrayIndex = parseInt(finalPart.substring(finalPart.indexOf('[') + 1, finalPart.indexOf(']')))
-
-                if (!current[arrayName]) {
-                  current[arrayName] = []
-                }
-
-                while (current[arrayName].length <= arrayIndex) {
-                  current[arrayName].push({})
-                }
-
-                current[arrayName][arrayIndex] = responseValue
-              } else {
-                current[finalPart] = responseValue
-              }
-
-              console.log('✅ Updated context data with API response')
-            } catch (extractError) {
-              console.error('❌ Failed to extract data from API response:', extractError)
             }
           }
+
+        } else if (step.step_type === 'api_endpoint') {
+          console.log('🌐 === EXECUTING API ENDPOINT STEP ===');
+          const config = step.config_json || {};
+          console.log('🔧 API endpoint config:', JSON.stringify(config, null, 2));
+
+          // Determine which API configuration to use
+          let baseUrl = '';
+          let authToken = '';
+
+          if (config.apiSourceType === 'main') {
+            // Load main API config
+            const apiConfigResponse = await fetch(`${supabaseUrl}/rest/v1/api_settings?select=*`, {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${supabaseServiceKey}`,
+                'apikey': supabaseServiceKey,
+                'Content-Type': 'application/json'
+              }
+            });
+
+            if (apiConfigResponse.ok) {
+              const apiSettings = await apiConfigResponse.json();
+              if (apiSettings && apiSettings.length > 0) {
+                baseUrl = apiSettings[0].path || '';
+                authToken = apiSettings[0].password || '';
+                console.log('✅ Loaded main API config');
+                console.log('🔑 Auth token loaded:', authToken ? `${authToken.substring(0, 10)}...` : 'EMPTY');
+              }
+            }
+          } else if (config.apiSourceType === 'secondary' && config.secondaryApiId) {
+            // Load secondary API config
+            const secondaryApiResponse = await fetch(`${supabaseUrl}/rest/v1/secondary_api_configs?id=eq.${config.secondaryApiId}&select=*`, {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${supabaseServiceKey}`,
+                'apikey': supabaseServiceKey,
+                'Content-Type': 'application/json'
+              }
+            });
+
+            if (secondaryApiResponse.ok) {
+              const secondaryApis = await secondaryApiResponse.json();
+              if (secondaryApis && secondaryApis.length > 0) {
+                baseUrl = secondaryApis[0].base_url || '';
+                authToken = secondaryApis[0].auth_token || '';
+                console.log('✅ Loaded secondary API config');
+                console.log('🔑 Auth token loaded:', authToken ? `${authToken.substring(0, 10)}...` : 'EMPTY');
+              }
+            }
+          }
+
+          // Build URL with path and query parameters
+          let apiPath = config.apiPath || '';
+          const httpMethod = config.httpMethod || 'GET';
+
+          // Replace path variables (e.g., {id} or ${id})
+          const pathVarRegex = /\{([^}]+)\}|\$\{([^}]+)\}/g;
+          let pathMatch;
+          while ((pathMatch = pathVarRegex.exec(apiPath)) !== null) {
+            const variableName = pathMatch[1] || pathMatch[2];
+            const value = getValueByPath(contextData, variableName);
+            if (value !== undefined && value !== null) {
+              apiPath = apiPath.replace(pathMatch[0], String(value));
+              console.log(`🔄 Replaced path variable ${pathMatch[0]} with: ${value}`);
+            }
+          }
+
+          // Build query string from enabled parameters
+          const queryParams = new URLSearchParams();
+          const queryParameterConfig = config.queryParameterConfig || {};
+
+          for (const [paramName, paramConfig] of Object.entries(queryParameterConfig)) {
+            if (paramConfig.enabled && paramConfig.value) {
+              let paramValue = paramConfig.value;
+
+              // Replace variables in parameter values using replaceAll approach
+              const valueVarRegex = /\{\{([^}]+)\}\}|\$\{([^}]+)\}/g;
+              paramValue = paramConfig.value.replace(valueVarRegex, (match, doubleBrace, dollarBrace) => {
+                const variableName = doubleBrace || dollarBrace;
+                const value = getValueByPath(contextData, variableName);
+                if (value !== undefined && value !== null) {
+                  console.log(`🔄 Replaced query param variable ${match} with: ${value}`);
+                  return String(value);
+                }
+                console.warn(`⚠️ Variable ${match} not found in context, leaving unchanged`);
+                return match;
+              });
+              console.log(`📋 Final param value for "${paramName}":`, paramValue);
+
+              queryParams.append(paramName, paramValue);
+            }
+          }
+
+          const queryString = queryParams.toString();
+          const fullUrl = `${baseUrl}${apiPath}${queryString ? '?' + queryString : ''}`;
+          console.log('🔗 Full API Endpoint URL:', fullUrl);
+
+          // Validate auth token
+          if (!authToken) {
+            console.warn('⚠️ WARNING: No auth token found! API call may fail due to authentication.');
+          }
+
+          // Prepare headers
+          const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          };
+
+          // Store request details for error logging (before the fetch call)
+          const apiRequestDetails = {
+            url: fullUrl,
+            method: httpMethod,
+            baseUrl: baseUrl,
+            apiPath: apiPath,
+            queryString: queryString,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': authToken ? `Bearer ${authToken.substring(0, 10)}...` : 'MISSING'
+            }
+          };
+
+          // Make the API call
+          console.log(`📤 Making ${httpMethod} request to API endpoint`);
+          console.log('📋 Request Details:');
+          console.log('  - URL:', fullUrl);
+          console.log('  - Method:', httpMethod);
+          console.log('  - Headers:', JSON.stringify(headers, null, 2));
+          console.log('  - Base URL:', baseUrl);
+          console.log('  - API Path:', apiPath);
+          console.log('  - Query String:', queryString);
+          const apiResponse = await fetch(fullUrl, {
+            method: httpMethod,
+            headers: headers
+          });
+
+          console.log('📥 API endpoint response status:', apiResponse.status);
+
+          if (!apiResponse.ok) {
+            const errorText = await apiResponse.text();
+            console.error('❌ API endpoint call failed:', errorText);
+            // Store request details in stepOutputData before throwing error
+            stepOutputData = {
+              requestAttempted: apiRequestDetails,
+              responseStatus: apiResponse.status,
+              error: errorText
+            };
+            throw new Error(`API endpoint call failed with status ${apiResponse.status}: ${errorText}`);
+          }
+
+          const responseData = await apiResponse.json();
+          console.log('✅ API endpoint call successful');
+          console.log('📄 Response data (first 500 chars):', JSON.stringify(responseData).substring(0, 500));
+          console.log('📄 Full Response data:', JSON.stringify(responseData, null, 2));
+
+          lastApiResponse = responseData;
+
+          // Support both old format (responsePath/updateJsonPath) and new format (responseDataMappings)
+          let mappingsToProcess = []
+          if (config.responseDataMappings && Array.isArray(config.responseDataMappings)) {
+            mappingsToProcess = config.responseDataMappings
+            console.log('📋 Using new format: processing', mappingsToProcess.length, 'mapping(s)')
+          } else if (config.responsePath && config.updateJsonPath) {
+            mappingsToProcess = [{
+              responsePath: config.responsePath,
+              updatePath: config.updateJsonPath
+            }]
+            console.log('📋 Using old format: converted to single mapping')
+          }
+
+          const extractedValues = []
+          if (mappingsToProcess.length > 0) {
+            console.log('🔄 Extracting data from API response...')
+            for (const mapping of mappingsToProcess) {
+              if (!mapping.responsePath || !mapping.updatePath) {
+                console.warn('⚠️ Skipping mapping with missing responsePath or updatePath:', mapping)
+                continue
+              }
+
+              try {
+                const extractedValue = getValueByPath(responseData, mapping.responsePath)
+                console.log(`🔍 Extracted value from path "${mapping.responsePath}":`, extractedValue)
+
+                if (extractedValue !== undefined) {
+                  const pathParts = mapping.updatePath.split(/[.\[\]]/).filter(Boolean)
+                  let current = contextData.extractedData || contextData
+
+                  for (let i = 0; i < pathParts.length - 1; i++) {
+                    const part = pathParts[i]
+                    if (!(part in current)) {
+                      current[part] = {}
+                    }
+                    current = current[part]
+                  }
+
+                  const lastPart = pathParts[pathParts.length - 1]
+                  current[lastPart] = extractedValue
+                  console.log(`✅ Updated context data at path "${mapping.updatePath}"`)
+
+                  // Also update root contextData for easy access
+                  contextData[lastPart] = extractedValue
+
+                  extractedValues.push({
+                    path: mapping.responsePath,
+                    updatePath: mapping.updatePath,
+                    value: extractedValue
+                  })
+                }
+              } catch (extractError) {
+                console.error(`❌ Failed to process mapping "${mapping.responsePath}" -> "${mapping.updatePath}":`, extractError)
+              }
+            }
+          }
+
+          stepOutputData = {
+            url: fullUrl,
+            method: httpMethod,
+            responseStatus: apiResponse.status,
+            extractedValues,
+            updatedPaths: mappingsToProcess.map(m => m.updatePath)
+          };
+
+          console.log('✅ === API ENDPOINT STEP COMPLETED ===');
 
         } else if (step.step_type === 'rename_file' || step.step_type === 'rename_pdf') {
           console.log('📝 === EXECUTING RENAME FILE STEP ===')
@@ -973,6 +1265,16 @@ Deno.serve(async (req: Request) => {
             }
 
             fileContent = csvData
+
+            // Filter out workflow-only fields if field mappings are available
+            if (typeDetails && typeDetails.fieldMappings && Array.isArray(typeDetails.fieldMappings)) {
+              console.log('🔍 Filtering workflow-only fields from CSV...')
+              console.log('📊 Field mappings available:', typeDetails.fieldMappings.length)
+              fileContent = filterCsvWorkflowOnlyFields(fileContent, typeDetails.fieldMappings)
+            } else {
+              console.log('⚠️ No field mappings available, skipping workflow-only field filtering')
+            }
+
             console.log('✅ CSV data prepared for upload, length:', fileContent.length)
             console.log('✅ CSV fileContent preview (first 200 chars):', fileContent.substring(0, 200))
           }
@@ -1289,6 +1591,13 @@ Deno.serve(async (req: Request) => {
 
         console.log(`✅ Step ${step.step_order} completed successfully in ${stepDurationMs}ms`)
 
+        if (step.step_type === 'api_call') {
+          console.log('📊 Last API response:', JSON.stringify(lastApiResponse, null, 2));
+        }
+        if (step.step_type === 'api_endpoint') {
+          console.log('📊 Last API Endpoint response:', JSON.stringify(lastApiResponse, null, 2));
+        }
+
         if (workflowExecutionLogId) {
           await createStepLog(
             supabaseUrl,
@@ -1313,6 +1622,8 @@ Deno.serve(async (req: Request) => {
         console.error(`❌ Step ${step.step_order} failed:`, stepError)
 
         if (workflowExecutionLogId) {
+          // For API endpoint steps, include request details in output data if available
+          const errorOutputData = (step.step_type === 'api_endpoint' && stepOutputData) ? stepOutputData : null;
           await createStepLog(
             supabaseUrl,
             supabaseServiceKey,
@@ -1325,7 +1636,7 @@ Deno.serve(async (req: Request) => {
             stepDurationMs,
             stepError.message,
             { config: step.config_json },
-            null
+            errorOutputData
           )
 
           try {
