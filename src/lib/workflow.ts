@@ -2,6 +2,7 @@ import { supabase } from './supabase';
 
 interface WorkflowExecutionRequest {
   extractedData: string;
+  workflowOnlyData?: string;
   workflowId: string;
   userId?: string;
   extractionTypeId?: string;
@@ -11,6 +12,8 @@ interface WorkflowExecutionRequest {
   originalPdfFilename: string;
   formatType?: string;
   extractionTypeFilename?: string;
+  sessionId?: string;
+  groupOrder?: number;
 }
 
 export async function executeWorkflow(request: WorkflowExecutionRequest): Promise<any> {
