@@ -10,9 +10,9 @@ export default function HelpPage() {
           <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-4 rounded-full w-20 h-20 mx-auto mb-6 flex items-center justify-center">
             <FileText className="h-10 w-10 text-white" />
           </div>
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">ParseIt Help Center</h1>
+          <h1 className="text-4xl font-bold text-gray-900 mb-4">Parse-It Help Center</h1>
           <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-            Complete guide to using ParseIt for PDF data extraction
+            Complete guide to using Parse-It for PDF data extraction
           </p>
         </div>
       </div>
@@ -28,9 +28,9 @@ export default function HelpPage() {
             <h2 className="text-2xl font-bold text-gray-900">Getting Started</h2>
           </div>
           <div className="bg-green-50 border border-green-200 rounded-lg p-6">
-            <h3 className="font-semibold text-green-800 mb-3">What is ParseIt?</h3>
+            <h3 className="font-semibold text-green-800 mb-3">What is Parse-It?</h3>
             <p className="text-green-700 mb-4">
-              ParseIt is an AI-powered PDF data extraction application that converts unstructured PDF documents into structured XML or JSON data. 
+              Parse-It is an AI-powered PDF data extraction application that converts unstructured PDF documents into structured XML or JSON data. 
               It uses Google's Gemini AI to intelligently extract information from your PDFs based on customizable templates and instructions.
             </p>
             <h3 className="font-semibold text-green-800 mb-3">Quick Start (3 Steps)</h3>
@@ -93,7 +93,7 @@ export default function HelpPage() {
                 <ol className="text-purple-700 space-y-2 list-decimal list-inside">
                   <li>AI extracts data according to your instructions</li>
                   <li>Data is formatted as XML using your template</li>
-                  <li>ParseIt ID is automatically assigned</li>
+                  <li>Parse-It ID is automatically assigned</li>
                   <li>Both XML and PDF files are uploaded to SFTP server</li>
                   <li>Multi-page PDFs are split into individual files</li>
                 </ol>
@@ -103,7 +103,7 @@ export default function HelpPage() {
                 <ol className="text-purple-700 space-y-2 list-decimal list-inside">
                   <li>AI extracts data according to your instructions</li>
                   <li>Data is formatted as JSON using your template</li>
-                  <li>ParseIt ID is automatically assigned</li>
+                  <li>Parse-It ID is automatically assigned</li>
                   <li>JSON data is sent to your configured API endpoint</li>
                   <li>PDF is also uploaded to SFTP for backup</li>
                 </ol>
@@ -195,7 +195,7 @@ export default function HelpPage() {
             <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-6">
               <h3 className="font-semibold text-indigo-800 mb-4">How Email Monitoring Works</h3>
               <ol className="text-indigo-700 space-y-3 list-decimal list-inside">
-                <li><strong>Email Scanning:</strong> ParseIt periodically checks your configured email account for new messages with PDF attachments</li>
+                <li><strong>Email Scanning:</strong> Parse-It periodically checks your configured email account for new messages with PDF attachments</li>
                 <li><strong>Rule Matching:</strong> Each email is matched against your processing rules based on sender and subject patterns</li>
                 <li><strong>AI Detection (Optional):</strong> If enabled, AI analyzes the PDF to automatically detect the best extraction type</li>
                 <li><strong>Data Extraction:</strong> The PDF is processed using the matched or detected extraction type</li>
@@ -252,7 +252,7 @@ export default function HelpPage() {
                   <h4 className="font-medium text-purple-800 mb-3">Optional Features:</h4>
                   <ul className="text-purple-700 space-y-2">
                     <li>• <strong>Field Mappings:</strong> Map specific PDF coordinates to JSON fields</li>
-                    <li>• <strong>ParseIt ID Mapping:</strong> Automatically inject unique IDs</li>
+                    <li>• <strong>Parse-It ID Mapping:</strong> Automatically inject unique IDs</li>
                     <li>• <strong>Auto-Detection:</strong> Instructions for AI to identify document type</li>
                     <li>• <strong>Workflow Assignment:</strong> Link to multi-step processing workflows</li>
                   </ul>
@@ -267,7 +267,7 @@ export default function HelpPage() {
                   <h4 className="font-medium text-amber-800 mb-2">XML Format:</h4>
                   <ul className="text-amber-700 space-y-2">
                     <li>• Files uploaded to SFTP server</li>
-                    <li>• Use &lbrace;&lbrace;PARSEIT_ID_PLACEHOLDER&rbrace;&rbrace; in templates</li>
+                    <li>• Use &lbrace;&lbrace;PARSE_IT_ID_PLACEHOLDER&rbrace;&rbrace; in templates</li>
                     <li>• Best for legacy systems</li>
                   </ul>
                 </div>
@@ -322,37 +322,37 @@ export default function HelpPage() {
         {/* Workflows */}
         <section className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl border border-purple-100 p-8">
           <div className="flex items-center space-x-3 mb-6">
-            <div className="bg-teal-100 p-3 rounded-lg">
-              <GitBranch className="h-6 w-6 text-teal-600" />
+            <div className="bg-purple-100 p-3 rounded-lg">
+              <GitBranch className="h-6 w-6 text-purple-600" />
             </div>
             <h2 className="text-2xl font-bold text-gray-900">Workflows</h2>
           </div>
-          <div className="bg-teal-50 border border-teal-200 rounded-lg p-6">
-            <p className="text-teal-700 mb-6 text-lg">
+          <div className="bg-purple-50 border border-purple-200 rounded-lg p-6">
+            <p className="text-purple-700 mb-6 text-lg">
               Workflows allow you to create multi-step processes that execute after data extraction. Perfect for complex business logic.
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <div className="bg-white border border-teal-300 rounded-lg p-6">
-                <h3 className="font-semibold text-teal-800 mb-3">API Call Steps</h3>
-                <p className="text-teal-700">
+              <div className="bg-white border border-purple-300 rounded-lg p-6">
+                <h3 className="font-semibold text-purple-800 mb-3">API Call Steps</h3>
+                <p className="text-purple-700">
                   Send extracted data to external APIs, update records, or trigger other systems.
                 </p>
               </div>
-              <div className="bg-white border border-teal-300 rounded-lg p-6">
-                <h3 className="font-semibold text-teal-800 mb-3">Conditional Checks</h3>
-                <p className="text-teal-700">
+              <div className="bg-white border border-purple-300 rounded-lg p-6">
+                <h3 className="font-semibold text-purple-800 mb-3">Conditional Checks</h3>
+                <p className="text-purple-700">
                   Branch workflow execution based on data values or conditions in the extracted content.
                 </p>
               </div>
-              <div className="bg-white border border-teal-300 rounded-lg p-6">
-                <h3 className="font-semibold text-teal-800 mb-3">Data Transforms</h3>
-                <p className="text-teal-700">
+              <div className="bg-white border border-purple-300 rounded-lg p-6">
+                <h3 className="font-semibold text-purple-800 mb-3">Data Transforms</h3>
+                <p className="text-purple-700">
                   Modify, copy, or restructure extracted data before sending to subsequent steps.
                 </p>
               </div>
-              <div className="bg-white border border-teal-300 rounded-lg p-6">
-                <h3 className="font-semibold text-teal-800 mb-3">Email Actions</h3>
-                <p className="text-teal-700">
+              <div className="bg-white border border-purple-300 rounded-lg p-6">
+                <h3 className="font-semibold text-purple-800 mb-3">Email Actions</h3>
+                <p className="text-purple-700">
                   Send automated emails with extracted data and PDF attachments to customers or stakeholders.
                 </p>
               </div>
@@ -394,31 +394,31 @@ export default function HelpPage() {
         {/* Advanced PDF Processing */}
         <section className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl border border-purple-100 p-8">
           <div className="flex items-center space-x-3 mb-6">
-            <div className="bg-teal-100 p-3 rounded-lg">
-              <FileText className="h-6 w-6 text-teal-600" />
+            <div className="bg-purple-100 p-3 rounded-lg">
+              <FileText className="h-6 w-6 text-purple-600" />
             </div>
             <h2 className="text-2xl font-bold text-gray-900">Advanced PDF Processing</h2>
           </div>
           <div className="space-y-6">
-            <div className="bg-teal-50 border border-teal-200 rounded-lg p-6">
-              <h3 className="font-semibold text-teal-800 mb-4">PDF Document Grouping</h3>
-              <p className="text-teal-700 mb-4 text-lg">
-                ParseIt can intelligently group PDF pages into logical documents for processing. This is perfect for multi-document PDFs where each document spans multiple pages.
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-6">
+              <h3 className="font-semibold text-purple-800 mb-4">PDF Document Grouping</h3>
+              <p className="text-purple-700 mb-4 text-lg">
+                Parse-It can intelligently group PDF pages into logical documents for processing. This is perfect for multi-document PDFs where each document spans multiple pages.
               </p>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-white border border-teal-300 rounded-lg p-6">
-                  <h4 className="font-semibold text-teal-800 mb-3">Fixed Page Grouping</h4>
-                  <ul className="text-teal-700 space-y-2">
+                <div className="bg-white border border-purple-300 rounded-lg p-6">
+                  <h4 className="font-semibold text-purple-800 mb-3">Fixed Page Grouping</h4>
+                  <ul className="text-purple-700 space-y-2">
                     <li>• Set "Pages Per Group" to group consecutive pages</li>
                     <li>• Example: Pages Per Group = 2 creates groups [1-2], [3-4], [5-6]</li>
                     <li>• Perfect for consistent document layouts</li>
                     <li>• Simple and reliable for predictable formats</li>
                   </ul>
                 </div>
-                <div className="bg-white border border-teal-300 rounded-lg p-6">
-                  <h4 className="font-semibold text-teal-800 mb-3">Smart Pattern Detection</h4>
-                  <ul className="text-teal-700 space-y-2">
+                <div className="bg-white border border-purple-300 rounded-lg p-6">
+                  <h4 className="font-semibold text-purple-800 mb-3">Smart Pattern Detection</h4>
+                  <ul className="text-purple-700 space-y-2">
                     <li>• Enable "Document Start Detection"</li>
                     <li>• Set pattern like "INVOICE / FACTURE" to detect document starts</li>
                     <li>• AI finds pattern and creates logical document boundaries</li>
