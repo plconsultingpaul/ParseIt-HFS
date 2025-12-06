@@ -6,6 +6,7 @@ import PdfUploadSection from './extract/PdfUploadSection';
 import AutoDetectPdfUploadSection from './extract/AutoDetectPdfUploadSection';
 import MultiPageTransformer from './transform/MultiPageTransformer';
 import type { DetectionResult } from '../types';
+import Select from './common/Select';
 
 interface TransformPageProps {
   transformationTypes: TransformationType[];
@@ -140,20 +141,15 @@ export default function TransformPage({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             {/* Transformation Type Selection */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
-                Transformation Type {uploadMode === 'auto' ? '(Fallback)' : ''}
-              </label>
-              <select
+              <Select
+                label={`Transformation Type ${uploadMode === 'auto' ? '(Fallback)' : ''}`}
                 value={selectedTransformationType}
-                onChange={(e) => handleSelectTransformationType(e.target.value)}
-                className="w-full px-4 py-3 bg-purple-50 dark:bg-gray-700 border border-purple-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-gray-100 font-medium focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
-              >
-                {allowedTransformationTypes.map((type) => (
-                  <option key={type.id} value={type.id}>
-                    {type.name}
-                  </option>
-                ))}
-              </select>
+                onValueChange={handleSelectTransformationType}
+                options={allowedTransformationTypes.map((type) => ({
+                  value: type.id,
+                  label: type.name
+                }))}
+              />
               {uploadMode === 'auto' && (
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   This type will be used for pages where AI cannot detect a specific transformation type
@@ -232,7 +228,7 @@ export default function TransformPage({
                       className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
                         uploadMode === 'manual'
                           ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
-                          : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                          : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 border border-transparent hover:border-purple-400 dark:hover:border-purple-500'
                       } ${currentTransformationType?.lockUploadMode ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       Manual Selection
@@ -243,7 +239,7 @@ export default function TransformPage({
                       className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
                         uploadMode === 'auto'
                           ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
-                          : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                          : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 border border-transparent hover:border-purple-400 dark:hover:border-purple-500'
                       } ${currentTransformationType?.lockUploadMode ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       AI Auto-Detect
@@ -356,7 +352,7 @@ export default function TransformPage({
                 <textarea
                   value={additionalInstructions}
                   onChange={(e) => handleUpdateAdditionalInstructions(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-vertical"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-vertical hover:border-purple-400 dark:hover:border-purple-500 transition-colors"
                   rows={3}
                   placeholder="Add any specific instructions for this transformation..."
                 />
