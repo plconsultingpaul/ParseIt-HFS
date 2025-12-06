@@ -1,22 +1,73 @@
-import React, { useState } from 'react';
-import { Save, Building, Image, Eye, EyeOff } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Save, Building, Image, Eye, EyeOff, Upload, Loader } from 'lucide-react';
 import type { CompanyBranding } from '../../types';
+import { uploadCompanyLogo } from '../../services/configService';
 
 interface CompanyBrandingSettingsProps {
   companyBranding: CompanyBranding;
   onUpdateCompanyBranding: (branding: CompanyBranding) => Promise<void>;
+  refreshCompanyBranding?: () => Promise<void>;
 }
 
-export default function CompanyBrandingSettings({ 
-  companyBranding, 
-  onUpdateCompanyBranding 
+export default function CompanyBrandingSettings({
+  companyBranding,
+  onUpdateCompanyBranding,
+  refreshCompanyBranding
 }: CompanyBrandingSettingsProps) {
   const [localBranding, setLocalBranding] = useState<CompanyBranding>(companyBranding);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string>('Company branding saved successfully!');
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setLocalBranding(companyBranding);
+  }, [companyBranding]);
 
   const updateBranding = (field: keyof CompanyBranding, value: string | boolean) => {
     setLocalBranding(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    setUploadError(null);
+    setSaveSuccess(false);
+
+    try {
+      const { publicUrl, storagePath } = await uploadCompanyLogo(file);
+
+      const updatedBranding = {
+        ...localBranding,
+        logoUrl: publicUrl,
+        logoStoragePath: storagePath
+      };
+
+      setLocalBranding(updatedBranding);
+
+      await onUpdateCompanyBranding(updatedBranding);
+
+      if (refreshCompanyBranding) {
+        await refreshCompanyBranding();
+      }
+
+      setUploadError(null);
+      setSuccessMessage('Logo uploaded and saved successfully!');
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (error: any) {
+      console.error('Failed to upload logo:', error);
+      setUploadError(error.message || 'Failed to upload and save logo');
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
   };
 
   const handleSave = async () => {
@@ -24,6 +75,10 @@ export default function CompanyBrandingSettings({
     setSaveSuccess(false);
     try {
       await onUpdateCompanyBranding(localBranding);
+      if (refreshCompanyBranding) {
+        await refreshCompanyBranding();
+      }
+      setSuccessMessage('Company branding saved successfully!');
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (error) {
@@ -57,7 +112,7 @@ export default function CompanyBrandingSettings({
             <div className="w-4 h-4 bg-green-500 rounded-full"></div>
             <span className="font-semibold text-green-800 dark:text-green-300">Success!</span>
           </div>
-          <p className="text-green-700 dark:text-green-400 text-sm mt-1">Company branding saved successfully!</p>
+          <p className="text-green-700 dark:text-green-400 text-sm mt-1">{successMessage}</p>
         </div>
       )}
 
@@ -83,11 +138,11 @@ export default function CompanyBrandingSettings({
                 type="text"
                 value={localBranding.companyName}
                 onChange={(e) => updateBranding('companyName', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
                 placeholder="Your Company Name"
               />
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                This will appear alongside ParseIt in the application header
+                This will appear alongside Parse-It in the application header
               </p>
             </div>
             <div>
@@ -131,12 +186,59 @@ export default function CompanyBrandingSettings({
                 type="url"
                 value={localBranding.logoUrl || ''}
                 onChange={(e) => updateBranding('logoUrl', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
                 placeholder="https://example.com/logo.png"
               />
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 Enter a URL to your company logo (PNG, JPG, or SVG recommended)
               </p>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <div className="h-px flex-1 bg-gray-300 dark:bg-gray-600"></div>
+              <span className="text-sm text-gray-500 dark:text-gray-400">OR</span>
+              <div className="h-px flex-1 bg-gray-300 dark:bg-gray-600"></div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Upload Logo File
+              </label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+                className="w-full px-4 py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg hover:border-purple-500 dark:hover:border-purple-400 transition-colors bg-white dark:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <div className="flex items-center justify-center space-x-2">
+                  {isUploading ? (
+                    <>
+                      <Loader className="h-5 w-5 text-purple-600 dark:text-purple-400 animate-spin" />
+                      <span className="text-sm text-gray-700 dark:text-gray-300">Uploading and saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                      <span className="text-sm text-gray-700 dark:text-gray-300">Click to upload logo</span>
+                    </>
+                  )}
+                </div>
+              </button>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                Supported formats: PNG, JPG, SVG, WebP (Max 2MB)
+              </p>
+              {uploadError && (
+                <div className="mt-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-3">
+                  <p className="text-red-700 dark:text-red-400 text-sm">{uploadError}</p>
+                </div>
+              )}
             </div>
 
             {/* Logo Preview */}
@@ -192,7 +294,7 @@ export default function CompanyBrandingSettings({
               </label>
               <div className="bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg p-4">
                 <div className="flex items-center space-x-3">
-                  {localBranding.logoUrl && (
+                  {localBranding.logoUrl ? (
                     <img
                       src={localBranding.logoUrl}
                       alt="Company Logo"
@@ -201,16 +303,17 @@ export default function CompanyBrandingSettings({
                         (e.target as HTMLImageElement).style.display = 'none';
                       }}
                     />
-                  )}
-                  <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-2 rounded-lg">
-                    <div className="h-6 w-6 bg-white rounded flex items-center justify-center">
-                      <span className="text-purple-600 font-bold text-sm">P</span>
+                  ) : (
+                    <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-2 rounded-lg">
+                      <div className="h-6 w-6 bg-white rounded flex items-center justify-center">
+                        <span className="text-purple-600 font-bold text-sm">P</span>
+                      </div>
                     </div>
-                  </div>
+                  )}
                   <div>
                     <div className="flex items-center space-x-2">
                       <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
-                        ParseIt
+                        Parse-It
                       </h1>
                       {localBranding.showCompanyName && localBranding.companyName && (
                         <>
@@ -237,8 +340,8 @@ export default function CompanyBrandingSettings({
               <div className="bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-gray-800 dark:to-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg p-6">
                 <div className="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-sm mx-auto shadow-lg">
                   <div className="text-center">
-                    <div className="flex items-center justify-center space-x-3 mb-4">
-                      {localBranding.logoUrl && (
+                    <div className="flex items-center justify-center mb-4">
+                      {localBranding.logoUrl ? (
                         <img
                           src={localBranding.logoUrl}
                           alt="Company Logo"
@@ -247,15 +350,16 @@ export default function CompanyBrandingSettings({
                             (e.target as HTMLImageElement).style.display = 'none';
                           }}
                         />
-                      )}
-                      <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-3 rounded-full">
-                        <div className="h-8 w-8 bg-white rounded-full flex items-center justify-center">
-                          <span className="text-purple-600 font-bold">P</span>
+                      ) : (
+                        <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-3 rounded-full">
+                          <div className="h-8 w-8 bg-white rounded-full flex items-center justify-center">
+                            <span className="text-purple-600 font-bold">P</span>
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                     <div className="flex items-center justify-center space-x-2 mb-2">
-                      <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">ParseIt</h1>
+                      <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Parse-It</h1>
                       {localBranding.showCompanyName && localBranding.companyName && (
                         <>
                           <span className="text-gray-400 dark:text-gray-500">•</span>
@@ -281,8 +385,8 @@ export default function CompanyBrandingSettings({
           <li>• Company logo should be in PNG, JPG, or SVG format for best quality</li>
           <li>• Recommended logo dimensions: 200x50px or similar aspect ratio</li>
           <li>• Logo will appear in the sidebar header and login screen</li>
-          <li>• ParseIt branding will always remain visible alongside your company branding</li>
-          <li>• Company name appears next to ParseIt when enabled</li>
+          <li>• When a company logo is uploaded, it will replace the Parse-It logo</li>
+          <li>• Company name appears next to Parse-It when enabled</li>
           <li>• Use publicly accessible URLs for logo images (CDN recommended)</li>
         </ul>
       </div>
