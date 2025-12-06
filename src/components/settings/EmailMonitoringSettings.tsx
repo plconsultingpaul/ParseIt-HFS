@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Save, Mail, TestTube, Play, Pause, Cloud, Globe, Send, Filter } from 'lucide-react';
 import type { EmailMonitoringConfig, EmailProcessingRule, ExtractionType, TransformationType } from '../../types';
 import EmailRulesSettings from './EmailRulesSettings';
@@ -33,11 +33,34 @@ export default function EmailMonitoringSettings({
   const [showSendTestModal, setShowSendTestModal] = useState(false);
   const [testEmailData, setTestEmailData] = useState({
     testToEmail: '',
-    testSubject: 'Test Email from ParseIt',
+    testSubject: 'Test Email from Parse-It',
     testBody: 'This is a test email to verify your email sending configuration is working correctly.'
   });
   const [sendTestResult, setSendTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [isSendingTest, setIsSendingTest] = useState(false);
+
+  // Sync local state when emailConfig prop updates (e.g., when loaded from database)
+  useEffect(() => {
+    console.log('[EmailMonitoringSettings] useEffect triggered');
+    console.log('[EmailMonitoringSettings] emailConfig prop received:', {
+      ...emailConfig,
+      clientSecret: emailConfig.clientSecret ? '***HIDDEN***' : '(empty)',
+      gmailClientSecret: emailConfig.gmailClientSecret ? '***HIDDEN***' : '(empty)',
+      gmailRefreshToken: emailConfig.gmailRefreshToken ? '***HIDDEN***' : '(empty)'
+    });
+    setLocalConfig(emailConfig);
+    console.log('[EmailMonitoringSettings] localConfig state updated');
+  }, [emailConfig]);
+
+  // Monitor localConfig changes
+  useEffect(() => {
+    console.log('[EmailMonitoringSettings] localConfig changed to:', {
+      ...localConfig,
+      clientSecret: localConfig.clientSecret ? '***HIDDEN***' : '(empty)',
+      gmailClientSecret: localConfig.gmailClientSecret ? '***HIDDEN***' : '(empty)',
+      gmailRefreshToken: localConfig.gmailRefreshToken ? '***HIDDEN***' : '(empty)'
+    });
+  }, [localConfig]);
 
   const updateConfig = (field: keyof EmailMonitoringConfig, value: string | number | boolean) => {
     setLocalConfig(prev => ({ ...prev, [field]: value }));
@@ -499,7 +522,7 @@ export default function EmailMonitoringSettings({
                   type="text"
                   value={localConfig.tenantId}
                   onChange={(e) => updateConfig('tenantId', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
                   placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                 />
               </div>
@@ -511,7 +534,7 @@ export default function EmailMonitoringSettings({
                   type="text"
                   value={localConfig.clientId}
                   onChange={(e) => updateConfig('clientId', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
                   placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                 />
               </div>
@@ -526,7 +549,7 @@ export default function EmailMonitoringSettings({
                   type="text"
                   value={localConfig.gmailClientId || ''}
                   onChange={(e) => updateConfig('gmailClientId', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
                   placeholder="xxxxxxxxxx.apps.googleusercontent.com"
                 />
               </div>
@@ -538,7 +561,7 @@ export default function EmailMonitoringSettings({
                   type="password"
                   value={localConfig.gmailClientSecret || ''}
                   onChange={(e) => updateConfig('gmailClientSecret', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
                   placeholder="Gmail OAuth client secret"
                 />
               </div>
@@ -557,7 +580,7 @@ export default function EmailMonitoringSettings({
                   type="password"
                   value={localConfig.clientSecret}
                   onChange={(e) => updateConfig('clientSecret', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
                   placeholder="Client secret value"
                 />
               </div>
@@ -569,7 +592,7 @@ export default function EmailMonitoringSettings({
                   type="email"
                   value={localConfig.monitoredEmail}
                   onChange={(e) => updateConfig('monitoredEmail', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
                   placeholder="email@company.com"
                 />
               </div>
@@ -584,7 +607,7 @@ export default function EmailMonitoringSettings({
                   type="password"
                   value={localConfig.gmailRefreshToken || ''}
                   onChange={(e) => updateConfig('gmailRefreshToken', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
                   placeholder="OAuth refresh token"
                 />
               </div>
@@ -596,11 +619,11 @@ export default function EmailMonitoringSettings({
                   type="text"
                   value={localConfig.gmailMonitoredLabel || 'INBOX'}
                   onChange={(e) => updateConfig('gmailMonitoredLabel', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
                   placeholder="INBOX or custom label name"
                 />
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Gmail label to monitor (e.g., "INBOX", "ParseIt", "Invoices")
+                  Gmail label to monitor (e.g., "INBOX", "Parse-It", "Invoices")
                 </p>
               </div>
             </>
@@ -616,7 +639,7 @@ export default function EmailMonitoringSettings({
               type="email"
               value={localConfig.defaultSendFromEmail || ''}
               onChange={(e) => updateConfig('defaultSendFromEmail', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
               placeholder="sender@company.com"
             />
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -631,7 +654,7 @@ export default function EmailMonitoringSettings({
               type="number"
               value={localConfig.pollingInterval}
               onChange={(e) => updateConfig('pollingInterval', parseInt(e.target.value) || 5)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
               min="1"
               max="60"
             />
@@ -750,7 +773,7 @@ export default function EmailMonitoringSettings({
                     type="email"
                     value={testEmailData.testToEmail}
                     onChange={(e) => setTestEmailData({ ...testEmailData, testToEmail: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
                     placeholder="recipient@example.com"
                     disabled={isSendingTest}
                   />
@@ -764,7 +787,7 @@ export default function EmailMonitoringSettings({
                     type="text"
                     value={testEmailData.testSubject}
                     onChange={(e) => setTestEmailData({ ...testEmailData, testSubject: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
                     placeholder="Test Email Subject"
                     disabled={isSendingTest}
                   />
@@ -777,7 +800,7 @@ export default function EmailMonitoringSettings({
                   <textarea
                     value={testEmailData.testBody}
                     onChange={(e) => setTestEmailData({ ...testEmailData, testBody: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
                     rows={6}
                     placeholder="Enter your test email message..."
                     disabled={isSendingTest}
