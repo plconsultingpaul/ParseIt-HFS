@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Save, Users, Shield, User as UserIcon, Eye, EyeOff, Settings, FileText, Server, Key, Mail, Filter, Database, GitBranch, Brain, RefreshCw, ArrowUp, ArrowDown, Copy, Edit } from 'lucide-react';
 import type { User, VendorExtractionRule, ExtractionType, TransformationType } from '../../types';
+import Select from '../common/Select';
 
 interface VendorManagementSettingsProps {
   currentUser: User;
@@ -733,34 +734,24 @@ export default function VendorManagementSettings({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  {newRule.processingMode === 'transformation' ? 'Transformation Type' : 'Extraction Type'}
-                </label>
-                <select
-                  value={newRule.processingMode === 'transformation' ? newRule.transformationTypeId : newRule.extractionTypeId}
-                  onChange={(e) => {
+                <Select
+                  label={newRule.processingMode === 'transformation' ? 'Transformation Type' : 'Extraction Type'}
+                  value={(newRule.processingMode === 'transformation' ? newRule.transformationTypeId : newRule.extractionTypeId) || '__none__'}
+                  onValueChange={(value) => {
+                    const actualValue = value === '__none__' ? '' : value;
                     if (newRule.processingMode === 'transformation') {
-                      setNewRule(prev => ({ ...prev, transformationTypeId: e.target.value }));
+                      setNewRule(prev => ({ ...prev, transformationTypeId: actualValue }));
                     } else {
-                      setNewRule(prev => ({ ...prev, extractionTypeId: e.target.value }));
+                      setNewRule(prev => ({ ...prev, extractionTypeId: actualValue }));
                     }
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">Select {newRule.processingMode === 'transformation' ? 'transformation' : 'extraction'} type...</option>
-                  {newRule.processingMode === 'transformation' 
-                    ? transformationTypes.map((type) => (
-                        <option key={type.id} value={type.id}>
-                          {type.name}
-                        </option>
-                      ))
-                    : extractionTypes.map((type) => (
-                        <option key={type.id} value={type.id}>
-                          {type.name}
-                        </option>
-                      ))
-                  }
-                </select>
+                  options={[
+                    { value: '__none__', label: `Select ${newRule.processingMode === 'transformation' ? 'transformation' : 'extraction'} type...` },
+                    ...(newRule.processingMode === 'transformation'
+                      ? transformationTypes.map(type => ({ value: type.id, label: type.name }))
+                      : extractionTypes.map(type => ({ value: type.id, label: type.name })))
+                  ]}
+                />
               </div>
 
               <div>
