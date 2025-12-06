@@ -15,8 +15,8 @@ export default function HelpModal({ isOpen, onClose }: HelpModalProps) {
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-purple-600 to-indigo-600 rounded-t-2xl">
           <div>
-            <h2 className="text-2xl font-bold text-white">ParseIt Help Center</h2>
-            <p className="text-purple-100 mt-1">Complete guide to using ParseIt for PDF data extraction</p>
+            <h2 className="text-2xl font-bold text-white">Parse-It Help Center</h2>
+            <p className="text-purple-100 mt-1">Complete guide to using Parse-It for PDF data extraction</p>
           </div>
           <button
             onClick={onClose}
@@ -38,9 +38,9 @@ export default function HelpModal({ isOpen, onClose }: HelpModalProps) {
                 <h3 className="text-xl font-bold text-gray-900">Getting Started</h3>
               </div>
               <div className="bg-green-50 border border-green-200 rounded-lg p-6">
-                <h4 className="font-semibold text-green-800 mb-3">What is ParseIt?</h4>
+                <h4 className="font-semibold text-green-800 mb-3">What is Parse-It?</h4>
                 <p className="text-green-700 mb-4">
-                  ParseIt is an AI-powered PDF data extraction application that converts unstructured PDF documents into structured XML or JSON data. 
+                  Parse-It is an AI-powered PDF data extraction application that converts unstructured PDF documents into structured XML or JSON data.
                   It uses Google's Gemini AI to intelligently extract information from your PDFs based on customizable templates and instructions.
                 </p>
                 <h4 className="font-semibold text-green-800 mb-3">Quick Start (3 Steps)</h4>
@@ -103,7 +103,7 @@ export default function HelpModal({ isOpen, onClose }: HelpModalProps) {
                     <ol className="text-purple-700 text-sm space-y-1 list-decimal list-inside">
                       <li>AI extracts data according to your instructions</li>
                       <li>Data is formatted as XML using your template</li>
-                      <li>ParseIt ID is automatically assigned</li>
+                      <li>Parse-It ID is automatically assigned</li>
                       <li>Both XML and PDF files are uploaded to SFTP server</li>
                       <li>Multi-page PDFs are split into individual files</li>
                     </ol>
@@ -113,7 +113,7 @@ export default function HelpModal({ isOpen, onClose }: HelpModalProps) {
                     <ol className="text-purple-700 text-sm space-y-1 list-decimal list-inside">
                       <li>AI extracts data according to your instructions</li>
                       <li>Data is formatted as JSON using your template</li>
-                      <li>ParseIt ID is automatically assigned</li>
+                      <li>Parse-It ID is automatically assigned</li>
                       <li>JSON data is sent to your configured API endpoint</li>
                       <li>PDF is also uploaded to SFTP for backup</li>
                     </ol>
@@ -205,7 +205,7 @@ export default function HelpModal({ isOpen, onClose }: HelpModalProps) {
                 <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-6">
                   <h4 className="font-semibold text-indigo-800 mb-3">How Email Monitoring Works</h4>
                   <ol className="text-indigo-700 space-y-2 list-decimal list-inside">
-                    <li><strong>Email Scanning:</strong> ParseIt periodically checks your configured email account for new messages with PDF attachments</li>
+                    <li><strong>Email Scanning:</strong> Parse-It periodically checks your configured email account for new messages with PDF attachments</li>
                     <li><strong>Rule Matching:</strong> Each email is matched against your processing rules based on sender and subject patterns</li>
                     <li><strong>AI Detection (Optional):</strong> If enabled, AI analyzes the PDF to automatically detect the best extraction type</li>
                     <li><strong>Data Extraction:</strong> The PDF is processed using the matched or detected extraction type</li>
@@ -262,7 +262,7 @@ export default function HelpModal({ isOpen, onClose }: HelpModalProps) {
                       <h5 className="font-medium text-purple-800 mb-2">Optional Features:</h5>
                       <ul className="text-purple-700 text-sm space-y-1">
                         <li>• <strong>Field Mappings:</strong> Map specific PDF coordinates to JSON fields</li>
-                        <li>• <strong>ParseIt ID Mapping:</strong> Automatically inject unique IDs</li>
+                        <li>• <strong>Parse-It ID Mapping:</strong> Automatically inject unique IDs</li>
                         <li>• <strong>Auto-Detection:</strong> Instructions for AI to identify document type</li>
                         <li>• <strong>Workflow Assignment:</strong> Link to multi-step processing workflows</li>
                       </ul>
@@ -277,7 +277,7 @@ export default function HelpModal({ isOpen, onClose }: HelpModalProps) {
                       <h5 className="font-medium text-amber-800">XML Format:</h5>
                       <ul className="text-amber-700 space-y-1">
                         <li>• Files uploaded to SFTP server</li>
-                        <li>• Use &lbrace;&lbrace;PARSEIT_ID_PLACEHOLDER&rbrace;&rbrace; in templates</li>
+                        <li>• Use &lbrace;&lbrace;PARSE_IT_ID_PLACEHOLDER&rbrace;&rbrace; in templates</li>
                         <li>• Best for legacy systems</li>
                       </ul>
                     </div>
@@ -332,37 +332,37 @@ export default function HelpModal({ isOpen, onClose }: HelpModalProps) {
             {/* Workflows */}
             <section>
               <div className="flex items-center space-x-3 mb-4">
-                <div className="bg-teal-100 p-2 rounded-lg">
-                  <GitBranch className="h-6 w-6 text-teal-600" />
+                <div className="bg-purple-100 p-2 rounded-lg">
+                  <GitBranch className="h-6 w-6 text-purple-600" />
                 </div>
                 <h3 className="text-xl font-bold text-gray-900">Workflows</h3>
               </div>
-              <div className="bg-teal-50 border border-teal-200 rounded-lg p-6">
-                <p className="text-teal-700 mb-4">
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-6">
+                <p className="text-purple-700 mb-4">
                   Workflows allow you to create multi-step processes that execute after data extraction. Perfect for complex business logic.
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="bg-white border border-teal-300 rounded-lg p-4">
-                    <h4 className="font-semibold text-teal-800 mb-2">API Call Steps</h4>
-                    <p className="text-teal-700 text-sm">
+                  <div className="bg-white border border-purple-300 rounded-lg p-4">
+                    <h4 className="font-semibold text-purple-800 mb-2">API Call Steps</h4>
+                    <p className="text-purple-700 text-sm">
                       Send extracted data to external APIs, update records, or trigger other systems.
                     </p>
                   </div>
-                  <div className="bg-white border border-teal-300 rounded-lg p-4">
-                    <h4 className="font-semibold text-teal-800 mb-2">Conditional Checks</h4>
-                    <p className="text-teal-700 text-sm">
+                  <div className="bg-white border border-purple-300 rounded-lg p-4">
+                    <h4 className="font-semibold text-purple-800 mb-2">Conditional Checks</h4>
+                    <p className="text-purple-700 text-sm">
                       Branch workflow execution based on data values or conditions in the extracted content.
                     </p>
                   </div>
-                  <div className="bg-white border border-teal-300 rounded-lg p-4">
-                    <h4 className="font-semibold text-teal-800 mb-2">Data Transforms</h4>
-                    <p className="text-teal-700 text-sm">
+                  <div className="bg-white border border-purple-300 rounded-lg p-4">
+                    <h4 className="font-semibold text-purple-800 mb-2">Data Transforms</h4>
+                    <p className="text-purple-700 text-sm">
                       Modify, copy, or restructure extracted data before sending to subsequent steps.
                     </p>
                   </div>
-                  <div className="bg-white border border-teal-300 rounded-lg p-4">
-                    <h4 className="font-semibold text-teal-800 mb-2">Email Actions</h4>
-                    <p className="text-teal-700 text-sm">
+                  <div className="bg-white border border-purple-300 rounded-lg p-4">
+                    <h4 className="font-semibold text-purple-800 mb-2">Email Actions</h4>
+                    <p className="text-purple-700 text-sm">
                       Send automated emails with extracted data and PDF attachments to customers or stakeholders.
                     </p>
                   </div>
