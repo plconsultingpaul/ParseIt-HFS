@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, FileText, LogOut, User, HelpCircle, Menu, X, BarChart3, RefreshCw, Database, Building, Package, ClipboardCheck, Building2, DollarSign, Users as UsersIcon, BookUser } from 'lucide-react';
+import { Settings, FileText, LogOut, User, HelpCircle, Menu, X, BarChart3, RefreshCw, Database, Building, Package, ClipboardCheck, Building2, DollarSign, Users as UsersIcon, BookUser, ClipboardList } from 'lucide-react';
 import type { User as UserType } from '../types';
 import type { CompanyBranding } from '../types';
 import DarkModeToggle from './DarkModeToggle';
@@ -7,8 +7,8 @@ import PermissionDeniedModal from './common/PermissionDeniedModal';
 
 interface LayoutProps {
   children: React.ReactNode;
-  currentPage: 'extract' | 'vendor-setup' | 'checkin-setup' | 'client-setup' | 'transform' | 'types' | 'settings' | 'logs' | 'order-entry' | 'rate-quote' | 'client-users' | 'address-book';
-  onNavigate: (page: 'extract' | 'vendor-setup' | 'checkin-setup' | 'client-setup' | 'transform' | 'types' | 'settings' | 'logs' | 'order-entry' | 'rate-quote' | 'client-users' | 'address-book') => void;
+  currentPage: 'extract' | 'vendor-setup' | 'checkin-setup' | 'client-setup' | 'transform' | 'types' | 'settings' | 'logs' | 'order-entry' | 'order-submissions' | 'order-submission-detail' | 'rate-quote' | 'client-users' | 'address-book';
+  onNavigate: (page: 'extract' | 'vendor-setup' | 'checkin-setup' | 'client-setup' | 'transform' | 'types' | 'settings' | 'logs' | 'order-entry' | 'order-submissions' | 'rate-quote' | 'client-users' | 'address-book') => void;
   user: UserType;
   companyBranding?: CompanyBranding;
   onLogout: () => void;
@@ -26,20 +26,10 @@ export default function Layout({ children, currentPage, onNavigate, user, compan
     message: ''
   });
 
-  // Debug logging to track user state changes
-  React.useEffect(() => {
-    console.log('Layout - User state changed:', {
-      userId: user?.id,
-      username: user?.username,
-      role: user?.role,
-      isAdmin: user?.isAdmin
-    });
-  }, [user]);
-
   // Determine if sidebar should be expanded (either not collapsed or being hovered)
   const isSidebarExpanded = !isSidebarCollapsed || isSidebarHovered;
 
-  const handleSettingsClick = () => {
+  const handleSettingsClick = React.useCallback(() => {
     // Check for non-type-setup permissions (exclude extractionTypes, transformationTypes, workflowManagement)
     const nonTypePermissions = {
       sftp: user.permissions.sftp,
@@ -61,7 +51,7 @@ export default function Layout({ children, currentPage, onNavigate, user, compan
       return;
     }
     onNavigate('settings');
-  };
+  }, [user, onNavigate, setPermissionDenied]);
 
   // Memoize navigation items to prevent recreation on every render
   const navigationItems = React.useMemo(() => [
@@ -168,21 +158,16 @@ export default function Layout({ children, currentPage, onNavigate, user, compan
       icon: HelpCircle,
       onClick: () => window.open('/help', '_blank'),
       requiresPermission: false,
-      roles: ['admin', 'user']
+      roles: ['admin', 'user', 'client', 'vendor']
     }
-  ], [user.role]);
+  ], [user.role, handleSettingsClick]);
 
   // Filter navigation items based on user role and permissions
   const filteredNavigationItems = React.useMemo(() => {
-    console.log('Filtering navigation items for user:', user);
-
     // Wait for user to be fully loaded with role
     if (!user || !user.role) {
-      console.log('User or role not available yet, returning empty navigation');
       return [];
     }
-
-    console.log('User role confirmed:', user.role);
 
     // Filter items based on role inclusion and permissions
     const filteredItems = navigationItems.filter(item => {
@@ -232,7 +217,6 @@ export default function Layout({ children, currentPage, onNavigate, user, compan
       return true;
     });
 
-    console.log('Filtered navigation items:', filteredItems);
     return filteredItems;
   }, [user, navigationItems]);
 
@@ -258,35 +242,27 @@ export default function Layout({ children, currentPage, onNavigate, user, compan
             <div className={`flex items-center space-x-3 transition-opacity duration-200 ${
               isSidebarExpanded ? 'opacity-100' : 'opacity-0'
             }`}>
-              {companyBranding?.logoUrl && (
+              {companyBranding?.logoUrl ? (
                 <img
                   src={companyBranding.logoUrl}
                   alt="Company Logo"
                   className="h-8 w-auto max-w-20 object-contain"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = 'none';
-                  }}
                 />
-              )}
-              <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-2 rounded-lg">
-                <FileText className="h-6 w-6 text-white" />
-              </div>
-              <div>
-                <div className="flex items-center space-x-2">
-                  <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
-                    ParseIt
-                  </h1>
-                  {companyBranding?.showCompanyName && companyBranding?.companyName && (
-                    <>
-                      <span className="text-gray-400 dark:text-gray-500 text-sm">•</span>
-                      <span className="text-lg font-semibold text-gray-700 dark:text-gray-300">
-                        {companyBranding.companyName}
-                      </span>
-                    </>
-                  )}
+              ) : (
+                <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-2 rounded-lg">
+                  <FileText className="h-6 w-6 text-white" />
                 </div>
+              )}
+              <div>
+                <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
+                  {companyBranding?.showCompanyName && companyBranding?.companyName
+                    ? companyBranding.companyName
+                    : 'Parse-It'}
+                </h1>
                 <p className="text-xs text-gray-600 dark:text-gray-400">
-                  PDF Data Extraction
+                  {companyBranding?.showCompanyName && companyBranding?.companyName
+                    ? 'Powered by Parse-It'
+                    : 'PDF Data Extraction'}
                 </p>
               </div>
             </div>
@@ -351,20 +327,8 @@ export default function Layout({ children, currentPage, onNavigate, user, compan
             </div>
           ) : (
             <div className="flex justify-center mb-3">
-              <div className="flex items-center space-x-2">
-                {companyBranding?.logoUrl && (
-                  <img
-                    src={companyBranding.logoUrl}
-                    alt="Company Logo"
-                    className="h-6 w-auto max-w-12 object-contain"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = 'none';
-                    }}
-                  />
-                )}
-                <div className="p-3 bg-purple-50 dark:bg-purple-900/30 rounded-lg" title={`${user.username}${user.isAdmin ? ' (Admin)' : ''}`}>
-                  <User className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-                </div>
+              <div className="p-3 bg-purple-50 dark:bg-purple-900/30 rounded-lg" title={`${user.username}${user.isAdmin ? ' (Admin)' : ''}`}>
+                <User className="h-5 w-5 text-purple-600 dark:text-purple-400" />
               </div>
             </div>
           )}
@@ -409,27 +373,20 @@ export default function Layout({ children, currentPage, onNavigate, user, compan
                   />
                 )}
                 <div>
-                  <div className="flex items-center space-x-2">
-                    <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                      {currentPage === 'extract' && 'Upload & Extract'}
-                      {currentPage === 'vendor-setup' && 'Vendor Setup'}
-                      {currentPage === 'checkin-setup' && 'Check-In Setup'}
-                      {currentPage === 'client-setup' && 'Client Setup'}
-                      {currentPage === 'transform' && 'Transform & Rename'}
-                      {currentPage === 'types' && 'Type Setup'}
-                      {currentPage === 'settings' && 'Settings'}
-                      {currentPage === 'logs' && 'Activity Logs'}
-                      {currentPage === 'order-entry' && 'Order Entry'}
-                      {currentPage === 'rate-quote' && 'Rate Quote'}
-                      {currentPage === 'address-book' && 'Address Book'}
-                      {currentPage === 'client-users' && 'User Management'}
-                    </h2>
-                    {companyBranding?.showCompanyName && companyBranding?.companyName && (
-                      <span className="text-lg font-medium text-gray-600 dark:text-gray-400">
-                        - {companyBranding.companyName}
-                      </span>
-                    )}
-                  </div>
+                  <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                    {currentPage === 'extract' && 'Upload & Extract'}
+                    {currentPage === 'vendor-setup' && 'Vendor Setup'}
+                    {currentPage === 'checkin-setup' && 'Check-In Setup'}
+                    {currentPage === 'client-setup' && 'Client Setup'}
+                    {currentPage === 'transform' && 'Transform & Rename'}
+                    {currentPage === 'types' && 'Type Setup'}
+                    {currentPage === 'settings' && 'Settings'}
+                    {currentPage === 'logs' && 'Activity Logs'}
+                    {currentPage === 'order-entry' && 'Order Entry'}
+                    {currentPage === 'rate-quote' && 'Rate Quote'}
+                    {currentPage === 'address-book' && 'Address Book'}
+                    {currentPage === 'client-users' && 'User Management'}
+                  </h2>
                   <p className="text-gray-600 dark:text-gray-400 mt-1">
                     {currentPage === 'extract' && (user.role === 'vendor' ? 'Upload your PDF documents for automated processing' : 'Upload PDFs and extract structured data')}
                     {currentPage === 'vendor-setup' && 'Manage vendor accounts and configure orders display settings'}
@@ -437,7 +394,7 @@ export default function Layout({ children, currentPage, onNavigate, user, compan
                     {currentPage === 'client-setup' && 'Manage client companies and their users'}
                     {currentPage === 'transform' && 'Extract data from PDFs to intelligently rename files'}
                     {currentPage === 'types' && 'Configure extraction types, transformation types, and workflows'}
-                    {currentPage === 'settings' && 'Configure ParseIt settings and preferences'}
+                    {currentPage === 'settings' && 'Configure Parse-It settings and preferences'}
                     {currentPage === 'logs' && 'Monitor system activity and processing logs'}
                     {currentPage === 'order-entry' && 'Create and manage orders for your organization'}
                     {currentPage === 'rate-quote' && 'Request and manage pricing quotes'}
