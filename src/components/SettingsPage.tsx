@@ -53,6 +53,7 @@ interface SettingsPageProps {
   onUpdateSftpPollingConfigs: (configs: any[]) => Promise<void>;
   onUpdateCompanyBranding: (branding: CompanyBranding) => Promise<void>;
   onUpdateFeatureFlags: (flags: FeatureFlag[]) => Promise<void>;
+  refreshCompanyBranding?: () => Promise<void>;
 }
 
 type SettingsTab = 'sftp' | 'api' | 'email' | 'users' | 'branding' | 'features';
@@ -93,6 +94,7 @@ export default function SettingsPage({
   onUpdateSftpPollingConfigs,
   onUpdateCompanyBranding,
   onUpdateFeatureFlags,
+  refreshCompanyBranding,
 }: SettingsPageProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>('sftp');
 
@@ -161,6 +163,7 @@ export default function SettingsPage({
           <CompanyBrandingSettings
             companyBranding={companyBranding}
             onUpdateCompanyBranding={onUpdateCompanyBranding}
+            refreshCompanyBranding={refreshCompanyBranding}
           />
         ) : <PermissionDenied />;
       case 'features':
@@ -188,7 +191,7 @@ export default function SettingsPage({
               className={`flex-1 flex items-center justify-center space-x-2 px-4 py-3 rounded-md transition-all duration-200 ${
                 activeTab === tab.id
                   ? 'bg-white dark:bg-gray-600 text-purple-700 dark:text-purple-300 shadow-sm font-medium'
-                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 hover:ring-2 hover:ring-purple-400 dark:hover:ring-purple-500'
               }`}
             >
               <Icon className={`h-4 w-4 ${
