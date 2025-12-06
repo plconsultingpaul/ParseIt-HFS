@@ -6,6 +6,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ParseIt - PDF Data Extraction Application</title>
     <script>
+      // Early dark mode initialization - prevents flash of incorrect theme
+      (function() {
+        try {
+          const darkMode = localStorage.getItem('darkMode');
+          if (darkMode !== null) {
+            const isDark = JSON.parse(darkMode);
+            if (isDark) {
+              document.documentElement.classList.add('dark');
+            }
+          } else {
+            // Check system preference
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+              document.documentElement.classList.add('dark');
+            }
+          }
+        } catch (e) {
+          console.error('Failed to initialize dark mode:', e);
+        }
+      })();
+
       window.opencvLoadError = false;
       window.opencvLoadSuccess = false;
     </script>
