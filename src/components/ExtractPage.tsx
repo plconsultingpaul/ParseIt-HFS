@@ -42,30 +42,47 @@ export default function ExtractPage({
   const currentExtractionType = extractionTypes.find(type => type.id === selectedExtractionType);
   const currentTransformationType = transformationTypes.find(type => type.id === selectedTransformationType);
 
+  // Create a stable dependency key for user
+  const userKey = React.useMemo(() => {
+    if (!user) return 'no-user';
+    return `${user.id}-${user.role}-${user.isAdmin}`;
+  }, [user?.id, user?.role, user?.isAdmin]);
+
   // Filter extraction types based on user permissions
   React.useEffect(() => {
     const filterExtractionTypes = async () => {
       if (!user) {
-        setAllowedExtractionTypes([]);
+        setAllowedExtractionTypes(prev => prev.length === 0 ? prev : []);
         return;
       }
 
       if (user.isAdmin || user.role === 'admin') {
         // Admins see all extraction types
-        setAllowedExtractionTypes(extractionTypes);
+        setAllowedExtractionTypes(prev => {
+          if (prev === extractionTypes) return prev;
+          return extractionTypes;
+        });
       } else if (user.role === 'user') {
         // Regular users see only their assigned extraction types
         const userTypeIds = await getUserExtractionTypes(user.id);
         const filtered = extractionTypes.filter(type => userTypeIds.includes(type.id));
-        setAllowedExtractionTypes(filtered);
+        setAllowedExtractionTypes(prev => {
+          if (prev.length === filtered.length && prev.every((t, i) => t.id === filtered[i]?.id)) {
+            return prev;
+          }
+          return filtered;
+        });
       } else {
         // Vendors and others see all (existing behavior)
-        setAllowedExtractionTypes(extractionTypes);
+        setAllowedExtractionTypes(prev => {
+          if (prev === extractionTypes) return prev;
+          return extractionTypes;
+        });
       }
     };
 
     filterExtractionTypes();
-  }, [extractionTypes, user, getUserExtractionTypes]);
+  }, [extractionTypes, userKey, getUserExtractionTypes]);
 
   // Set selected extraction type to first allowed type
   React.useEffect(() => {
