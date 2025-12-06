@@ -20,10 +20,10 @@ interface AutoDetectPdfUploadSectionProps {
   ) => void;
 }
 
-export default function AutoDetectPdfUploadSection({ 
-  extractionTypes, 
+export default function AutoDetectPdfUploadSection({
+  extractionTypes,
   apiKey,
-  onDetectionComplete 
+  onDetectionComplete
 }: AutoDetectPdfUploadSectionProps) {
   const { user } = useAuth();
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -34,6 +34,33 @@ export default function AutoDetectPdfUploadSection({
   const [detectionError, setDetectionError] = useState<string>('');
   const [vendorRules, setVendorRules] = useState<VendorExtractionRule[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const filterPagesByProcessingMode = (
+    allPages: File[],
+    extractionType?: ExtractionType
+  ): File[] => {
+    if (!extractionType?.pageProcessingMode || extractionType.pageProcessingMode === 'all') {
+      return allPages;
+    }
+
+    const filteredPages: File[] = [];
+
+    if (extractionType.pageProcessingMode === 'single') {
+      const targetPage = extractionType.pageProcessingSinglePage || 1;
+      if (targetPage <= allPages.length) {
+        filteredPages.push(allPages[targetPage - 1]);
+      }
+    } else if (extractionType.pageProcessingMode === 'range') {
+      const rangeStart = extractionType.pageProcessingRangeStart || 1;
+      const rangeEnd = Math.min(extractionType.pageProcessingRangeEnd || 1, allPages.length);
+
+      if (rangeStart <= allPages.length) {
+        filteredPages.push(...allPages.slice(rangeStart - 1, rangeEnd));
+      }
+    }
+
+    return filteredPages;
+  };
 
   // Load vendor rules if user is a vendor
   React.useEffect(() => {
@@ -294,6 +321,19 @@ export default function AutoDetectPdfUploadSection({
       console.log('🏁 Unused pages:', unusedPages);
       console.log('🏁 Used page group configs:', usedPageGroupConfigs ? 'YES' : 'NO');
 
+      // Apply page processing filtering if detected extraction type has settings
+      // Only apply when not using page group configs (those are for transformations)
+      let finalLogicalDocuments = logicalDocuments;
+      if (!hasPageGroupConfigs && initialDetectionResult.detectedTypeId) {
+        const detectedType = extractionTypes.find(t => t.id === initialDetectionResult.detectedTypeId);
+        if (detectedType?.pageProcessingMode && detectedType.pageProcessingMode !== 'all') {
+          console.log('🔧 Applying page processing filter:', detectedType.pageProcessingMode);
+          const beforeFilterCount = finalLogicalDocuments.length;
+          finalLogicalDocuments = filterPagesByProcessingMode(finalLogicalDocuments, detectedType);
+          console.log(`🔧 Filtered from ${beforeFilterCount} to ${finalLogicalDocuments.length} pages`);
+        }
+      }
+
       setIsProcessingPdf(false);
 
       // Use the initial detection result
@@ -303,7 +343,7 @@ export default function AutoDetectPdfUploadSection({
       // Notify parent component with the logical documents and page range info
       onDetectionComplete(
         file,
-        logicalDocuments,
+        finalLogicalDocuments,
         initialDetectionResult.detectedTypeId,
         initialDetectionResult,
         usedPageGroupConfigs,
