@@ -9,29 +9,29 @@ export default function AdvancedPdfProcessingSection() {
       <SectionHeader
         icon={FileText}
         title="Advanced PDF Processing"
-        iconBgColor="bg-teal-100"
-        iconColor="text-teal-600"
+        iconBgColor="bg-purple-100"
+        iconColor="text-purple-600"
       />
       <div className="space-y-6">
-        <div className="bg-teal-50 border border-teal-200 rounded-lg p-6">
-          <h3 className="font-semibold text-teal-800 mb-4">PDF Document Grouping</h3>
-          <p className="text-teal-700 mb-4 text-lg">
-            ParseIt can intelligently group PDF pages into logical documents for processing. This is perfect for multi-document PDFs where each document spans multiple pages.
+        <div className="bg-purple-50 border border-purple-200 rounded-lg p-6">
+          <h3 className="font-semibold text-purple-800 mb-4">PDF Document Grouping</h3>
+          <p className="text-purple-700 mb-4 text-lg">
+            Parse-It can intelligently group PDF pages into logical documents for processing. This is perfect for multi-document PDFs where each document spans multiple pages.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-white border border-teal-300 rounded-lg p-6">
-              <h4 className="font-semibold text-teal-800 mb-3">Fixed Page Grouping</h4>
-              <ul className="text-teal-700 space-y-2">
+            <div className="bg-white border border-purple-300 rounded-lg p-6">
+              <h4 className="font-semibold text-purple-800 mb-3">Fixed Page Grouping</h4>
+              <ul className="text-purple-700 space-y-2">
                 <li>• Set "Pages Per Group" to group consecutive pages</li>
                 <li>• Example: Pages Per Group = 2 creates groups [1-2], [3-4], [5-6]</li>
                 <li>• Perfect for consistent document layouts</li>
                 <li>• Simple and reliable for predictable formats</li>
               </ul>
             </div>
-            <div className="bg-white border border-teal-300 rounded-lg p-6">
-              <h4 className="font-semibold text-teal-800 mb-3">Smart Pattern Detection</h4>
-              <ul className="text-teal-700 space-y-2">
+            <div className="bg-white border border-purple-300 rounded-lg p-6">
+              <h4 className="font-semibold text-purple-800 mb-3">Smart Pattern Detection</h4>
+              <ul className="text-purple-700 space-y-2">
                 <li>• Enable "Document Start Detection"</li>
                 <li>• Set pattern like "INVOICE / FACTURE" to detect document starts</li>
                 <li>• AI finds pattern and creates logical document boundaries</li>
