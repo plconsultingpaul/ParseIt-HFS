@@ -13,9 +13,9 @@ export default function GettingStartedSection() {
         iconColor="text-green-600"
       />
       <div className="bg-green-50 border border-green-200 rounded-lg p-6">
-        <h3 className="font-semibold text-green-800 mb-3">What is ParseIt?</h3>
+        <h3 className="font-semibold text-green-800 mb-3">What is Parse-It?</h3>
         <p className="text-green-700 mb-4">
-          ParseIt is an AI-powered PDF data extraction application that converts unstructured PDF documents into structured XML or JSON data.
+          Parse-It is an AI-powered PDF data extraction application that converts unstructured PDF documents into structured XML or JSON data.
           It uses Google's Gemini AI to intelligently extract information from your PDFs based on customizable templates and instructions.
         </p>
         <h3 className="font-semibold text-green-800 mb-3">Quick Start (3 Steps)</h3>
