@@ -2,6 +2,7 @@ import React from 'react';
 import { Brain } from 'lucide-react';
 import type { ExtractionType } from '../../types';
 import type { DetectionResult } from '../../types';
+import Select from '../common/Select';
 
 interface ExtractionControlsProps {
   extractionTypes: ExtractionType[];
@@ -28,20 +29,15 @@ export default function ExtractionControls({
     <div className="space-y-6">
       {/* Extraction Type */}
       <div>
-        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">
-          Extraction Type {uploadMode === 'auto' ? '(Fallback)' : ''}
-        </label>
-        <select
+        <Select
+          label={`Extraction Type ${uploadMode === 'auto' ? '(Fallback)' : ''}`}
           value={selectedExtractionType}
-          onChange={(e) => onSelectExtractionType(e.target.value)}
-          className="w-full px-4 py-3 bg-purple-50 dark:bg-gray-700 border border-purple-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-gray-100 font-medium focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
-        >
-          {extractionTypes.map((type) => (
-            <option key={type.id} value={type.id}>
-              {type.name}
-            </option>
-          ))}
-        </select>
+          onValueChange={onSelectExtractionType}
+          options={extractionTypes.map((type) => ({
+            value: type.id,
+            label: type.name
+          }))}
+        />
         {uploadMode === 'auto' && (
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
             This type will be used for pages where AI cannot detect a specific extraction type
