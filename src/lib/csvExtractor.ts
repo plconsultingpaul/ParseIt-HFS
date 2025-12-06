@@ -2,6 +2,11 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { FieldMapping } from '../types';
 import { withRetry } from './retryHelper';
 
+export interface ExtractionResult {
+  templateData: string;
+  workflowOnlyData: string;
+}
+
 interface CsvExtractionRequest {
   pdfFile: File;
   defaultInstructions: string;
@@ -45,12 +50,14 @@ function escapeCsvValue(value: any, delimiter: string = ','): string {
 }
 
 function generateCsvHeader(fieldMappings: FieldMapping[], delimiter: string): string {
-  const headers = fieldMappings.map(mapping => mapping.fieldName);
+  const regularMappings = fieldMappings.filter(m => !m.isWorkflowOnly);
+  const headers = regularMappings.map(mapping => mapping.fieldName);
   return headers.map(header => escapeCsvValue(header, delimiter)).join(delimiter);
 }
 
 function generateCsvRow(rowData: any, fieldMappings: FieldMapping[], delimiter: string): string {
-  const values = fieldMappings.map(mapping => {
+  const regularMappings = fieldMappings.filter(m => !m.isWorkflowOnly);
+  const values = regularMappings.map(mapping => {
     const value = rowData[mapping.fieldName];
 
     if (value === null || value === undefined) {
@@ -91,7 +98,7 @@ function generateCsvRow(rowData: any, fieldMappings: FieldMapping[], delimiter: 
   return values.join(delimiter);
 }
 
-export async function extractCsvFromPDF(request: CsvExtractionRequest): Promise<string> {
+export async function extractCsvFromPDF(request: CsvExtractionRequest): Promise<ExtractionResult> {
   const overallStartTime = performance.now();
   const {
     pdfFile,
@@ -104,12 +111,18 @@ export async function extractCsvFromPDF(request: CsvExtractionRequest): Promise<
     apiKey
   } = request;
 
+  // Separate regular and WFO field mappings
+  const regularMappings = fieldMappings.filter(m => !m.isWorkflowOnly);
+  const wfoMappings = fieldMappings.filter(m => m.isWorkflowOnly);
+
   console.log('\n[csvExtractor] ============================================');
   console.log('[csvExtractor] === CSV EXTRACTION START ===');
   console.log('[csvExtractor] Timestamp:', new Date().toISOString());
   console.log('[csvExtractor] PDF file:', pdfFile.name);
   console.log('[csvExtractor] File size:', (pdfFile.size / 1024).toFixed(2), 'KB');
-  console.log('[csvExtractor] Field mappings:', fieldMappings.length);
+  console.log('[csvExtractor] Total field mappings:', fieldMappings.length);
+  console.log('[csvExtractor] Regular field mappings:', regularMappings.length);
+  console.log('[csvExtractor] WFO field mappings:', wfoMappings.length);
   console.log('[csvExtractor] Row detection instructions:', rowDetectionInstructions.substring(0, 100));
   console.log('[csvExtractor] Delimiter:', JSON.stringify(delimiter));
   console.log('[csvExtractor] Include headers:', includeHeaders);
@@ -286,9 +299,24 @@ Please analyze the PDF and return the extracted data as a JSON array.`;
   const overallEndTime = performance.now();
   const totalDuration = ((overallEndTime - overallStartTime) / 1000).toFixed(2);
 
+  // Extract WFO data if there are WFO mappings
+  let workflowOnlyData = '{}';
+  if (wfoMappings.length > 0 && extractedData.length > 0) {
+    const wfoData: any = {};
+    // For each WFO field, extract the value from the first row (or aggregate if needed)
+    for (const wfoMapping of wfoMappings) {
+      const fieldName = wfoMapping.fieldName;
+      // Get value from first row by default
+      wfoData[fieldName] = extractedData[0][fieldName] || null;
+    }
+    workflowOnlyData = JSON.stringify(wfoData);
+    console.log('[csvExtractor] WFO data extracted:', workflowOnlyData);
+  }
+
   console.log('[csvExtractor] ✅ === CSV EXTRACTION SUCCESS ===');
   console.log('[csvExtractor] Rows extracted:', extractedData.length);
-  console.log('[csvExtractor] Field count:', fieldMappings.length);
+  console.log('[csvExtractor] Regular field count:', regularMappings.length);
+  console.log('[csvExtractor] WFO field count:', wfoMappings.length);
   console.log('[csvExtractor] CSV content length:', csvContent.length, 'characters');
   console.log(`[csvExtractor] Total extraction time: ${totalDuration}s`);
   console.log('[csvExtractor] Time breakdown:');
@@ -298,10 +326,13 @@ Please analyze the PDF and return the extracted data as a JSON array.`;
   console.log(`[csvExtractor]   - CSV generation: ${((csvEndTime - csvStartTime) / 1000).toFixed(3)}s`);
   console.log('[csvExtractor] ============================================\n');
 
-  return csvContent;
+  return {
+    templateData: csvContent,
+    workflowOnlyData
+  };
 }
 
-export async function extractCsvFromMultiPagePDF(request: CsvMultiPageExtractionRequest): Promise<string> {
+export async function extractCsvFromMultiPagePDF(request: CsvMultiPageExtractionRequest): Promise<ExtractionResult> {
   const overallStartTime = performance.now();
   const {
     pdfFiles,
@@ -314,12 +345,18 @@ export async function extractCsvFromMultiPagePDF(request: CsvMultiPageExtraction
     apiKey
   } = request;
 
+  // Separate regular and WFO field mappings
+  const regularMappings = fieldMappings.filter(m => !m.isWorkflowOnly);
+  const wfoMappings = fieldMappings.filter(m => m.isWorkflowOnly);
+
   console.log('\n[csvExtractor] ============================================');
   console.log('[csvExtractor] === MULTI-PAGE CSV EXTRACTION START ===');
   console.log('[csvExtractor] Timestamp:', new Date().toISOString());
   console.log('[csvExtractor] PDF files:', pdfFiles.length);
   console.log('[csvExtractor] Total size:', (pdfFiles.reduce((sum, f) => sum + f.size, 0) / 1024).toFixed(2), 'KB');
-  console.log('[csvExtractor] Field mappings:', fieldMappings.length);
+  console.log('[csvExtractor] Total field mappings:', fieldMappings.length);
+  console.log('[csvExtractor] Regular field mappings:', regularMappings.length);
+  console.log('[csvExtractor] WFO field mappings:', wfoMappings.length);
   console.log('[csvExtractor] Row detection instructions:', rowDetectionInstructions.substring(0, 100));
   console.log('[csvExtractor] Delimiter:', JSON.stringify(delimiter));
   console.log('[csvExtractor] Include headers:', includeHeaders);
@@ -509,9 +546,24 @@ Please analyze ALL PDF pages and return the extracted data as a JSON array.`;
   const overallEndTime = performance.now();
   const totalDuration = ((overallEndTime - overallStartTime) / 1000).toFixed(2);
 
+  // Extract WFO data if there are WFO mappings
+  let workflowOnlyData = '{}';
+  if (wfoMappings.length > 0 && extractedData.length > 0) {
+    const wfoData: any = {};
+    // For each WFO field, extract the value from the first row (or aggregate if needed)
+    for (const wfoMapping of wfoMappings) {
+      const fieldName = wfoMapping.fieldName;
+      // Get value from first row by default
+      wfoData[fieldName] = extractedData[0][fieldName] || null;
+    }
+    workflowOnlyData = JSON.stringify(wfoData);
+    console.log('[csvExtractor] WFO data extracted:', workflowOnlyData);
+  }
+
   console.log('[csvExtractor] ✅ === MULTI-PAGE CSV EXTRACTION SUCCESS ===');
   console.log('[csvExtractor] Total rows extracted:', extractedData.length);
-  console.log('[csvExtractor] Field count:', fieldMappings.length);
+  console.log('[csvExtractor] Regular field count:', regularMappings.length);
+  console.log('[csvExtractor] WFO field count:', wfoMappings.length);
   console.log('[csvExtractor] Pages processed:', pdfFiles.length);
   console.log('[csvExtractor] CSV content length:', csvContent.length, 'characters');
   console.log(`[csvExtractor] Total extraction time: ${totalDuration}s`);
@@ -522,7 +574,10 @@ Please analyze ALL PDF pages and return the extracted data as a JSON array.`;
   console.log(`[csvExtractor]   - CSV generation: ${((csvEndTime - csvStartTime) / 1000).toFixed(3)}s`);
   console.log('[csvExtractor] ============================================\n');
 
-  return csvContent;
+  return {
+    templateData: csvContent,
+    workflowOnlyData
+  };
 }
 
 async function fileToBase64(file: File): Promise<string> {
