@@ -4,6 +4,41 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey"
 };
+function filterJsonWorkflowOnlyFields(data, fieldMappings) {
+  if (!data || !fieldMappings || fieldMappings.length === 0) {
+    return data;
+  }
+  try {
+    const outputFields = fieldMappings.filter((m)=>!m.isWorkflowOnly);
+    const outputFieldNames = outputFields.map((m)=>m.fieldName);
+    const workflowOnlyCount = fieldMappings.length - outputFields.length;
+    console.log(`📊 JSON Filtering: Keeping ${outputFields.length} fields, excluding ${workflowOnlyCount} workflow-only fields`);
+    if (workflowOnlyCount === 0) {
+      console.log('📊 No workflow-only fields to filter, using original data');
+      return data;
+    }
+    const filterObject = (obj)=>{
+      if (!obj || typeof obj !== 'object') return obj;
+      if (Array.isArray(obj)) {
+        return obj.map((item)=>filterObject(item));
+      }
+      const filtered = {};
+      for (const key of Object.keys(obj)){
+        if (outputFieldNames.includes(key)) {
+          filtered[key] = obj[key];
+        }
+      }
+      return filtered;
+    };
+    const filteredData = filterObject(data);
+    console.log(`✅ JSON filtered successfully: ${outputFields.length} fields kept`);
+    return filteredData;
+  } catch (error) {
+    console.error('❌ Error filtering JSON workflow-only fields:', error);
+    console.log('⚠️ Returning original data');
+    return data;
+  }
+}
 async function createStepLog(supabaseUrl, supabaseServiceKey, workflowExecutionLogId, workflowId, step, status, startedAt, completedAt, durationMs, errorMessage, inputData, outputData) {
   try {
     const stepLogPayload = {
@@ -357,6 +392,20 @@ Deno.serve(async (req)=>{
     if (steps.length === 0) {
       throw new Error('No steps found in workflow');
     }
+    // Parse workflow-only data if provided
+    let workflowOnlyFields = {};
+    if (requestData.workflowOnlyData) {
+      try {
+        workflowOnlyFields = typeof requestData.workflowOnlyData === 'string'
+          ? JSON.parse(requestData.workflowOnlyData)
+          : requestData.workflowOnlyData;
+        console.log('📊 Parsed workflow-only data:', workflowOnlyFields);
+      } catch (error) {
+        console.warn('⚠️ Failed to parse workflowOnlyData:', error);
+        workflowOnlyFields = {};
+      }
+    }
+
     let contextData = {
       extractedData: extractedData,
       originalExtractedData: requestData.extractedData,
@@ -366,7 +415,8 @@ Deno.serve(async (req)=>{
       extractionTypeFilename: typeDetails?.filename_template || requestData.extractionTypeFilename,
       pdfStoragePath: requestData.pdfStoragePath,
       pdfBase64: requestData.pdfBase64,
-      userId: requestData.userId
+      userId: requestData.userId,
+      ...workflowOnlyFields
     };
     if (formatType !== 'CSV' && typeof extractedData === 'object' && extractedData !== null) {
       contextData = {
@@ -377,6 +427,7 @@ Deno.serve(async (req)=>{
     } else {
       console.log('📊 Context data created without spreading (CSV format or non-object data)');
     }
+    console.log('📊 Workflow-only fields available in context:', Object.keys(workflowOnlyFields));
     // === DIAGNOSTIC START: Context Initialization ===
     try {
       console.log('DIAGNOSTIC: CONTEXT INITIALIZATION');
@@ -479,6 +530,11 @@ Deno.serve(async (req)=>{
       console.log(`🔄 === EXECUTING STEP ${step.step_order}: ${step.step_name} ===`);
       console.log('🔧 Step type:', step.step_type);
       console.log('🔧 Step ID:', step.id);
+
+      let stepInputData = {
+        config: step.config_json
+      };
+
       try {
         await fetch(`${supabaseUrl}/rest/v1/workflow_execution_logs?id=eq.${workflowExecutionLogId}`, {
           method: 'PATCH',
@@ -532,9 +588,7 @@ Deno.serve(async (req)=>{
           const stepDurationMs = Date.now() - stepStartMs;
           console.log(`⏭️ Step ${step.step_order} skipped due to conditional logic in ${stepDurationMs}ms`);
           if (workflowExecutionLogId) {
-            await createStepLog(supabaseUrl, supabaseServiceKey, workflowExecutionLogId, requestData.workflowId, step, 'skipped', stepStartTime, stepEndTime, stepDurationMs, skipReason, {
-              config: step.config_json
-            }, stepOutputData);
+            await createStepLog(supabaseUrl, supabaseServiceKey, workflowExecutionLogId, requestData.workflowId, step, 'skipped', stepStartTime, stepEndTime, stepDurationMs, skipReason, stepInputData, stepOutputData);
           }
           console.log(`✅ DEBUG - Completed iteration i=${i} for step ${step.step_order}. Moving to next iteration.`);
           continue;
@@ -734,1230 +788,714 @@ Deno.serve(async (req)=>{
             console.error('📄 Problematic response:', responseText);
             throw new Error(`API response is not valid JSON: ${responseParseError.message}`);
           }
-          if (config.responseDataPath && config.updateJsonPath) {
+          // Support both old format (responseDataPath/updateJsonPath) and new format (responseDataMappings)
+          let mappingsToProcess = []
+          if (config.responseDataMappings && Array.isArray(config.responseDataMappings)) {
+            mappingsToProcess = config.responseDataMappings
+            console.log('📋 Using new format: processing', mappingsToProcess.length, 'mapping(s)')
+          } else if (config.responseDataPath && config.updateJsonPath) {
+            mappingsToProcess = [{
+              responsePath: config.responseDataPath,
+              updatePath: config.updateJsonPath
+            }]
+            console.log('📋 Using old format: converted to single mapping')
+          }
+          if (mappingsToProcess.length > 0) {
             console.log('🔄 === EXTRACTING DATA FROM API RESPONSE ===');
-            console.log('🔍 DEBUG - responseDataPath:', JSON.stringify(config.responseDataPath));
-            console.log('🔍 DEBUG - updateJsonPath:', JSON.stringify(config.updateJsonPath));
-            console.log('🔍 DEBUG - Full API responseData:', JSON.stringify(responseData, null, 2));
-            console.log('🔍 DEBUG - contextData BEFORE update:', JSON.stringify(contextData, null, 2));
-            try {
-              console.log('🔍 === STEP 1: EXTRACTING VALUE FROM API RESPONSE ===');
-              let responseValue = getValueByPath(responseData, config.responseDataPath, true);
-              console.log('✅ Extracted value from API response:', responseValue);
-              console.log('📊 DEBUG - Extracted value type:', typeof responseValue);
-              console.log('📊 DEBUG - Extracted value stringified:', JSON.stringify(responseValue));
-              console.log('🔍 === STEP 2: STORING VALUE IN CONTEXT DATA ===');
-              // Strip 'extractedData.' prefix if present since extractedData is spread at contextData root
-              let actualUpdatePath = config.updateJsonPath;
-              if (config.updateJsonPath.startsWith('extractedData.')) {
-                actualUpdatePath = config.updateJsonPath.substring('extractedData.'.length);
-                console.log('🔍 DEBUG - Stripped "extractedData." prefix from updateJsonPath');
-                console.log('🔍 DEBUG - Original path:', config.updateJsonPath);
-                console.log('🔍 DEBUG - New path:', actualUpdatePath);
+            console.log('🔍 DEBUG - Full API responseData:', JSON.stringify(responseData, null, 2).substring(0, 2000));
+            for (const mapping of mappingsToProcess) {
+              const responsePath = mapping.responsePath;
+              const updatePath = mapping.updatePath || mapping.fieldName;
+              if (!responsePath || !updatePath) {
+                console.warn('⚠️ Skipping invalid mapping:', mapping);
+                continue;
               }
-              const updatePathParts = actualUpdatePath.split('.');
-              console.log('🔍 DEBUG - updatePathParts:', JSON.stringify(updatePathParts));
-              console.log('🔍 DEBUG - Will navigate through', updatePathParts.length - 1, 'intermediate parts');
-              let current = contextData;
-              for(let j = 0; j < updatePathParts.length - 1; j++){
-                const part = updatePathParts[j];
-                console.log(`🔍 DEBUG - Processing intermediate part ${j + 1}/${updatePathParts.length - 1}: "${part}"`);
-                if (part.includes('[') && part.includes(']')) {
-                  const arrayName = part.substring(0, part.indexOf('['));
-                  const arrayIndex = parseInt(part.substring(part.indexOf('[') + 1, part.indexOf(']')));
-                  console.log(`🔍 DEBUG - Array navigation: ${arrayName}[${arrayIndex}]`);
-                  if (!current[arrayName]) {
-                    console.log(`🔍 DEBUG - Creating array: ${arrayName}`);
-                    current[arrayName] = [];
-                  }
-                  console.log(`🔍 DEBUG - Current array length: ${current[arrayName].length}, need index: ${arrayIndex}`);
-                  while(current[arrayName].length <= arrayIndex){
-                    console.log(`🔍 DEBUG - Expanding array, adding object at index ${current[arrayName].length}`);
-                    current[arrayName].push({});
-                  }
-                  current = current[arrayName][arrayIndex];
-                  console.log(`🔍 DEBUG - Navigated to ${arrayName}[${arrayIndex}]:`, JSON.stringify(current));
-                } else {
-                  console.log(`🔍 DEBUG - Object navigation: .${part}`);
+              console.log('🔍 === PROCESSING MAPPING ===');
+              console.log('🔍 DEBUG - responsePath:', responsePath);
+              console.log('🔍 DEBUG - updatePath:', updatePath);
+              console.log('🔍 DEBUG - contextData BEFORE update:', JSON.stringify(contextData, null, 2).substring(0, 1000));
+              console.log('🔍 === STEP 1: EXTRACTING VALUE FROM API RESPONSE ===');
+              const extractedValue = getValueByPath(responseData, responsePath, true);
+              if (extractedValue !== undefined && extractedValue !== null) {
+                console.log(`✅ Extracted value: ${JSON.stringify(extractedValue)}`);
+                console.log(`🔄 Updating contextData.${updatePath} with extracted value`);
+                // Support nested paths like "billNumber" or "metadata.billNumber"
+                const pathParts = updatePath.split('.');
+                let current = contextData;
+                for (let i = 0; i < pathParts.length - 1; i++) {
+                  const part = pathParts[i];
                   if (!current[part]) {
-                    console.log(`🔍 DEBUG - Creating object property: ${part}`);
                     current[part] = {};
                   }
                   current = current[part];
-                  console.log(`🔍 DEBUG - Navigated to .${part}:`, JSON.stringify(current));
                 }
-              }
-              const finalPart = updatePathParts[updatePathParts.length - 1];
-              console.log('🔍 === STEP 3: STORING VALUE AT FINAL LOCATION ===');
-              console.log('🔍 DEBUG - Final part to store at:', finalPart);
-              console.log('🔍 DEBUG - Current object before storage:', JSON.stringify(current));
-              if (finalPart.includes('[') && finalPart.includes(']')) {
-                const arrayName = finalPart.substring(0, finalPart.indexOf('['));
-                const arrayIndex = parseInt(finalPart.substring(finalPart.indexOf('[') + 1, finalPart.indexOf(']')));
-                console.log(`🔍 DEBUG - Storing in array: ${arrayName}[${arrayIndex}]`);
-                if (!current[arrayName]) {
-                  console.log(`🔍 DEBUG - Creating final array: ${arrayName}`);
-                  current[arrayName] = [];
-                }
-                while(current[arrayName].length <= arrayIndex){
-                  console.log(`🔍 DEBUG - Expanding final array, adding object at index ${current[arrayName].length}`);
-                  current[arrayName].push({});
-                }
-                current[arrayName][arrayIndex] = responseValue;
-                console.log(`✅ Stored value at ${arrayName}[${arrayIndex}]:`, current[arrayName][arrayIndex]);
+                current[pathParts[pathParts.length - 1]] = extractedValue;
+                console.log(`✅ Updated contextData.${updatePath} = ${JSON.stringify(extractedValue)}`);
               } else {
-                current[finalPart] = responseValue;
-                console.log('✅ Stored value at final property "' + finalPart + '":', current[finalPart]);
+                console.warn(`⚠️ Path "${responsePath}" not found in API response`);
               }
-              console.log('🔍 === STEP 4: VERIFICATION ===');
-              console.log('✅ Updated context data with API response');
-              console.log('🔍 DEBUG - Full contextData after update:', JSON.stringify(contextData, null, 2));
-              console.log('🔍 DEBUG - contextData keys after update:', Object.keys(contextData));
-              console.log('🔍 DEBUG - Verifying stored value by re-reading path:', config.updateJsonPath);
-              const verificationValue = getValueByPath(contextData, config.updateJsonPath, true);
-              console.log('🔍 DEBUG - Verification read result:', verificationValue);
-              if (verificationValue === responseValue) {
-                console.log('✅✅✅ VERIFICATION PASSED: Value successfully stored and retrieved!');
-              } else {
-                console.log('❌❌❌ VERIFICATION FAILED: Retrieved value does not match stored value!');
-                console.log('Expected:', responseValue);
-                console.log('Got:', verificationValue);
-              }
-              // === DIAGNOSTIC START: After Update ===
-              try {
-                console.log('DIAGNOSTIC: AFTER UPDATE STEP', step.step_order);
-                console.log('DIAGNOSTIC: Step Name:', step.step_name);
-                console.log('DIAGNOSTIC: updateJsonPath:', config.updateJsonPath);
-                console.log('DIAGNOSTIC: Response value stored:', responseValue);
-                const clientIdFromOrders = getValueByPath(contextData, 'orders[0].consignee.clientId');
-                const clientIdFromExtracted = getValueByPath(contextData, 'extractedData.orders[0].consignee.clientId');
-                console.log('DIAGNOSTIC: contextData.orders[0]?.consignee?.clientId:', clientIdFromOrders);
-                console.log('DIAGNOSTIC: contextData.extractedData?.orders?.[0]?.consignee?.clientId:', clientIdFromExtracted);
-                console.log('DIAGNOSTIC: Values Match:', clientIdFromOrders === clientIdFromExtracted);
-                if (contextData.extractedData && contextData.orders) {
-                  const refCheck = contextData.extractedData.orders === contextData.orders;
-                  console.log('DIAGNOSTIC: Reference Check:', refCheck ? 'SAME' : 'DIFFERENT');
-                }
-              } catch (e) {
-                console.error('DIAGNOSTIC ERROR: After Update', e);
-              }
-            // === DIAGNOSTIC END: After Update ===
-            } catch (extractError) {
-              console.error('❌ Failed to extract data from API response:', extractError);
-              console.error('❌ DEBUG - Full error:', extractError);
             }
           } else {
-            console.log('⚠️ DEBUG - Skipping data extraction:');
-            console.log('  - responseDataPath present:', !!config.responseDataPath);
-            console.log('  - updateJsonPath present:', !!config.updateJsonPath);
-            console.log('  - responseDataPath value:', config.responseDataPath);
-            console.log('  - updateJsonPath value:', config.updateJsonPath);
+            console.log('ℹ️ No response data mappings configured for this API call');
           }
-          // === SYNC FIX: Ensure extractedData stays synchronized with top-level properties ===
-          console.log('🔄 === SYNCHRONIZING CONTEXT DATA ===');
-          if (contextData.extractedData && typeof contextData.extractedData === 'object') {
-            console.log('🔄 Syncing top-level properties back to extractedData...');
-            const keysToSync = Object.keys(contextData).filter((key)=>key !== 'extractedData' && key !== 'originalExtractedData' && key !== 'formatType' && key !== 'pdfFilename' && key !== 'originalPdfFilename' && key !== 'pdfStoragePath' && key !== 'pdfBase64');
-            console.log('🔄 Keys to sync:', keysToSync);
-            for (const key of keysToSync){
-              if (contextData.hasOwnProperty(key)) {
-                contextData.extractedData[key] = contextData[key];
-                console.log(`🔄 Synced ${key} to extractedData`);
+          // === DIAGNOSTIC START: After API Response Update ===
+          try {
+            if (step.step_order === 100 || step.step_name.includes('POST TruckMate')) {
+              console.log('DIAGNOSTIC: AFTER API RESPONSE UPDATE');
+              console.log('DIAGNOSTIC: Step Order:', step.step_order);
+              console.log('DIAGNOSTIC: Step Name:', step.step_name);
+              console.log('DIAGNOSTIC: contextData.billNumber:', contextData.billNumber);
+              console.log('DIAGNOSTIC: contextData.orderID:', contextData.orderID);
+              const clientIdFromOrders = getValueByPath(contextData, 'orders[0].consignee.clientId');
+              const clientIdFromExtracted = getValueByPath(contextData, 'extractedData.orders[0].consignee.clientId');
+              console.log('DIAGNOSTIC: contextData.orders[0]?.consignee?.clientId:', clientIdFromOrders);
+              console.log('DIAGNOSTIC: contextData.extractedData?.orders?.[0]?.consignee?.clientId:', clientIdFromExtracted);
+              if (contextData.extractedData && contextData.orders) {
+                const refCheck = contextData.extractedData.orders === contextData.orders;
+                console.log('DIAGNOSTIC: Reference Check:', refCheck ? 'SAME' : 'DIFFERENT');
               }
             }
-            // Diagnostic verification
-            const clientIdFromOrders = getValueByPath(contextData, 'orders[0].consignee.clientId');
-            const clientIdFromExtracted = getValueByPath(contextData, 'extractedData.orders[0].consignee.clientId');
-            console.log('🔍 SYNC VERIFICATION:');
-            console.log('  - contextData.orders[0]?.consignee?.clientId:', clientIdFromOrders);
-            console.log('  - contextData.extractedData.orders[0]?.consignee?.clientId:', clientIdFromExtracted);
-            console.log('  - Values match:', clientIdFromOrders === clientIdFromExtracted);
+          } catch (e) {
+            console.error('DIAGNOSTIC ERROR: After API Response Update', e);
           }
-          console.log('✅ === CONTEXT DATA SYNCHRONIZED ===');
-        } else if (step.step_type === 'rename_file' || step.step_type === 'rename_pdf') {
-          console.log('📝 === EXECUTING RENAME FILE STEP ===');
+          // === DIAGNOSTIC END: After API Response Update ===
+        } else if (step.step_type === 'api_endpoint') {
+          console.log('🌐 === EXECUTING API ENDPOINT STEP ===');
           const config = step.config_json || {};
-          console.log('🔧 Rename config:', JSON.stringify(config, null, 2));
-          console.log('🔍 DEBUG - contextData keys at start of rename:', Object.keys(contextData));
-          console.log('🔍 DEBUG - contextData.billNumber:', contextData.billNumber);
-          console.log('🔍 DEBUG - lastApiResponse:', lastApiResponse);
-          let template = config.filenameTemplate || config.template || 'Remit_{{pdfFilename}}';
-          console.log('📄 Original template:', template);
-          const placeholderRegex = /\{\{([^}]+)\}\}/g;
-          let match;
-          while((match = placeholderRegex.exec(template)) !== null){
-            const placeholder = match[0];
-            const path = match[1];
-            let value = getValueByPath(contextData, path);
-            console.log(`🔍 Replacing ${placeholder} (path: "${path}")`);
-            console.log(`🔍   - Value from contextData:`, value);
-            if ((value === null || value === undefined) && lastApiResponse) {
-              value = getValueByPath(lastApiResponse, path);
-              console.log(`🔍   - Fallback value from lastApiResponse:`, value);
+          console.log('🔧 API endpoint config:', JSON.stringify(config, null, 2));
+          let baseUrl = '';
+          let authToken = '';
+          let mainApiConfig = null;
+          const apiSourceType = config.apiSourceType || 'main';
+          console.log('📋 API Source Type:', apiSourceType);
+          if (apiSourceType === 'main') {
+            try {
+              console.log('🔍 Fetching main API config from api_settings table...');
+              const mainApiResponse = await fetch(`${supabaseUrl}/rest/v1/api_settings?select=*`, {
+                headers: {
+                  'Authorization': `Bearer ${supabaseServiceKey}`,
+                  'Content-Type': 'application/json',
+                  'apikey': supabaseServiceKey
+                }
+              });
+              console.log('📊 Main API config response status:', mainApiResponse.status);
+              console.log('📊 Main API config response ok:', mainApiResponse.ok);
+              if (mainApiResponse.ok) {
+                const mainApiResponseText = await mainApiResponse.text();
+                console.log('📊 Main API config response text length:', mainApiResponseText.length);
+                console.log('📊 Main API config response text:', mainApiResponseText);
+                const mainApis = JSON.parse(mainApiResponseText);
+                console.log('📊 Main API configs array length:', mainApis.length);
+                if (mainApis && mainApis.length > 0) {
+                  mainApiConfig = mainApis[0];
+                  console.log('📊 First main API config raw object:', JSON.stringify(mainApiConfig, null, 2));
+                  console.log('📊 Main API config path field value:', mainApiConfig.path);
+                  console.log('📊 Main API config path type:', typeof mainApiConfig.path);
+                  console.log('📊 Main API config path is empty?', !mainApiConfig.path);
+                  baseUrl = mainApiConfig.path || '';
+                  authToken = mainApiConfig.password || '';
+                  console.log('✅ Loaded main API config');
+                  console.log('🔗 Base URL assigned:', baseUrl ? baseUrl : 'EMPTY');
+                  console.log('🔑 Auth token loaded:', authToken ? `${authToken.substring(0, 10)}...` : 'EMPTY');
+                } else {
+                  console.warn('⚠️ No main API configs found in database (array is empty)');
+                }
+              } else {
+                const errorText = await mainApiResponse.text();
+                console.error('❌ Main API config fetch failed with status:', mainApiResponse.status);
+                console.error('❌ Error response:', errorText);
+              }
+            } catch (apiConfigError) {
+              console.error('❌ Failed to load main API config:', apiConfigError);
+              console.error('❌ Error type:', apiConfigError.constructor.name);
+              console.error('❌ Error message:', apiConfigError.message);
             }
-            if (value !== null && value !== undefined) {
-              template = template.replace(placeholder, String(value));
-              console.log(`🔍   - Replaced with:`, String(value));
+          } else if (apiSourceType === 'secondary' && config.secondaryApiId) {
+            try {
+              console.log('🔍 Fetching secondary API config from secondary_api_configs table...');
+              console.log('🔍 Secondary API ID:', config.secondaryApiId);
+              const secondaryApiResponse = await fetch(`${supabaseUrl}/rest/v1/secondary_api_configs?select=*&id=eq.${config.secondaryApiId}`, {
+                headers: {
+                  'Authorization': `Bearer ${supabaseServiceKey}`,
+                  'Content-Type': 'application/json',
+                  'apikey': supabaseServiceKey
+                }
+              });
+              console.log('📊 Secondary API config response status:', secondaryApiResponse.status);
+              console.log('📊 Secondary API config response ok:', secondaryApiResponse.ok);
+              if (secondaryApiResponse.ok) {
+                const secondaryApiResponseText = await secondaryApiResponse.text();
+                console.log('📊 Secondary API config response text length:', secondaryApiResponseText.length);
+                console.log('📊 Secondary API config response text:', secondaryApiResponseText);
+                const secondaryApis = JSON.parse(secondaryApiResponseText);
+                console.log('📊 Secondary API configs array length:', secondaryApis.length);
+                if (secondaryApis && secondaryApis.length > 0) {
+                  const secondaryApiConfig = secondaryApis[0];
+                  console.log('📊 First secondary API config raw object:', JSON.stringify(secondaryApiConfig, null, 2));
+                  console.log('📊 Secondary API config base_url field value:', secondaryApiConfig.base_url);
+                  console.log('📊 Secondary API config base_url type:', typeof secondaryApiConfig.base_url);
+                  console.log('📊 Secondary API config base_url is empty?', !secondaryApiConfig.base_url);
+                  baseUrl = secondaryApiConfig.base_url || '';
+                  authToken = secondaryApiConfig.auth_token || '';
+                  console.log('✅ Loaded secondary API config:', secondaryApiConfig.name);
+                  console.log('🔗 Base URL assigned:', baseUrl ? baseUrl : 'EMPTY');
+                  console.log('🔑 Auth token loaded:', authToken ? `${authToken.substring(0, 10)}...` : 'EMPTY');
+                } else {
+                  console.warn('⚠️ No secondary API configs found in database for ID:', config.secondaryApiId);
+                }
+              } else {
+                const errorText = await secondaryApiResponse.text();
+                console.error('❌ Secondary API config fetch failed with status:', secondaryApiResponse.status);
+                console.error('❌ Error response:', errorText);
+              }
+            } catch (apiConfigError) {
+              console.error('❌ Failed to load secondary API config:', apiConfigError);
+              console.error('❌ Error type:', apiConfigError.constructor.name);
+              console.error('❌ Error message:', apiConfigError.message);
+            }
+          }
+
+          console.log('🔍 === API CONFIG VALIDATION ===');
+          console.log('🔍 Final baseUrl value:', baseUrl);
+          console.log('🔍 Final baseUrl length:', baseUrl.length);
+          console.log('🔍 Final baseUrl is empty:', !baseUrl || baseUrl.trim() === '');
+          console.log('🔍 Final authToken present:', !!authToken);
+
+          if (!baseUrl || baseUrl.trim() === '') {
+            const errorMsg = `❌ CRITICAL ERROR: Base URL is empty after loading ${apiSourceType} API config.\n` +
+              `   API Source Type: ${apiSourceType}\n` +
+              `   ${apiSourceType === 'secondary' ? `Secondary API ID: ${config.secondaryApiId}\n` : ''}` +
+              `   This indicates the API configuration is missing or incomplete in the database.\n` +
+              `   Please check the following:\n` +
+              `   1. For main API: Verify that the api_settings table has a row with a valid path\n` +
+              `   2. For secondary API: Verify that secondary_api_configs table has a row with id=${config.secondaryApiId} and a valid base_url\n` +
+              `   3. Ensure the path field (main API) or base_url field (secondary API) is not NULL or empty string in the database\n` +
+              `   4. Check the database migration and RLS policies allow reading these tables`;
+            console.error(errorMsg);
+            throw new Error(errorMsg);
+          }
+
+          console.log('✅ Base URL validation passed:', baseUrl);
+          // Build URL with path and query parameters
+          let apiPath = config.apiPath || '';
+          const httpMethod = config.httpMethod || 'GET';
+
+          // Replace path variables using pathVariableConfig
+          // Supports both simple string format: { "orderId": "{{orderID}}" }
+          // And complex object format: { "orderId": { "enabled": true, "value": "{{orderID}}" } }
+          const pathVariableConfig = config.pathVariableConfig || {};
+          console.log('🔧 Path variable config:', JSON.stringify(pathVariableConfig));
+
+          for (const [varName, varConfig] of Object.entries(pathVariableConfig)) {
+            // Detect format: string (simple) or object (complex)
+            const isSimpleFormat = typeof varConfig === 'string';
+            const isEnabled = isSimpleFormat ? true : (varConfig.enabled ?? true);
+            const valueTemplate = isSimpleFormat ? varConfig : (varConfig.value || '');
+
+            console.log(`🔍 Processing path variable: ${varName} (format: ${isSimpleFormat ? 'simple string' : 'object'})`);
+
+            if (isEnabled && valueTemplate) {
+              console.log(`  - Value template: ${valueTemplate}`);
+
+              let resolvedValue = valueTemplate;
+
+              // Replace variables in the configured value using replaceAll approach
+              const valueVarRegex = /\{\{([^}]+)\}\}|\$\{([^}]+)\}/g;
+              resolvedValue = valueTemplate.replace(valueVarRegex, (match, doubleBrace, dollarBrace) => {
+                const variableName = doubleBrace || dollarBrace;
+                const value = getValueByPath(contextData, variableName);
+                if (value !== undefined && value !== null) {
+                  console.log(`  - Resolved ${match} to: ${value}`);
+                  return String(value);
+                }
+                console.warn(`  - ⚠️ Variable ${match} not found in context, leaving unchanged`);
+                return match;
+              });
+
+              console.log(`  - Final resolved value: ${resolvedValue}`);
+
+              // Replace the path variable in apiPath (supports both {varName} and ${varName} formats)
+              const pathVarPattern1 = `{${varName}}`;
+              const pathVarPattern2 = `\${${varName}}`;
+
+              if (apiPath.includes(pathVarPattern1)) {
+                apiPath = apiPath.replace(pathVarPattern1, resolvedValue);
+                console.log(`  - ✅ Replaced ${pathVarPattern1} in path`);
+              } else if (apiPath.includes(pathVarPattern2)) {
+                apiPath = apiPath.replace(pathVarPattern2, resolvedValue);
+                console.log(`  - ✅ Replaced ${pathVarPattern2} in path`);
+              } else {
+                console.log(`  - ⚠️ Path variable {${varName}} not found in apiPath`);
+              }
             } else {
-              console.log(`⚠️   - No value found for ${placeholder}`);
+              console.log(`⏭️ Skipping disabled or empty path variable: ${varName}`);
             }
           }
-          console.log('📄 Template after replacements:', template);
-          let baseFilename = template.replace(/\.(pdf|csv|json|xml)$/i, '');
-          console.log('📄 Base filename (without extension):', baseFilename);
-          const appendTimestamp = config.appendTimestamp === true;
-          const timestampFormat = config.timestampFormat || 'YYYYMMDD';
-          console.log('⏰ Append timestamp:', appendTimestamp);
-          if (appendTimestamp) {
-            console.log('⏰ Timestamp format:', timestampFormat);
-          }
-          let timestamp = '';
-          if (appendTimestamp) {
-            const now = new Date();
-            const year = now.getFullYear();
-            const month = String(now.getMonth() + 1).padStart(2, '0');
-            const day = String(now.getDate()).padStart(2, '0');
-            const hours = String(now.getHours()).padStart(2, '0');
-            const minutes = String(now.getMinutes()).padStart(2, '0');
-            const seconds = String(now.getSeconds()).padStart(2, '0');
-            switch(timestampFormat){
-              case 'YYYYMMDD':
-                timestamp = `${year}${month}${day}`;
-                break;
-              case 'YYYY-MM-DD':
-                timestamp = `${year}-${month}-${day}`;
-                break;
-              case 'YYYYMMDD_HHMMSS':
-                timestamp = `${year}${month}${day}_${hours}${minutes}${seconds}`;
-                break;
-              case 'YYYY-MM-DD_HH-MM-SS':
-                timestamp = `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
-                break;
-              default:
-                timestamp = `${year}${month}${day}`;
+
+          console.log('🔗 API path after path variable replacement:', apiPath);
+
+          // Build query string from enabled parameters
+          const queryParams = new URLSearchParams();
+          const queryParameterConfig = config.queryParameterConfig || {};
+
+          for (const [paramName, paramConfig] of Object.entries(queryParameterConfig)) {
+            if (paramConfig.enabled && paramConfig.value) {
+              let paramValue = paramConfig.value;
+
+              // Replace variables in parameter values using replaceAll approach
+              const valueVarRegex = /\{\{([^}]+)\}\}|\$\{([^}]+)\}/g;
+              paramValue = paramConfig.value.replace(valueVarRegex, (match, doubleBrace, dollarBrace) => {
+                const variableName = doubleBrace || dollarBrace;
+                const value = getValueByPath(contextData, variableName);
+                if (value !== undefined && value !== null) {
+                  console.log(`🔄 Replaced query param variable ${match} with: ${value}`);
+                  return String(value);
+                }
+                console.warn(`⚠️ Variable ${match} not found in context, leaving unchanged`);
+                return match;
+              });
+              console.log(`📋 Final param value for "${paramName}":`, paramValue);
+
+              queryParams.append(paramName, paramValue);
             }
-            console.log('⏰ Generated timestamp:', timestamp);
-            baseFilename = `${baseFilename}_${timestamp}`;
-            console.log('📄 Base filename with timestamp:', baseFilename);
           }
-          const renamePdf = config.renamePdf === true;
-          const renameCsv = config.renameCsv === true;
-          const renameJson = config.renameJson === true;
-          const renameXml = config.renameXml === true;
-          console.log('📋 File types to rename:', {
-            renamePdf,
-            renameCsv,
-            renameJson,
-            renameXml
-          });
-          const renamedFilenames = {};
-          if (renamePdf) {
-            contextData.renamedPdfFilename = `${baseFilename}.pdf`;
-            renamedFilenames.pdf = contextData.renamedPdfFilename;
-            console.log('✅ Renamed PDF filename:', contextData.renamedPdfFilename);
-          }
-          if (renameCsv) {
-            contextData.renamedCsvFilename = `${baseFilename}.csv`;
-            renamedFilenames.csv = contextData.renamedCsvFilename;
-            console.log('✅ Renamed CSV filename:', contextData.renamedCsvFilename);
-          }
-          if (renameJson) {
-            contextData.renamedJsonFilename = `${baseFilename}.json`;
-            renamedFilenames.json = contextData.renamedJsonFilename;
-            console.log('✅ Renamed JSON filename:', contextData.renamedJsonFilename);
-          }
-          if (renameXml) {
-            contextData.renamedXmlFilename = `${baseFilename}.xml`;
-            renamedFilenames.xml = contextData.renamedXmlFilename;
-            console.log('✅ Renamed XML filename:', contextData.renamedXmlFilename);
-          }
-          let primaryFilename = baseFilename;
-          if (formatType === 'CSV' && renameCsv) {
-            primaryFilename = contextData.renamedCsvFilename;
-          } else if (formatType === 'JSON' && renameJson) {
-            primaryFilename = contextData.renamedJsonFilename;
-          } else if (formatType === 'XML' && renameXml) {
-            primaryFilename = contextData.renamedXmlFilename;
-          } else if (renamePdf) {
-            primaryFilename = contextData.renamedPdfFilename;
-          } else if (renameCsv) {
-            primaryFilename = contextData.renamedCsvFilename;
-          } else if (renameJson) {
-            primaryFilename = contextData.renamedJsonFilename;
-          } else if (renameXml) {
-            primaryFilename = contextData.renamedXmlFilename;
-          }
-          contextData.renamedFilename = primaryFilename;
-          contextData.actualFilename = primaryFilename;
-          console.log('✅ Primary renamed filename:', primaryFilename);
-          stepOutputData = {
-            renamedFilenames,
-            primaryFilename,
-            baseFilename
+
+          const queryString = queryParams.toString();
+          const fullUrl = `${baseUrl}${apiPath}${queryString ? '?' + queryString : ''}`;
+          console.log('🔗 Full API Endpoint URL:', fullUrl);
+          console.log('📤 Making', httpMethod, 'request to API endpoint');
+          console.log('  - Method:', httpMethod);
+          console.log('📋 Request Details:');
+          console.log('  - URL:', fullUrl);
+          console.log('  - API Path:', apiPath);
+          console.log('  - Query String:', queryString);
+          console.log('  - Base URL:', baseUrl);
+          const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
           };
-        } else if (step.step_type === 'sftp_upload') {
-          console.log('📤 === EXECUTING SFTP UPLOAD STEP ===');
-          const config = step.config_json || {};
-          console.log('🔧 SFTP upload config:', JSON.stringify(config, null, 2));
-          console.log('📋 Fetching default SFTP configuration...');
-          const sftpConfigResponse = await fetch(`${supabaseUrl}/rest/v1/sftp_config?limit=1`, {
-            headers: {
-              'Authorization': `Bearer ${supabaseServiceKey}`,
-              'Content-Type': 'application/json',
-              'apikey': supabaseServiceKey
+          console.log('  - Headers:', JSON.stringify(headers));
+
+          stepInputData = {
+            ...stepInputData,
+            stepType: 'api_endpoint',
+            apiSourceType: apiSourceType,
+            baseUrl: baseUrl,
+            apiPath: apiPath,
+            queryString: queryString,
+            fullUrl: fullUrl,
+            httpMethod: httpMethod,
+            authTokenPresent: !!authToken,
+            authTokenPreview: authToken ? `${authToken.substring(0, 10)}...` : 'NONE',
+            secondaryApiId: config.secondaryApiId || null
+          };
+          console.log('📊 Step input data captured for logging:', JSON.stringify(stepInputData, null, 2));
+          let requestBodyContent = config.requestBodyTemplate || '';
+          console.log('📄 Request body template:', requestBodyContent);
+          const requestBodyFieldMappings = config.requestBodyFieldMappings || [];
+          if (requestBodyFieldMappings.length > 0 && requestBodyContent) {
+            console.log('🔧 Processing', requestBodyFieldMappings.length, 'field mappings');
+            try {
+              let requestBodyData = JSON.parse(requestBodyContent);
+              for (const mapping of requestBodyFieldMappings) {
+                const fieldPath = mapping.fieldName;
+                const mappingType = mapping.type;
+                const mappingValue = mapping.value;
+                const dataType = mapping.dataType || 'string';
+                console.log(`🔧 Processing field: ${fieldPath} (type: ${mappingType}, dataType: ${dataType})`);
+                let finalValue;
+                if (mappingType === 'hardcoded') {
+                  finalValue = mappingValue;
+                  console.log(`  - Using hardcoded value: ${finalValue}`);
+                } else if (mappingType === 'variable') {
+                  const variableName = mappingValue.replace(/^\{\{|\}\}$/g, '');
+                  finalValue = getValueByPath(contextData, variableName);
+                  console.log(`  - Resolved variable ${mappingValue} to: ${finalValue}`);
+                } else {
+                  console.warn(`  - Unknown mapping type: ${mappingType}`);
+                  continue;
+                }
+                if (finalValue !== undefined && finalValue !== null) {
+                  if (dataType === 'integer') {
+                    finalValue = parseInt(String(finalValue));
+                  } else if (dataType === 'number') {
+                    finalValue = parseFloat(String(finalValue));
+                  } else if (dataType === 'boolean') {
+                    finalValue = String(finalValue).toLowerCase() === 'true';
+                  } else {
+                    finalValue = String(finalValue);
+                  }
+                  console.log(`  - Final typed value (${dataType}): ${finalValue}`);
+                  const pathParts = fieldPath.split('.');
+                  let current = requestBodyData;
+                  for (let i = 0; i < pathParts.length - 1; i++) {
+                    const part = pathParts[i];
+                    const match = part.match(/^(\w+)\[(\d+)\]$/);
+                    if (match) {
+                      const arrayName = match[1];
+                      const arrayIndex = parseInt(match[2]);
+                      if (!current[arrayName]) {
+                        current[arrayName] = [];
+                      }
+                      while (current[arrayName].length <= arrayIndex) {
+                        current[arrayName].push({});
+                      }
+                      current = current[arrayName][arrayIndex];
+                    } else {
+                      if (!current[part]) {
+                        current[part] = {};
+                      }
+                      current = current[part];
+                    }
+                  }
+                  const lastPart = pathParts[pathParts.length - 1];
+                  const match = lastPart.match(/^(\w+)\[(\d+)\]$/);
+                  if (match) {
+                    const arrayName = match[1];
+                    const arrayIndex = parseInt(match[2]);
+                    if (!current[arrayName]) {
+                      current[arrayName] = [];
+                    }
+                    while (current[arrayName].length <= arrayIndex) {
+                      current[arrayName].push({});
+                    }
+                    current[arrayName][arrayIndex] = finalValue;
+                  } else {
+                    current[lastPart] = finalValue;
+                  }
+                  console.log(`  - ✅ Set ${fieldPath} = ${finalValue}`);
+                } else {
+                  console.warn(`  - ⚠️ Could not resolve value for ${fieldPath}`);
+                }
+              }
+              requestBodyContent = JSON.stringify(requestBodyData);
+              console.log('✅ Request body after field mappings:', requestBodyContent);
+            } catch (mappingError) {
+              console.error('❌ Error processing field mappings:', mappingError);
+              console.log('⚠️ Using original request body template');
             }
-          });
-          if (!sftpConfigResponse.ok) {
-            throw new Error(`Failed to fetch SFTP configuration: ${sftpConfigResponse.status} ${sftpConfigResponse.statusText}`);
           }
-          const sftpConfigs = await sftpConfigResponse.json();
-          if (!sftpConfigs || sftpConfigs.length === 0) {
-            throw new Error('No SFTP configuration found. Please configure SFTP settings in Settings.');
+          const fetchOptions = {
+            method: httpMethod,
+            headers
+          };
+          if (httpMethod.toUpperCase() !== 'GET' && requestBodyContent && requestBodyContent.trim() !== '') {
+            fetchOptions.body = requestBodyContent;
+            console.log('📄 Request body:', requestBodyContent);
           }
-          const sftpConfig = sftpConfigs[0];
-          console.log('✅ SFTP configuration loaded:', sftpConfig.name || sftpConfig.host);
-          let fileContent = '';
-          let filename = contextData.renamedFilename || contextData.actualFilename || contextData.pdfFilename || 'document';
-          if (config.uploadType === 'pdf') {
-            console.log('📄 Uploading PDF file');
-            if (contextData.renamedPdfFilename) {
-              filename = contextData.renamedPdfFilename;
-              console.log('✅ Using renamed PDF filename:', filename);
-            } else if (!filename.toLowerCase().endsWith('.pdf')) {
-              filename = `${filename}.pdf`;
-            }
-            if (!contextData.pdfBase64) {
-              throw new Error('PDF base64 data not available');
-            }
-            fileContent = contextData.pdfBase64;
-          } else if (config.uploadType === 'json') {
-            console.log('📄 Uploading JSON file');
-            if (contextData.renamedJsonFilename) {
-              filename = contextData.renamedJsonFilename;
-              console.log('✅ Using renamed JSON filename:', filename);
-            } else if (!filename.toLowerCase().endsWith('.json')) {
-              filename = filename.replace(/\.(pdf|json|xml|csv)$/i, '') + '.json';
-            }
-            const dataToUpload = contextData.extractedData || contextData;
-            fileContent = Buffer.from(JSON.stringify(dataToUpload, null, 2)).toString('base64');
-          } else if (config.uploadType === 'xml') {
-            console.log('📄 Uploading XML file');
-            if (contextData.renamedXmlFilename) {
-              filename = contextData.renamedXmlFilename;
-              console.log('✅ Using renamed XML filename:', filename);
-            } else if (!filename.toLowerCase().endsWith('.xml')) {
-              filename = filename.replace(/\.(pdf|json|xml|csv)$/i, '') + '.xml';
-            }
-            const dataToUpload = contextData.extractedData || contextData;
-            fileContent = Buffer.from(JSON.stringify(dataToUpload, null, 2)).toString('base64');
-          } else if (config.uploadType === 'csv') {
-            console.log('�� === UPLOADING CSV FILE ===');
-            if (contextData.renamedCsvFilename) {
-              filename = contextData.renamedCsvFilename;
-              console.log('✅ Using renamed CSV filename:', filename);
-            } else if (!filename.toLowerCase().endsWith('.csv')) {
-              filename = filename.replace(/\.(pdf|json|xml|csv)$/i, '') + '.csv';
-            }
-            console.log('📊 Searching for CSV data in contextData...');
-            console.log('📊 contextData.extractedData type:', typeof contextData.extractedData);
-            console.log('📊 contextData.originalExtractedData type:', typeof contextData.originalExtractedData);
-            let csvData = null;
-            if (contextData.extractedData && typeof contextData.extractedData === 'string') {
-              console.log('✅ Found CSV data in extractedData (string)');
-              csvData = contextData.extractedData;
-              console.log('📊 CSV data length:', csvData.length);
-              console.log('📊 CSV data preview (first 200 chars):', csvData.substring(0, 200));
-              console.log('📊 CSV data preview (last 100 chars):', csvData.substring(Math.max(0, csvData.length - 100)));
-            } else if (contextData.originalExtractedData && typeof contextData.originalExtractedData === 'string') {
-              console.log('✅ Found CSV data in originalExtractedData (string)');
-              csvData = contextData.originalExtractedData;
-              console.log('📊 CSV data length:', csvData.length);
-              console.log('📊 CSV data preview (first 200 chars):', csvData.substring(0, 200));
-              console.log('📊 CSV data preview (last 100 chars):', csvData.substring(Math.max(0, csvData.length - 100)));
+          const apiEndpointResponse = await fetch(fullUrl, fetchOptions);
+          console.log('📥 API endpoint response status:', apiEndpointResponse.status);
+          if (!apiEndpointResponse.ok) {
+            const errorText = await apiEndpointResponse.text();
+            console.error('❌ API endpoint call failed:', errorText);
+            throw new Error(`API endpoint call failed with status ${apiEndpointResponse.status}: ${errorText}`);
+          }
+          const apiEndpointResponseText = await apiEndpointResponse.text();
+          console.log('📏 API endpoint response length:', apiEndpointResponseText.length);
+          let apiEndpointResponseData = null;
+          try {
+            if (apiEndpointResponseText && apiEndpointResponseText.trim() !== '') {
+              apiEndpointResponseData = JSON.parse(apiEndpointResponseText);
+              console.log('✅ API endpoint response parsed successfully');
+              stepOutputData = apiEndpointResponseData;
             } else {
-              console.error('❌ CSV data not found');
-              console.error('- extractedData type:', typeof contextData.extractedData);
-              console.error('- originalExtractedData type:', typeof contextData.originalExtractedData);
-              console.error('- extractedData value:', contextData.extractedData);
-              console.error('- originalExtractedData value:', contextData.originalExtractedData);
-              throw new Error('CSV data not available or not in string format');
+              console.log('ℹ️ API endpoint returned empty response (might be successful with no body)');
+              stepOutputData = { success: true, emptyResponse: true };
             }
-            fileContent = csvData;
-            console.log('✅ CSV data prepared for upload, length:', fileContent.length);
-            console.log('✅ CSV fileContent preview (first 200 chars):', fileContent.substring(0, 200));
+          } catch (responseParseError) {
+            console.warn('⚠️ Could not parse API endpoint response as JSON:', responseParseError);
+            console.log('📄 Raw response:', apiEndpointResponseText);
+            stepOutputData = { rawResponse: apiEndpointResponseText };
           }
-          console.log('📤 Calling SFTP upload function...');
-          console.log('📄 Filename:', filename);
-          console.log('📏 File content length:', fileContent.length);
-          const uploadFileTypes = {};
-          if (config.uploadType === 'pdf') {
-            uploadFileTypes.pdf = true;
-          } else if (config.uploadType === 'json') {
-            uploadFileTypes.json = true;
-          } else if (config.uploadType === 'xml') {
-            uploadFileTypes.xml = true;
-          } else if (config.uploadType === 'csv') {
-            uploadFileTypes.csv = true;
-          }
-          let exactFilenameToPass = undefined;
-          if (config.uploadType === 'pdf' && contextData.renamedPdfFilename) {
-            exactFilenameToPass = contextData.renamedPdfFilename.replace(/\.(pdf|csv|json|xml)$/i, '');
-            console.log('📤 Passing exact filename for PDF:', exactFilenameToPass);
-          } else if (config.uploadType === 'csv' && contextData.renamedCsvFilename) {
-            exactFilenameToPass = contextData.renamedCsvFilename.replace(/\.(pdf|csv|json|xml)$/i, '');
-            console.log('📤 Passing exact filename for CSV:', exactFilenameToPass);
-          } else if (config.uploadType === 'json' && contextData.renamedJsonFilename) {
-            exactFilenameToPass = contextData.renamedJsonFilename.replace(/\.(pdf|csv|json|xml)$/i, '');
-            console.log('📤 Passing exact filename for JSON:', exactFilenameToPass);
-          } else if (config.uploadType === 'xml' && contextData.renamedXmlFilename) {
-            exactFilenameToPass = contextData.renamedXmlFilename.replace(/\.(pdf|csv|json|xml)$/i, '');
-            console.log('📤 Passing exact filename for XML:', exactFilenameToPass);
-          } else if (contextData.renamedFilename) {
-            exactFilenameToPass = contextData.renamedFilename.replace(/\.(pdf|csv|json|xml)$/i, '');
-            console.log('📤 Passing exact filename (generic):', exactFilenameToPass);
-          }
-          console.log('🔍 === PREPARING CONTENT FOR SFTP ===');
-          console.log('🔍 config.uploadType:', config.uploadType);
-          console.log('🔍 fileContent type:', typeof fileContent);
-          console.log('🔍 fileContent length:', fileContent ? fileContent.length : 0);
-          console.log('🔍 formatType:', formatType);
-          let contentForSftp;
-          if (config.uploadType === 'csv') {
-            console.log('✅ Detected CSV upload type');
-            contentForSftp = fileContent;
-            console.log('📤 === PREPARING CSV FOR SFTP ===');
-            console.log('📤 contentForSftp type:', typeof contentForSftp);
-            console.log('📤 contentForSftp length:', contentForSftp.length);
-            console.log('📤 contentForSftp preview (first 300 chars):', contentForSftp.substring(0, 300));
-            console.log('📤 contentForSftp preview (last 200 chars):', contentForSftp.substring(Math.max(0, contentForSftp.length - 200)));
-            if (!contentForSftp || contentForSftp.trim() === '') {
-              console.error('❌ CRITICAL: contentForSftp is empty!');
-              console.error('❌ fileContent was:', fileContent);
-              throw new Error('CSV content is empty before SFTP upload');
+          const responseDataMappings = config.responseDataMappings || [];
+          if (responseDataMappings.length > 0 && apiEndpointResponseData) {
+            console.log('🔄 === EXTRACTING DATA FROM API RESPONSE ===');
+            for (const mapping of responseDataMappings) {
+              const responsePath = mapping.responsePath;
+              const updatePath = mapping.updatePath || mapping.fieldName;
+              if (!responsePath || !updatePath) {
+                console.warn('⚠️ Skipping invalid mapping:', mapping);
+                continue;
+              }
+              console.log(`🔍 Extracting from response path: ${responsePath}`);
+              const extractedValue = getValueByPath(apiEndpointResponseData, responsePath);
+              if (extractedValue !== undefined && extractedValue !== null) {
+                console.log(`✅ Extracted value: ${JSON.stringify(extractedValue)}`);
+                console.log(`🔄 Updating contextData.${updatePath}`);
+                const pathParts = updatePath.split('.');
+                let current = contextData;
+                for (let i = 0; i < pathParts.length - 1; i++) {
+                  const part = pathParts[i];
+                  if (!current[part]) {
+                    current[part] = {};
+                  }
+                  current = current[part];
+                }
+                current[pathParts[pathParts.length - 1]] = extractedValue;
+                console.log(`✅ Updated contextData.${updatePath} = ${JSON.stringify(extractedValue)}`);
+              } else {
+                console.warn(`⚠️ Path "${responsePath}" not found in API response`);
+              }
             }
-          } else if (contextData.extractedData && typeof contextData.extractedData === 'object') {
-            console.log('✅ Detected object type, converting to JSON');
-            contentForSftp = JSON.stringify(contextData.extractedData);
-          } else {
-            console.log('⚠️ No valid content found, using empty object');
-            contentForSftp = '{}';
           }
-          console.log('🔍 === FINAL contentForSftp CHECK ===');
-          console.log('🔍 contentForSftp type:', typeof contentForSftp);
-          console.log('🔍 contentForSftp length:', contentForSftp ? contentForSftp.length : 0);
-          console.log('🔍 contentForSftp is empty?:', !contentForSftp || contentForSftp.trim() === '');
-          const sftpUploadPayload = {
-            sftpConfig: {
+        } else if (step.step_type === 'csv_upload') {
+          console.log('📤 === EXECUTING CSV UPLOAD STEP ===');
+          const config = step.config_json || {};
+          console.log('🔧 CSV upload config:', JSON.stringify(config, null, 2));
+          let csvData = contextData.extractedData;
+          if (typeof csvData !== 'string') {
+            console.error('❌ CSV data is not a string');
+            throw new Error('CSV upload step requires string data, but got object');
+          }
+          if (!csvData || csvData.trim() === '') {
+            console.error('❌ CSV data is empty');
+            throw new Error('CSV data is empty');
+          }
+          console.log('📊 CSV data length:', csvData.length);
+          const uploadMode = config.uploadMode || 'sftp';
+          console.log('📤 Upload mode:', uploadMode);
+          if (uploadMode === 'sftp') {
+            console.log('📤 Uploading via SFTP...');
+            let sftpConfig;
+            try {
+              const sftpConfigResponse = await fetch(`${supabaseUrl}/rest/v1/sftp_config?select=*`, {
+                headers: {
+                  'Authorization': `Bearer ${supabaseServiceKey}`,
+                  'Content-Type': 'application/json',
+                  'apikey': supabaseServiceKey
+                }
+              });
+              if (sftpConfigResponse.ok) {
+                const sftpConfigs = await sftpConfigResponse.json();
+                if (sftpConfigs && sftpConfigs.length > 0) {
+                  sftpConfig = sftpConfigs[0];
+                  console.log('✅ SFTP config loaded');
+                }
+              }
+            } catch (sftpConfigError) {
+              console.error('❌ Failed to load SFTP config:', sftpConfigError);
+              throw new Error('SFTP config not found');
+            }
+            if (!sftpConfig) {
+              throw new Error('SFTP config not found');
+            }
+            const filename = contextData.pdfFilename || requestData.pdfFilename || 'output.csv';
+            const csvFilename = filename.replace(/\.pdf$/i, '.csv');
+            console.log('📄 Upload filename:', csvFilename);
+            const sftpUploadPayload = {
               host: sftpConfig.host,
-              port: sftpConfig.port,
+              port: sftpConfig.port || 22,
               username: sftpConfig.username,
               password: sftpConfig.password,
-              xmlPath: sftpConfig.remote_path || '/ParseIt_XML',
-              pdfPath: sftpConfig.pdf_path || '/ParseIt_PDF',
-              jsonPath: sftpConfig.json_path || '/ParseIt_JSON',
-              csvPath: sftpConfig.csv_path || '/ParseIt_CSV'
-            },
-            xmlContent: contentForSftp,
-            pdfBase64: contextData.pdfBase64 || '',
-            baseFilename: filename,
-            originalFilename: contextData.originalPdfFilename || filename,
-            formatType: formatType,
-            uploadFileTypes: uploadFileTypes
-          };
-          if (exactFilenameToPass) {
-            sftpUploadPayload.exactFilename = exactFilenameToPass;
-            console.log('📤 Adding exactFilename to payload:', exactFilenameToPass);
-          }
-          if (config.sftpPathOverride) {
-            sftpUploadPayload.sftpPathOverride = config.sftpPathOverride;
-            console.log('📤 Adding sftpPathOverride to payload:', config.sftpPathOverride);
-          }
-          console.log('📤 === SFTP UPLOAD PAYLOAD DEBUG ===');
-          console.log('📤 Payload xmlContent type:', typeof sftpUploadPayload.xmlContent);
-          console.log('📤 Payload xmlContent length:', sftpUploadPayload.xmlContent ? sftpUploadPayload.xmlContent.length : 0);
-          console.log('📤 Payload xmlContent preview (first 300):', sftpUploadPayload.xmlContent ? sftpUploadPayload.xmlContent.substring(0, 300) : 'EMPTY');
-          console.log('📤 Payload xmlContent preview (last 200):', sftpUploadPayload.xmlContent ? sftpUploadPayload.xmlContent.substring(Math.max(0, sftpUploadPayload.xmlContent.length - 200)) : 'EMPTY');
-          console.log('📤 SFTP upload payload structure:', JSON.stringify({
-            ...sftpUploadPayload,
-            pdfBase64: `[${sftpUploadPayload.pdfBase64.length} chars]`,
-            xmlContent: `[${sftpUploadPayload.xmlContent ? sftpUploadPayload.xmlContent.length : 0} chars]`
-          }, null, 2));
-          const sftpUploadResponse = await fetch(`${supabaseUrl}/functions/v1/sftp-upload`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${supabaseServiceKey}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(sftpUploadPayload)
-          });
-          console.log('📤 SFTP upload response status:', sftpUploadResponse.status);
-          if (!sftpUploadResponse.ok) {
-            const errorText = await sftpUploadResponse.text();
-            console.error('❌ SFTP upload failed:', errorText);
-            throw new Error(`SFTP upload failed: ${errorText}`);
-          }
-          const uploadResult = await sftpUploadResponse.json();
-          console.log('✅ SFTP upload successful:', uploadResult);
-          stepOutputData = {
-            uploadResult,
-            filename
-          };
-        } else if (step.step_type === 'email_action') {
-          console.log('📧 === EXECUTING EMAIL ACTION STEP ===');
-          const config = step.config_json || {};
-          console.log('🔧 Email config:', JSON.stringify(config, null, 2));
-          const processTemplateWithMapping = (template, contextData, templateName = 'template')=>{
-            const mappings = {};
-            if (!template || !template.includes('{{')) {
-              return {
-                processed: template,
-                mappings
-              };
-            }
-            const templatePattern = /\{\{([^}]+)\}\}/g;
-            const processed = template.replace(templatePattern, (match, path)=>{
-              const trimmedPath = path.trim();
-              const value = getValueByPath(contextData, trimmedPath);
-              mappings[trimmedPath] = value !== undefined ? value : null;
-              if (typeof value === 'object' && value !== null) {
-                return JSON.stringify(value);
-              }
-              return value !== undefined ? String(value) : match;
-            });
-            console.log(`\n📝 === TEMPLATE SUBSTITUTION: ${templateName} ===`);
-            console.log('📋 Template:', template);
-            console.log('🔍 Field Mappings:');
-            Object.entries(mappings).forEach(([field, value])=>{
-              const displayValue = typeof value === 'object' ? JSON.stringify(value) : value;
-              console.log(`   ${field} → ${displayValue}`);
-            });
-            console.log('✅ Final Result:', processed);
-            console.log('='.repeat(50));
-            return {
-              processed,
-              mappings
+              remotePath: `${sftpConfig.remote_path}/${csvFilename}`,
+              fileContent: csvData,
+              encoding: 'utf8'
             };
-          };
-          const allFieldMappings = {};
-          const processedConfig = {};
-          const toResult = processTemplateWithMapping(config.to, contextData, 'Email To');
-          processedConfig.to = toResult.processed;
-          Object.assign(allFieldMappings, toResult.mappings);
-          const subjectResult = processTemplateWithMapping(config.subject, contextData, 'Email Subject');
-          processedConfig.subject = subjectResult.processed;
-          Object.assign(allFieldMappings, subjectResult.mappings);
-          const bodyResult = processTemplateWithMapping(config.body, contextData, 'Email Body');
-          processedConfig.body = bodyResult.processed;
-          Object.assign(allFieldMappings, bodyResult.mappings);
-          if (config.from) {
-            const fromResult = processTemplateWithMapping(config.from, contextData, 'Email From');
-            processedConfig.from = fromResult.processed;
-            Object.assign(allFieldMappings, fromResult.mappings);
-          }
-          let pdfAttachment = null;
-          if (config.includeAttachment && contextData.pdfBase64) {
-            let attachmentFilename;
-            const attachmentSource = config.attachmentSource || 'transform_setup_pdf';
-            console.log('📧 Attachment source selected:', attachmentSource);
-            console.log('📧 Available filenames in context:');
-            console.log('  - renamedFilename (from rename step):', contextData.renamedFilename);
-            console.log('  - transformSetupFilename (from transform setup):', contextData.transformSetupFilename);
-            console.log('  - pdfFilename (current):', contextData.pdfFilename);
-            console.log('  - originalPdfFilename:', contextData.originalPdfFilename);
-            if (attachmentSource === 'renamed_pdf_step') {
-              if (contextData.renamedFilename) {
-                attachmentFilename = contextData.renamedFilename;
-                console.log('📧 ✅ Using renamedFilename from rename step:', attachmentFilename);
-              } else {
-                attachmentFilename = contextData.originalPdfFilename || 'attachment.pdf';
-                console.log('📧 ⚠️  No renamedFilename from step, falling back to originalPdfFilename:', attachmentFilename);
-              }
-            } else if (attachmentSource === 'transform_setup_pdf') {
-              if (contextData.transformSetupFilename) {
-                attachmentFilename = contextData.transformSetupFilename;
-                console.log('📧 ✅ Using transformSetupFilename from transform setup:', attachmentFilename);
-              } else if (contextData.pdfFilename) {
-                attachmentFilename = contextData.pdfFilename;
-                console.log('📧 ✅ Using pdfFilename from transform setup:', attachmentFilename);
-              } else {
-                attachmentFilename = contextData.originalPdfFilename || 'attachment.pdf';
-                console.log('📧 ⚠️  No transform setup filename, falling back to originalPdfFilename:', attachmentFilename);
-              }
-            } else if (attachmentSource === 'original_pdf') {
-              attachmentFilename = contextData.originalPdfFilename || 'attachment.pdf';
-              console.log('Using originalPdfFilename:', attachmentFilename);
-            } else if (attachmentSource === 'extraction_type_filename') {
-              if (contextData.extractionTypeFilename) {
-                const filenameResult = processTemplateWithMapping(contextData.extractionTypeFilename, contextData, 'Extraction Type Filename');
-                attachmentFilename = filenameResult.processed;
-                Object.assign(allFieldMappings, filenameResult.mappings);
-                console.log('Using extractionTypeFilename from extraction type:', attachmentFilename);
-              } else {
-                attachmentFilename = contextData.originalPdfFilename || 'attachment.pdf';
-                console.log('No extractionTypeFilename available, falling back to originalPdfFilename:', attachmentFilename);
-              }
-            } else {
-              if (contextData.renamedFilename) {
-                attachmentFilename = contextData.renamedFilename;
-                console.log('📧 ✅ Using renamedFilename (legacy mode):', attachmentFilename);
-              } else if (contextData.extractionTypeFilename) {
-                const filenameResult = processTemplateWithMapping(contextData.extractionTypeFilename, contextData, 'Extraction Type Filename');
-                attachmentFilename = filenameResult.processed;
-                Object.assign(allFieldMappings, filenameResult.mappings);
-                console.log('Using extractionTypeFilename from extraction type:', attachmentFilename);
-              } else {
-                attachmentFilename = contextData.originalPdfFilename || 'attachment.pdf';
-                console.log('📧 ⚠️  Using fallback to originalPdfFilename (legacy mode):', attachmentFilename);
-              }
-            }
-            let pdfContent = contextData.pdfBase64;
-            const pdfEmailStrategy = config.pdfEmailStrategy || 'all_pages_in_group';
-            if (pdfEmailStrategy === 'specific_page_in_group' && config.specificPageToEmail) {
-              const pageToEmail = config.specificPageToEmail;
-              console.log(`📧 Extracting page ${pageToEmail} from PDF for email attachment`);
-              try {
-                pdfContent = await extractSpecificPageFromPdf(contextData.pdfBase64, pageToEmail);
-                console.log(`📧 ✅ Successfully extracted page ${pageToEmail} from PDF`);
-              } catch (extractError) {
-                console.error(`📧 ❌ Failed to extract page ${pageToEmail}:`, extractError);
-                throw new Error(`Failed to extract page ${pageToEmail} from PDF: ${extractError instanceof Error ? extractError.message : 'Unknown error'}`);
-              }
-            } else {
-              console.log('📧 Using full PDF (all pages in group) for email attachment');
-            }
-            pdfAttachment = {
-              filename: attachmentFilename,
-              content: pdfContent
-            };
-            console.log('📧 PDF attachment prepared with filename:', attachmentFilename);
-          }
-          let ccEmail = null;
-          if (config.ccUser && contextData.userId) {
-            console.log('📧 CC User enabled, fetching user email for userId:', contextData.userId);
-            try {
-              const userResponse = await fetch(
-                `${supabaseUrl}/rest/v1/users?id=eq.${contextData.userId}&select=email`,
-                {
-                  headers: {
-                    'Authorization': `Bearer ${supabaseServiceKey}`,
-                    'Content-Type': 'application/json',
-                    'apikey': supabaseServiceKey
-                  }
-                }
-              );
-              if (userResponse.ok) {
-                const users = await userResponse.json();
-                if (users && users.length > 0 && users[0].email) {
-                  ccEmail = users[0].email;
-                  console.log('📧 ✅ User email retrieved for CC:', ccEmail);
-                } else {
-                  console.log('📧 ⚠️ User email not found in database for userId:', contextData.userId);
-                }
-              } else {
-                console.log('📧 ⚠️ Failed to fetch user email:', userResponse.status);
-              }
-            } catch (userError) {
-              console.error('📧 ❌ Error fetching user email:', userError);
-            }
-          }
-          console.log('\n📧 === FINAL EMAIL DETAILS ===');
-          console.log('To:', processedConfig.to);
-          console.log('CC:', ccEmail || 'none');
-          console.log('Subject:', processedConfig.subject);
-          console.log('From:', processedConfig.from || '(default)');
-          console.log('Attachment:', pdfAttachment ? pdfAttachment.filename : 'none');
-          console.log('='.repeat(50));
-          const emailConfigResponse = await fetch(`${supabaseUrl}/rest/v1/email_monitoring_config?limit=1`, {
-            headers: {
-              'Authorization': `Bearer ${supabaseServiceKey}`,
-              'Content-Type': 'application/json',
-              'apikey': supabaseServiceKey
-            }
-          });
-          if (!emailConfigResponse.ok) {
-            throw new Error('Email configuration not found');
-          }
-          const emailConfigData = await emailConfigResponse.json();
-          if (!emailConfigData || emailConfigData.length === 0) {
-            throw new Error('Email configuration not found');
-          }
-          const emailConfigRecord = emailConfigData[0];
-          const emailConfig = {
-            provider: emailConfigRecord.provider || 'office365',
-            office365: emailConfigRecord.provider === 'office365' ? {
-              tenant_id: emailConfigRecord.tenant_id,
-              client_id: emailConfigRecord.client_id,
-              client_secret: emailConfigRecord.client_secret,
-              default_send_from_email: emailConfigRecord.monitored_email
-            } : undefined,
-            gmail: emailConfigRecord.provider === 'gmail' ? {
-              client_id: emailConfigRecord.gmail_client_id,
-              client_secret: emailConfigRecord.gmail_client_secret,
-              refresh_token: emailConfigRecord.gmail_refresh_token,
-              default_send_from_email: emailConfigRecord.monitored_email
-            } : undefined
-          };
-          let emailResult;
-          if (emailConfig.provider === 'office365') {
-            emailResult = await sendOffice365Email(emailConfig.office365, {
-              to: processedConfig.to,
-              subject: processedConfig.subject,
-              body: processedConfig.body,
-              from: processedConfig.from || emailConfig.office365.default_send_from_email,
-              cc: ccEmail
-            }, pdfAttachment);
-          } else {
-            emailResult = await sendGmailEmail(emailConfig.gmail, {
-              to: processedConfig.to,
-              subject: processedConfig.subject,
-              body: processedConfig.body,
-              from: processedConfig.from || emailConfig.gmail.default_send_from_email,
-              cc: ccEmail
-            }, pdfAttachment);
-          }
-          if (!emailResult.success) {
-            throw new Error(`Email sending failed: ${emailResult.error}`);
-          }
-          stepOutputData = {
-            success: true,
-            message: 'Email sent successfully',
-            emailResult,
-            processedConfig: {
-              ...processedConfig,
-              cc: ccEmail
-            },
-            fieldMappings: allFieldMappings,
-            attachmentIncluded: !!pdfAttachment,
-            attachmentFilename: pdfAttachment?.filename
-          };
-        } else if (step.step_type === 'conditional_check') {
-          console.log('🔍 === EXECUTING CONDITIONAL CHECK STEP ===');
-          const config = step.config_json || {};
-          console.log('🔧 Conditional check config:', JSON.stringify(config, null, 2));
-          console.log('🔍 === STEP INPUT DATA INSPECTION ===');
-          console.log('🔍 Full contextData at start of conditional check:', JSON.stringify(contextData, null, 2));
-          console.log('🔍 contextData keys:', Object.keys(contextData));
-          console.log('🔍 contextData.orders:', contextData.orders);
-          if (contextData.orders && Array.isArray(contextData.orders)) {
-            console.log('🔍 contextData.orders.length:', contextData.orders.length);
-            console.log('🔍 contextData.orders[0]:', JSON.stringify(contextData.orders[0], null, 2));
-            if (contextData.orders[0]?.consignee) {
-              console.log('🔍 contextData.orders[0].consignee:', JSON.stringify(contextData.orders[0].consignee, null, 2));
-              console.log('🔍 contextData.orders[0].consignee.clientId:', contextData.orders[0].consignee.clientId);
-            } else {
-              console.log('⚠️ contextData.orders[0].consignee is undefined');
-            }
-          } else {
-            console.log('⚠️ contextData.orders is not an array or is undefined');
-          }
-          const fieldPath = config.fieldPath || config.jsonPath || config.checkField || '';
-          const operator = config.operator || config.conditionType || 'exists';
-          const expectedValue = config.expectedValue;
-          const storeResultAs = config.storeResultAs || `condition_${step.step_order}_result`;
-          console.log('🔍 === CONDITIONAL CHECK PARAMETERS ===');
-          console.log('🔍 Checking field path:', fieldPath);
-          console.log('🔍 Operator:', operator);
-          console.log('🔍 Expected value:', expectedValue);
-          console.log('🔍 === RETRIEVING ACTUAL VALUE ===');
-          const actualValue = getValueByPath(contextData, fieldPath, true);
-          console.log('✅ Actual value from context:', actualValue);
-          console.log('📊 Actual value type:', typeof actualValue);
-          console.log('📊 Actual value === null:', actualValue === null);
-          console.log('📊 Actual value === undefined:', actualValue === undefined);
-          console.log('📊 Actual value stringified:', JSON.stringify(actualValue));
-          let conditionMet = false;
-          switch(operator){
-            case 'exists':
-              conditionMet = actualValue !== null && actualValue !== undefined && actualValue !== '';
-              console.log(`🔍 Condition (exists): ${conditionMet}`);
-              break;
-            case 'is_not_null':
-            case 'isNotNull':
-              conditionMet = actualValue !== null && actualValue !== undefined;
-              console.log(`🔍 Condition (is_not_null): ${conditionMet}`);
-              break;
-            case 'is_null':
-            case 'isNull':
-              conditionMet = actualValue === null || actualValue === undefined;
-              console.log(`🔍 Condition (is_null): ${conditionMet}`);
-              break;
-            case 'not_exists':
-            case 'notExists':
-              conditionMet = actualValue === null || actualValue === undefined || actualValue === '';
-              console.log(`🔍 Condition (not_exists): ${conditionMet}`);
-              break;
-            case 'equals':
-            case 'eq':
-              conditionMet = String(actualValue) === String(expectedValue);
-              console.log(`🔍 Condition (equals): "${actualValue}" === "${expectedValue}" = ${conditionMet}`);
-              break;
-            case 'not_equals':
-            case 'notEquals':
-            case 'ne':
-              conditionMet = String(actualValue) !== String(expectedValue);
-              console.log(`🔍 Condition (not_equals): "${actualValue}" !== "${expectedValue}" = ${conditionMet}`);
-              break;
-            case 'contains':
-              conditionMet = String(actualValue).includes(String(expectedValue));
-              console.log(`🔍 Condition (contains): "${actualValue}".includes("${expectedValue}") = ${conditionMet}`);
-              break;
-            case 'not_contains':
-            case 'notContains':
-              conditionMet = !String(actualValue).includes(String(expectedValue));
-              console.log(`🔍 Condition (not_contains): !("${actualValue}".includes("${expectedValue}")) = ${conditionMet}`);
-              break;
-            case 'greater_than':
-            case 'gt':
-              const gtActual = parseFloat(actualValue);
-              const gtExpected = parseFloat(expectedValue);
-              conditionMet = !isNaN(gtActual) && !isNaN(gtExpected) && gtActual > gtExpected;
-              console.log(`🔍 Condition (greater_than): ${gtActual} > ${gtExpected} = ${conditionMet}`);
-              break;
-            case 'less_than':
-            case 'lt':
-              const ltActual = parseFloat(actualValue);
-              const ltExpected = parseFloat(expectedValue);
-              conditionMet = !isNaN(ltActual) && !isNaN(ltExpected) && ltActual < ltExpected;
-              console.log(`🔍 Condition (less_than): ${ltActual} < ${ltExpected} = ${conditionMet}`);
-              break;
-            case 'greater_than_or_equal':
-            case 'gte':
-              const gteActual = parseFloat(actualValue);
-              const gteExpected = parseFloat(expectedValue);
-              conditionMet = !isNaN(gteActual) && !isNaN(gteExpected) && gteActual >= gteExpected;
-              console.log(`🔍 Condition (greater_than_or_equal): ${gteActual} >= ${gteExpected} = ${conditionMet}`);
-              break;
-            case 'less_than_or_equal':
-            case 'lte':
-              const lteActual = parseFloat(actualValue);
-              const lteExpected = parseFloat(expectedValue);
-              conditionMet = !isNaN(lteActual) && !isNaN(lteExpected) && lteActual <= lteExpected;
-              console.log(`🔍 Condition (less_than_or_equal): ${lteActual} <= ${lteExpected} = ${conditionMet}`);
-              break;
-            default:
-              console.warn(`⚠️ Unknown operator: ${operator}, defaulting to 'exists'`);
-              conditionMet = actualValue !== null && actualValue !== undefined && actualValue !== '';
-          }
-          contextData[storeResultAs] = conditionMet;
-          console.log(`✅ Conditional check result stored as "${storeResultAs}": ${conditionMet}`);
-          console.log('🔍 === ROUTING DECISION LOGIC ===');
-          console.log('🔍 next_step_on_success_id:', step.next_step_on_success_id);
-          console.log('🔍 next_step_on_failure_id:', step.next_step_on_failure_id);
-          let nextStepOnSuccessName = 'Not configured';
-          let nextStepOnSuccessOrder = null;
-          let nextStepOnFailureName = 'Not configured';
-          let nextStepOnFailureOrder = null;
-          let selectedNextStepName = 'Sequential (next in order)';
-          let selectedNextStepOrder = step.step_order + 1;
-          if (step.next_step_on_success_id) {
-            const successStep = steps.find((s)=>s.id === step.next_step_on_success_id);
-            if (successStep) {
-              nextStepOnSuccessName = `${successStep.step_name} (Step ${successStep.step_order})`;
-              nextStepOnSuccessOrder = successStep.step_order;
-              console.log(`✅ Found success step: ${nextStepOnSuccessName}`);
-            } else {
-              console.log(`⚠️ Success step ID configured but step not found: ${step.next_step_on_success_id}`);
-            }
-          }
-          if (step.next_step_on_failure_id) {
-            const failureStep = steps.find((s)=>s.id === step.next_step_on_failure_id);
-            if (failureStep) {
-              nextStepOnFailureName = `${failureStep.step_name} (Step ${failureStep.step_order})`;
-              nextStepOnFailureOrder = failureStep.step_order;
-              console.log(`✅ Found failure step: ${nextStepOnFailureName}`);
-            } else {
-              console.log(`⚠️ Failure step ID configured but step not found: ${step.next_step_on_failure_id}`);
-            }
-          }
-          if (conditionMet) {
-            if (step.next_step_on_success_id) {
-              selectedNextStepName = nextStepOnSuccessName;
-              selectedNextStepOrder = nextStepOnSuccessOrder;
-            }
-          } else {
-            if (step.next_step_on_failure_id) {
-              selectedNextStepName = nextStepOnFailureName;
-              selectedNextStepOrder = nextStepOnFailureOrder;
-            }
-          }
-          const routingDecision = conditionMet ? `✅ CONDITION MET (${operator} = TRUE) → Should route to: ${selectedNextStepName}` : `❌ CONDITION NOT MET (${operator} = FALSE) → Should route to: ${selectedNextStepName}`;
-          console.log('🔍 === ROUTING DECISION ===');
-          console.log(routingDecision);
-          console.log('🔍 Next Step on Success:', nextStepOnSuccessName);
-          console.log('🔍 Next Step on Failure:', nextStepOnFailureName);
-          console.log('🔍 Selected Next Step:', selectedNextStepName);
-          stepOutputData = {
-            conditionMet,
-            fieldPath,
-            operator,
-            actualValue,
-            expectedValue,
-            storeResultAs,
-            nextStepOnSuccess: nextStepOnSuccessName,
-            nextStepOnSuccessOrder: nextStepOnSuccessOrder,
-            nextStepOnFailure: nextStepOnFailureName,
-            nextStepOnFailureOrder: nextStepOnFailureOrder,
-            selectedNextStep: selectedNextStepName,
-            selectedNextStepOrder: selectedNextStepOrder,
-            routingDecision: routingDecision
-          };
-          if (selectedNextStepOrder && selectedNextStepOrder !== step.step_order + 1) {
-            console.log(`🔀 CONDITIONAL ROUTING: Jumping from Step ${step.step_order} to Step ${selectedNextStepOrder}`);
-            const targetStepIndex = steps.findIndex((s)=>s.step_order === selectedNextStepOrder);
-            if (targetStepIndex !== -1) {
-              console.log(`✅ Target step found at index ${targetStepIndex}, adjusting loop counter`);
-              i = targetStepIndex - 1;
-            } else {
-              console.log(`❌ Target step ${selectedNextStepOrder} not found, continuing sequentially`);
-            }
-          }
-        } else {
-          console.log(`⚠️ Unknown step type: ${step.step_type}`);
-          stepOutputData = {
-            skipped: true,
-            reason: 'Step type not implemented'
-          };
-        }
-        const stepEndTime = new Date().toISOString();
-        const stepDurationMs = Date.now() - stepStartMs;
-        console.log(`✅ === STEP ${step.step_order} COMPLETED SUCCESSFULLY IN ${stepDurationMs}ms ===`);
-        console.log('📊 === FINAL CONTEXT DATA SNAPSHOT ===');
-        console.log('📊 contextData keys:', Object.keys(contextData));
-        console.log('📊 Full contextData:', JSON.stringify(contextData, null, 2));
-        if (step.step_type === 'api_call') {
-          console.log('📊 Last API response:', JSON.stringify(lastApiResponse, null, 2));
-        }
-        console.log('📊 === END CONTEXT DATA SNAPSHOT ===');
-        if (workflowExecutionLogId) {
-          await createStepLog(supabaseUrl, supabaseServiceKey, workflowExecutionLogId, requestData.workflowId, step, 'completed', stepStartTime, stepEndTime, stepDurationMs, undefined, {
-            config: step.config_json
-          }, stepOutputData);
-        }
-      } catch (stepError) {
-        const stepEndTime = new Date().toISOString();
-        const stepDurationMs = Date.now() - stepStartMs;
-        console.error(`❌ Step ${step.step_order} failed:`, stepError);
-        if (workflowExecutionLogId) {
-          await createStepLog(supabaseUrl, supabaseServiceKey, workflowExecutionLogId, requestData.workflowId, step, 'failed', stepStartTime, stepEndTime, stepDurationMs, stepError.message, {
-            config: step.config_json
-          }, null);
-          try {
-            await fetch(`${supabaseUrl}/rest/v1/workflow_execution_logs?id=eq.${workflowExecutionLogId}`, {
-              method: 'PATCH',
+            console.log('📤 Calling SFTP upload edge function...');
+            console.log('📤 Remote path:', sftpUploadPayload.remotePath);
+            const sftpUploadResponse = await fetch(`${supabaseUrl}/functions/v1/sftp-upload`, {
+              method: 'POST',
               headers: {
                 'Authorization': `Bearer ${supabaseServiceKey}`,
-                'Content-Type': 'application/json',
-                'apikey': supabaseServiceKey
+                'Content-Type': 'application/json'
               },
-              body: JSON.stringify({
-                status: 'failed',
-                error_message: stepError.message,
-                context_data: contextData,
-                updated_at: new Date().toISOString()
-              })
+              body: JSON.stringify(sftpUploadPayload)
             });
-          } catch (updateError) {
-            console.error('❌ Failed to update workflow log:', updateError);
+            if (!sftpUploadResponse.ok) {
+              const errorText = await sftpUploadResponse.text();
+              console.error('❌ SFTP upload failed:', errorText);
+              throw new Error(`SFTP upload failed: ${errorText}`);
+            }
+            const sftpUploadResult = await sftpUploadResponse.json();
+            console.log('✅ SFTP upload successful:', sftpUploadResult);
+            stepOutputData = {
+              uploadMode: 'sftp',
+              filename: csvFilename,
+              remotePath: sftpUploadPayload.remotePath,
+              success: true
+            };
+          } else {
+            throw new Error(`Unsupported upload mode: ${uploadMode}`);
           }
+        } else if (step.step_type === 'json_transform') {
+          console.log('🔧 === EXECUTING JSON TRANSFORM STEP ===');
+          const config = step.config_json || {};
+          console.log('🔧 Transform config:', JSON.stringify(config, null, 2));
+          if (config.outputFields && Array.isArray(config.outputFields)) {
+            console.log('📊 Filtering JSON to include only output fields...');
+            const filteredData = filterJsonWorkflowOnlyFields(contextData.extractedData, config.outputFields);
+            contextData.extractedData = filteredData;
+            console.log('✅ JSON transform applied successfully');
+            stepOutputData = { transformed: true, fieldCount: config.outputFields.filter((f)=>!f.isWorkflowOnly).length };
+          } else {
+            console.log('ℹ️ No output fields configured, skipping transform');
+            stepOutputData = { transformed: false, reason: 'no output fields configured' };
+          }
+        } else if (step.step_type === 'json_upload') {
+          console.log('📤 === EXECUTING JSON UPLOAD STEP ===');
+          const config = step.config_json || {};
+          console.log('🔧 JSON upload config:', JSON.stringify(config, null, 2));
+          let jsonData = contextData.extractedData;
+          if (typeof jsonData === 'string') {
+            try {
+              jsonData = JSON.parse(jsonData);
+            } catch (parseError) {
+              console.error('❌ Failed to parse JSON data:', parseError);
+              throw new Error('JSON upload step requires valid JSON data');
+            }
+          }
+          if (!jsonData || (typeof jsonData === 'object' && Object.keys(jsonData).length === 0)) {
+            console.error('❌ JSON data is empty');
+            throw new Error('JSON data is empty');
+          }
+          console.log('📊 JSON data keys:', Object.keys(jsonData));
+          const uploadMode = config.uploadMode || 'sftp';
+          console.log('📤 Upload mode:', uploadMode);
+          if (uploadMode === 'sftp') {
+            console.log('📤 Uploading via SFTP...');
+            let sftpConfig;
+            try {
+              const sftpConfigResponse = await fetch(`${supabaseUrl}/rest/v1/sftp_config?select=*`, {
+                headers: {
+                  'Authorization': `Bearer ${supabaseServiceKey}`,
+                  'Content-Type': 'application/json',
+                  'apikey': supabaseServiceKey
+                }
+              });
+              if (sftpConfigResponse.ok) {
+                const sftpConfigs = await sftpConfigResponse.json();
+                if (sftpConfigs && sftpConfigs.length > 0) {
+                  sftpConfig = sftpConfigs[0];
+                  console.log('✅ SFTP config loaded');
+                }
+              }
+            } catch (sftpConfigError) {
+              console.error('❌ Failed to load SFTP config:', sftpConfigError);
+              throw new Error('SFTP config not found');
+            }
+            if (!sftpConfig) {
+              throw new Error('SFTP config not found');
+            }
+            const filename = contextData.pdfFilename || requestData.pdfFilename || 'output.json';
+            const jsonFilename = filename.replace(/\.pdf$/i, '.json');
+            console.log('📄 Upload filename:', jsonFilename);
+            const jsonString = JSON.stringify(jsonData, null, 2);
+            const sftpUploadPayload = {
+              host: sftpConfig.host,
+              port: sftpConfig.port || 22,
+              username: sftpConfig.username,
+              password: sftpConfig.password,
+              remotePath: `${sftpConfig.remote_path}/${jsonFilename}`,
+              fileContent: jsonString,
+              encoding: 'utf8'
+            };
+            console.log('📤 Calling SFTP upload edge function...');
+            console.log('📤 Remote path:', sftpUploadPayload.remotePath);
+            const sftpUploadResponse = await fetch(`${supabaseUrl}/functions/v1/sftp-upload`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${supabaseServiceKey}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(sftpUploadPayload)
+            });
+            if (!sftpUploadResponse.ok) {
+              const errorText = await sftpUploadResponse.text();
+              console.error('❌ SFTP upload failed:', errorText);
+              throw new Error(`SFTP upload failed: ${errorText}`);
+            }
+            const sftpUploadResult = await sftpUploadResponse.json();
+            console.log('✅ SFTP upload successful:', sftpUploadResult);
+            stepOutputData = {
+              uploadMode: 'sftp',
+              filename: jsonFilename,
+              remotePath: sftpUploadPayload.remotePath,
+              success: true
+            };
+          } else {
+            throw new Error(`Unsupported upload mode: ${uploadMode}`);
+          }
+        } else {
+          console.warn(`⚠️ Unknown step type: ${step.step_type}`);
+          throw new Error(`Unknown step type: ${step.step_type}`);
         }
-        const error = new Error(stepError.message);
-        error.workflowExecutionLogId = workflowExecutionLogId;
-        error.extractionLogId = extractionLogId;
-        console.log(`🚫 DEBUG - Step ${step.step_order} failed, throwing error and stopping workflow`);
-        throw error;
+        const stepEndTime = new Date().toISOString();
+        const stepDurationMs = Date.now() - stepStartMs;
+        console.log(`✅ Step ${step.step_order} completed successfully in ${stepDurationMs}ms`);
+        if (workflowExecutionLogId) {
+          await createStepLog(supabaseUrl, supabaseServiceKey, workflowExecutionLogId, requestData.workflowId, step, 'completed', stepStartTime, stepEndTime, stepDurationMs, null, stepInputData, stepOutputData);
+        }
+        console.log(`✅ DEBUG - Completed iteration i=${i} for step ${step.step_order}. Moving to next iteration.`);
+      } catch (stepError) {
+        console.error(`❌ Step ${step.step_order} failed:`, stepError);
+        const stepEndTime = new Date().toISOString();
+        const stepDurationMs = Date.now() - stepStartMs;
+        const errorMessage = stepError instanceof Error ? stepError.message : 'Unknown error';
+        if (workflowExecutionLogId) {
+          await createStepLog(supabaseUrl, supabaseServiceKey, workflowExecutionLogId, requestData.workflowId, step, 'failed', stepStartTime, stepEndTime, stepDurationMs, errorMessage, stepInputData, null);
+        }
+        console.log('🚫 DEBUG - Step', step.step_order, 'failed, throwing error and stopping workflow\n');
+        throw stepError;
       }
-      console.log(`✅ DEBUG - Completed iteration i=${i} for step ${step.step_order}. Moving to next iteration.`);
     }
-    console.log(`✅ DEBUG - Exited for loop. Total iterations should have been: ${steps.length}`);
-    console.log('✅ === WORKFLOW EXECUTION COMPLETED ===');
+    console.log('✅ === WORKFLOW COMPLETED SUCCESSFULLY ===');
     if (workflowExecutionLogId) {
-      try {
-        await fetch(`${supabaseUrl}/rest/v1/workflow_execution_logs?id=eq.${workflowExecutionLogId}`, {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${supabaseServiceKey}`,
-            'Content-Type': 'application/json',
-            'apikey': supabaseServiceKey
-          },
-          body: JSON.stringify({
-            status: 'completed',
-            context_data: contextData,
-            completed_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
-        });
-      } catch (updateError) {
-        console.error('❌ Failed to update workflow completion:', updateError);
-      }
+      await fetch(`${supabaseUrl}/rest/v1/workflow_execution_logs?id=eq.${workflowExecutionLogId}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${supabaseServiceKey}`,
+          'Content-Type': 'application/json',
+          'apikey': supabaseServiceKey
+        },
+        body: JSON.stringify({
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+      });
     }
-    console.log('🎉 Workflow execution completed successfully');
     return new Response(JSON.stringify({
       success: true,
-      message: 'Workflow executed successfully',
-      workflowExecutionLogId: workflowExecutionLogId,
       extractionLogId: extractionLogId,
-      finalData: contextData,
-      lastApiResponse: lastApiResponse,
-      actualFilename: contextData.actualFilename || contextData.renamedFilename
+      workflowExecutionLogId: workflowExecutionLogId,
+      finalContext: contextData
     }), {
+      status: 200,
       headers: {
         ...corsHeaders,
-        "Content-Type": "application/json"
+        'Content-Type': 'application/json'
       }
     });
   } catch (error) {
-    console.error("❌ === WORKFLOW EXECUTION ERROR ===");
-    console.error("❌ Error type:", error.constructor.name);
-    console.error("❌ Error message:", error.message);
-    console.error("❌ Error stack:", error.stack);
+    console.error('❌ === WORKFLOW EXECUTION ERROR ===');
+    console.error('❌ Error type:', error?.constructor?.name);
+    console.error('❌ Error message:', error instanceof Error ? error.message : 'Unknown error');
+    console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack trace');
     if (workflowExecutionLogId) {
-      try {
-        const supabaseUrl = Deno.env.get('SUPABASE_URL');
-        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-        await fetch(`${supabaseUrl}/rest/v1/workflow_execution_logs?id=eq.${workflowExecutionLogId}`, {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${supabaseServiceKey}`,
-            'Content-Type': 'application/json',
-            'apikey': supabaseServiceKey
-          },
-          body: JSON.stringify({
-            status: 'failed',
-            error_message: error.message,
-            updated_at: new Date().toISOString()
-          })
-        });
-      } catch (updateError) {
-        console.error('❌ Failed to update workflow log with error:', updateError);
-      }
+      await fetch(`${supabaseUrl}/rest/v1/workflow_execution_logs?id=eq.${workflowExecutionLogId}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+          'Content-Type': 'application/json',
+          'apikey': Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+        },
+        body: JSON.stringify({
+          status: 'failed',
+          error_message: error instanceof Error ? error.message : 'Unknown error',
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+      });
     }
     return new Response(JSON.stringify({
-      error: "Workflow execution failed",
-      details: error instanceof Error ? error.message : "Unknown error",
-      workflowExecutionLogId: workflowExecutionLogId,
-      extractionLogId: extractionLogId
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
     }), {
       status: 500,
       headers: {
         ...corsHeaders,
-        "Content-Type": "application/json"
+        'Content-Type': 'application/json'
       }
     });
   }
 });
-async function extractSpecificPageFromPdf(pdfBase64, pageNumber) {
-  console.log(`📄 === EXTRACTING PAGE ${pageNumber} FROM PDF ===`);
-  try {
-    const { PDFDocument } = await import('npm:pdf-lib@1.17.1');
-    const pdfBytes = Uint8Array.from(atob(pdfBase64), (c)=>c.charCodeAt(0));
-    console.log(`📄 Decoded PDF, size: ${pdfBytes.length} bytes`);
-    const pdfDoc = await PDFDocument.load(pdfBytes);
-    const totalPages = pdfDoc.getPageCount();
-    console.log(`📄 PDF has ${totalPages} page(s)`);
-    if (pageNumber < 1 || pageNumber > totalPages) {
-      throw new Error(`Invalid page number ${pageNumber}. PDF has ${totalPages} page(s). Page number must be between 1 and ${totalPages}.`);
-    }
-    const newPdf = await PDFDocument.create();
-    const [copiedPage] = await newPdf.copyPages(pdfDoc, [
-      pageNumber - 1
-    ]);
-    newPdf.addPage(copiedPage);
-    const newPdfBytes = await newPdf.save();
-    console.log(`📄 Created new PDF with single page, size: ${newPdfBytes.length} bytes`);
-    let binary = '';
-    const chunkSize = 0x8000;
-    for(let i = 0; i < newPdfBytes.length; i += chunkSize){
-      const chunk = newPdfBytes.subarray(i, Math.min(i + chunkSize, newPdfBytes.length));
-      binary += String.fromCharCode.apply(null, Array.from(chunk));
-    }
-    const newPdfBase64 = btoa(binary);
-    console.log(`📄 ✅ Successfully extracted page ${pageNumber}/${totalPages}`);
-    return newPdfBase64;
-  } catch (error) {
-    console.error('📄 ❌ PDF extraction failed:', error);
-    throw error;
-  }
-}
-async function getOffice365AccessToken(config) {
-  const tokenUrl = `https://login.microsoftonline.com/${config.tenant_id}/oauth2/v2.0/token`;
-  const params = new URLSearchParams({
-    client_id: config.client_id,
-    client_secret: config.client_secret,
-    scope: 'https://graph.microsoft.com/.default',
-    grant_type: 'client_credentials'
-  });
-  const response = await fetch(tokenUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded'
-    },
-    body: params.toString()
-  });
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Failed to get Office365 access token: ${errorText}`);
-  }
-  const data = await response.json();
-  return data.access_token;
-}
-async function sendOffice365Email(config, email, attachment) {
-  try {
-    const accessToken = await getOffice365AccessToken(config);
-    const message = {
-      message: {
-        subject: email.subject,
-        body: {
-          contentType: 'HTML',
-          content: email.body
-        },
-        toRecipients: [
-          {
-            emailAddress: {
-              address: email.to
-            }
-          }
-        ],
-        from: {
-          emailAddress: {
-            address: email.from
-          }
-        },
-        ...(email.cc ? {
-          ccRecipients: [
-            {
-              emailAddress: {
-                address: email.cc
-              }
-            }
-          ]
-        } : {})
-      },
-      saveToSentItems: 'true'
-    };
-    if (attachment) {
-      message.message.attachments = [
-        {
-          "@odata.type": "#microsoft.graph.fileAttachment",
-          name: attachment.filename,
-          contentType: "application/pdf",
-          contentBytes: attachment.content
-        }
-      ];
-    }
-    const sendUrl = `https://graph.microsoft.com/v1.0/users/${email.from}/sendMail`;
-    const response = await fetch(sendUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(message)
-    });
-    if (!response.ok) {
-      const errorText = await response.text();
-      return {
-        success: false,
-        error: errorText
-      };
-    }
-    return {
-      success: true
-    };
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error'
-    };
-  }
-}
-async function getGmailAccessToken(config) {
-  const tokenUrl = 'https://oauth2.googleapis.com/token';
-  const params = new URLSearchParams({
-    client_id: config.client_id,
-    client_secret: config.client_secret,
-    refresh_token: config.refresh_token,
-    grant_type: 'refresh_token'
-  });
-  const response = await fetch(tokenUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded'
-    },
-    body: params.toString()
-  });
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Failed to get Gmail access token: ${errorText}`);
-  }
-  const data = await response.json();
-  return data.access_token;
-}
-async function sendGmailEmail(config, email, attachment) {
-  try {
-    const accessToken = await getGmailAccessToken(config);
-    let emailContent;
-    if (attachment) {
-      const boundary = '----=_Part_' + Date.now();
-      const emailLines = [
-        `To: ${email.to}`,
-        ...(email.cc ? [`Cc: ${email.cc}`] : []),
-        `From: ${email.from}`,
-        `Subject: ${email.subject}`,
-        `MIME-Version: 1.0`,
-        `Content-Type: multipart/mixed; boundary="${boundary}"`,
-        '',
-        `--${boundary}`,
-        `Content-Type: text/html; charset=UTF-8`,
-        '',
-        email.body,
-        '',
-        `--${boundary}`,
-        `Content-Type: application/pdf; name="${attachment.filename}"`,
-        `Content-Transfer-Encoding: base64`,
-        `Content-Disposition: attachment; filename="${attachment.filename}"`,
-        '',
-        attachment.content,
-        '',
-        `--${boundary}--`
-      ];
-      emailContent = emailLines.join('\r\n');
-    } else {
-      emailContent = [
-        `From: ${email.from}`,
-        `To: ${email.to}`,
-        ...(email.cc ? [`Cc: ${email.cc}`] : []),
-        `Subject: ${email.subject}`,
-        'Content-Type: text/html; charset=utf-8',
-        '',
-        email.body
-      ].join('\r\n');
-    }
-    const encodedEmail = btoa(unescape(encodeURIComponent(emailContent))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    const sendUrl = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send';
-    const response = await fetch(sendUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        raw: encodedEmail
-      })
-    });
-    if (!response.ok) {
-      const errorText = await response.text();
-      return {
-        success: false,
-        error: errorText
-      };
-    }
-    return {
-      success: true
-    };
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error'
-    };
-  }
-}
