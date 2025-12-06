@@ -1,18 +1,40 @@
-import React, { useState } from 'react';
-import { Save, Key, Globe, TestTube } from 'lucide-react';
-import type { ApiConfig } from '../../types';
+import React, { useState, useEffect } from 'react';
+import { Save, Key, Globe, TestTube, Link, FileText, Settings } from 'lucide-react';
+import type { ApiConfig, SecondaryApiConfig } from '../../types';
+import SecondaryApiSettings from './SecondaryApiSettings';
+import ApiSpecsSettings from './ApiSpecsSettings';
+import { fetchSecondaryApiConfigs } from '../../services/configService';
 
 interface ApiSettingsProps {
   apiConfig: ApiConfig;
   onUpdateApiConfig: (config: ApiConfig) => Promise<void>;
 }
 
+type ApiTab = 'configuration' | 'specs';
+
 export default function ApiSettings({ apiConfig, onUpdateApiConfig }: ApiSettingsProps) {
+  const [activeTab, setActiveTab] = useState<ApiTab>('configuration');
   const [localConfig, setLocalConfig] = useState<ApiConfig>(apiConfig);
+  const [secondaryApis, setSecondaryApis] = useState<SecondaryApiConfig[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string; data?: any } | null>(null);
   const [isTesting, setIsTesting] = useState(false);
+  const [isTestingGemini, setIsTestingGemini] = useState(false);
+  const [geminiTestResult, setGeminiTestResult] = useState<{ success: boolean; message: string; data?: any } | null>(null);
+
+  useEffect(() => {
+    loadSecondaryApis();
+  }, []);
+
+  const loadSecondaryApis = async () => {
+    try {
+      const data = await fetchSecondaryApiConfigs();
+      setSecondaryApis(data);
+    } catch (error) {
+      console.error('Failed to load secondary APIs:', error);
+    }
+  };
 
 
   const updateConfig = (field: keyof ApiConfig, value: string) => {
@@ -39,7 +61,7 @@ export default function ApiSettings({ apiConfig, onUpdateApiConfig }: ApiSetting
   const handleTestTruckMateApi = async () => {
     setIsTesting(true);
     setTestResult(null);
-    
+
     try {
       if (!localConfig.path) {
         setTestResult({
@@ -49,7 +71,7 @@ export default function ApiSettings({ apiConfig, onUpdateApiConfig }: ApiSetting
         return;
       }
 
-      const testUrl = localConfig.path.endsWith('/') 
+      const testUrl = localConfig.path.endsWith('/')
         ? `${localConfig.path.slice(0, -1)}/WHOAMI`
         : `${localConfig.path}/WHOAMI`;
 
@@ -90,77 +112,166 @@ export default function ApiSettings({ apiConfig, onUpdateApiConfig }: ApiSetting
     }
   };
 
+  const handleTestGeminiApi = async () => {
+    setIsTestingGemini(true);
+    setGeminiTestResult(null);
+
+    try {
+      if (!localConfig.googleApiKey) {
+        setGeminiTestResult({
+          success: false,
+          message: 'Please enter a Google Gemini API key first'
+        });
+        return;
+      }
+
+      const { GoogleGenerativeAI } = await import('@google/generative-ai');
+      const genAI = new GoogleGenerativeAI(localConfig.googleApiKey);
+
+      const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+
+      const result = await model.generateContent('Test');
+      const response = await result.response;
+      const text = response.text();
+
+      setGeminiTestResult({
+        success: true,
+        message: 'Google Gemini API connection successful!',
+        data: {
+          model: 'gemini-2.0-flash-exp',
+          responseLength: text.length,
+          status: 'API key is valid and working'
+        }
+      });
+    } catch (error: any) {
+      let errorMessage = 'Connection failed';
+
+      if (error.message?.includes('API_KEY_INVALID') || error.message?.includes('API key not valid')) {
+        errorMessage = 'Invalid API key. Please check your Google Gemini API key.';
+      } else if (error.message?.includes('quota')) {
+        errorMessage = 'API quota exceeded. Please check your Google Cloud Console.';
+      } else if (error.message?.includes('not found')) {
+        errorMessage = 'Model not found. Your API key may not have access to this model.';
+      } else if (error.message) {
+        errorMessage = `API Error: ${error.message}`;
+      }
+
+      setGeminiTestResult({
+        success: false,
+        message: errorMessage
+      });
+    } finally {
+      setIsTestingGemini(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">API Configuration</h3>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">Configure API settings for JSON data transmission</p>
+          <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">API Settings</h3>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">Configure API settings and manage specifications</p>
         </div>
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={handleTestTruckMateApi}
-            disabled={isTesting}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
-          >
-            <TestTube className="h-4 w-4" />
-            <span>{isTesting ? 'Testing...' : 'Test TruckMate API'}</span>
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={isSaving}
-            className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
-          >
-            <Save className="h-4 w-4" />
-            <span>{isSaving ? 'Saving...' : 'Save'}</span>
-          </button>
-        </div>
+        {activeTab === 'configuration' && (
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={handleTestTruckMateApi}
+              disabled={isTesting}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
+            >
+              <TestTube className="h-4 w-4" />
+              <span>{isTesting ? 'Testing...' : 'Test TruckMate API'}</span>
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={isSaving}
+              className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
+            >
+              <Save className="h-4 w-4" />
+              <span>{isSaving ? 'Saving...' : 'Save'}</span>
+            </button>
+          </div>
+        )}
       </div>
 
-      {saveSuccess && (
-        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg p-4">
-          <div className="flex items-center space-x-2">
-            <div className="w-4 h-4 bg-green-500 rounded-full"></div>
-            <span className="font-semibold text-green-800 dark:text-green-300">Success!</span>
-          </div>
-          <p className="text-green-700 dark:text-green-400 text-sm mt-1">API configuration saved successfully!</p>
-        </div>
-      )}
+      {/* Tabs */}
+      <div className="border-b border-gray-200 dark:border-gray-700">
+        <nav className="flex space-x-8">
+          <button
+            onClick={() => setActiveTab('configuration')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'configuration'
+                ? 'border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Settings className="w-4 h-4" />
+              Configuration
+            </div>
+          </button>
+          <button
+            onClick={() => setActiveTab('specs')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'specs'
+                ? 'border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <FileText className="w-4 h-4" />
+              API Specifications
+            </div>
+          </button>
+        </nav>
+      </div>
 
-      {testResult && (
-        <div className={`border rounded-lg p-4 ${
-          testResult.success 
-            ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700' 
-            : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700'
-        }`}>
-          <div className="flex items-center space-x-2">
-            <div className={`w-4 h-4 rounded-full ${
-              testResult.success ? 'bg-green-500' : 'bg-red-500'
-            }`}></div>
-            <span className={`font-semibold ${
-              testResult.success ? 'text-green-800' : 'text-red-800'
-            } dark:${testResult.success ? 'text-green-300' : 'text-red-300'}`}>
-              {testResult.success ? 'API Test Passed' : 'API Test Failed'}
-            </span>
-          </div>
-          <p className={`text-sm mt-1 ${
-            testResult.success ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'
-          }`}>
-            {testResult.message}
-          </p>
-          {testResult.data && (
-            <div className="mt-3 bg-white dark:bg-gray-700 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
-              <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">API Response:</p>
-              <pre className="text-xs text-gray-800 dark:text-gray-200 whitespace-pre-wrap font-mono">
-                {JSON.stringify(testResult.data, null, 2)}
-              </pre>
+      {/* Tab Content */}
+      {activeTab === 'configuration' && (
+        <>
+          {saveSuccess && (
+            <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg p-4">
+              <div className="flex items-center space-x-2">
+                <div className="w-4 h-4 bg-green-500 rounded-full"></div>
+                <span className="font-semibold text-green-800 dark:text-green-300">Success!</span>
+              </div>
+              <p className="text-green-700 dark:text-green-400 text-sm mt-1">API configuration saved successfully!</p>
             </div>
           )}
-        </div>
-      )}
 
+          {testResult && (
+            <div className={`border rounded-lg p-4 ${
+              testResult.success
+                ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700'
+                : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700'
+            }`}>
+              <div className="flex items-center space-x-2">
+                <div className={`w-4 h-4 rounded-full ${
+                  testResult.success ? 'bg-green-500' : 'bg-red-500'
+                }`}></div>
+                <span className={`font-semibold ${
+                  testResult.success ? 'text-green-800' : 'text-red-800'
+                } dark:${testResult.success ? 'text-green-300' : 'text-red-300'}`}>
+                  {testResult.success ? 'API Test Passed' : 'API Test Failed'}
+                </span>
+              </div>
+              <p className={`text-sm mt-1 ${
+                testResult.success ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'
+              }`}>
+                {testResult.message}
+              </p>
+              {testResult.data && (
+                <div className="mt-3 bg-white dark:bg-gray-700 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+                  <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">API Response:</p>
+                  <pre className="text-xs text-gray-800 dark:text-gray-200 whitespace-pre-wrap font-mono">
+                    {JSON.stringify(testResult.data, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
+          )}
 
-      <div className="space-y-6">
+          <div className="space-y-6">
         {/* API Endpoint Settings */}
         <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 shadow-sm">
           <div className="flex items-center space-x-3 mb-6">
@@ -182,7 +293,7 @@ export default function ApiSettings({ apiConfig, onUpdateApiConfig }: ApiSetting
                 type="text"
                 value={localConfig.path}
                 onChange={(e) => updateConfig('path', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
                 placeholder="https://api.example.com/v1"
               />
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -197,7 +308,7 @@ export default function ApiSettings({ apiConfig, onUpdateApiConfig }: ApiSetting
                 type="password"
                 value={localConfig.password}
                 onChange={(e) => updateConfig('password', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
                 placeholder="Bearer token or API key"
               />
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -205,6 +316,21 @@ export default function ApiSettings({ apiConfig, onUpdateApiConfig }: ApiSetting
               </p>
             </div>
           </div>
+        </div>
+
+        {/* Secondary API Configurations */}
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 shadow-sm">
+          <div className="flex items-center space-x-3 mb-6">
+            <div className="bg-orange-100 dark:bg-orange-900/50 p-2 rounded-lg">
+              <Link className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+            </div>
+            <div>
+              <h4 className="font-semibold text-gray-900 dark:text-gray-100">Secondary API Endpoints</h4>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Additional APIs for specific workflows or backup systems</p>
+            </div>
+          </div>
+
+          <SecondaryApiSettings />
         </div>
 
         {/* Google Gemini API Settings */}
@@ -227,20 +353,66 @@ export default function ApiSettings({ apiConfig, onUpdateApiConfig }: ApiSetting
               type="password"
               value={localConfig.googleApiKey}
               onChange={(e) => updateConfig('googleApiKey', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
               placeholder="Enter your Google Gemini API key"
             />
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               Get your API key from{' '}
-              <a 
-                href="https://makersuite.google.com/app/apikey" 
-                target="_blank" 
+              <a
+                href="https://makersuite.google.com/app/apikey"
+                target="_blank"
                 rel="noopener noreferrer"
                 className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 underline"
               >
                 Google AI Studio
               </a>
             </p>
+            <div className="mt-3">
+              <button
+                onClick={handleTestGeminiApi}
+                disabled={isTestingGemini || !localConfig.googleApiKey}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
+              >
+                <TestTube className="h-4 w-4" />
+                <span>{isTestingGemini ? 'Testing...' : 'Test Gemini API'}</span>
+              </button>
+            </div>
+
+            {geminiTestResult && (
+              <div className={`mt-3 border rounded-lg p-4 ${
+                geminiTestResult.success
+                  ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700'
+                  : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700'
+              }`}>
+                <div className="flex items-center space-x-2">
+                  <div className={`w-4 h-4 rounded-full ${
+                    geminiTestResult.success ? 'bg-green-500' : 'bg-red-500'
+                  }`}></div>
+                  <span className={`font-semibold ${
+                    geminiTestResult.success
+                      ? 'text-green-800 dark:text-green-300'
+                      : 'text-red-800 dark:text-red-300'
+                  }`}>
+                    {geminiTestResult.success ? 'API Test Passed' : 'API Test Failed'}
+                  </span>
+                </div>
+                <p className={`text-sm mt-1 ${
+                  geminiTestResult.success
+                    ? 'text-green-700 dark:text-green-400'
+                    : 'text-red-700 dark:text-red-400'
+                }`}>
+                  {geminiTestResult.message}
+                </p>
+                {geminiTestResult.data && (
+                  <div className="mt-3 bg-white dark:bg-gray-700 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+                    <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">API Response:</p>
+                    <pre className="text-xs text-gray-800 dark:text-gray-200 whitespace-pre-wrap font-mono">
+                      {JSON.stringify(geminiTestResult.data, null, 2)}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -256,7 +428,24 @@ export default function ApiSettings({ apiConfig, onUpdateApiConfig }: ApiSetting
             <li>• Use "Test TruckMate API" to verify your API connection with /WHOAMI endpoint</li>
           </ul>
         </div>
-      </div>
+
+        {/* Info Box */}
+        <div className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+          <h4 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">Primary vs Secondary APIs</h4>
+          <ul className="text-sm text-gray-700 dark:text-gray-400 space-y-1">
+            <li>• <strong>Primary API:</strong> Default endpoint for all JSON data transmissions from extraction types</li>
+            <li>• <strong>Secondary APIs:</strong> Additional endpoints that can be used in specific workflows or as backup systems</li>
+            <li>• Secondary APIs can be independently enabled/disabled without affecting the primary API</li>
+            <li>• Each secondary API has its own base URL and authentication configuration</li>
+          </ul>
+        </div>
+          </div>
+        </>
+      )}
+
+      {activeTab === 'specs' && (
+        <ApiSpecsSettings apiConfig={localConfig} secondaryApis={secondaryApis} />
+      )}
     </div>
   );
 }
