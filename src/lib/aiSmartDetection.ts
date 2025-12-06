@@ -1,5 +1,18 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import * as pdfjsLib from 'pdfjs-dist';
+import { geminiConfigService } from '../services/geminiConfigService';
+
+async function getActiveModelName(): Promise<string> {
+  try {
+    const config = await geminiConfigService.getActiveConfiguration();
+    if (config && config.modelName) {
+      return config.modelName;
+    }
+  } catch (error) {
+    console.warn('Failed to fetch active Gemini model, using default:', error);
+  }
+  return 'gemini-2.5-pro';
+}
 
 export interface SmartDetectionRequest {
   pageText: string;
@@ -26,7 +39,8 @@ export async function detectPatternWithAI({
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+    const activeModelName = await getActiveModelName();
+    const model = genAI.getGenerativeModel({ model: activeModelName });
 
     const prompt = `You are a pattern detection AI analyzing PDF text content. Your task is to determine if the provided text matches a given pattern or description.
 
