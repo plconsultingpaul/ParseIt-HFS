@@ -6,6 +6,7 @@ import ExtractionProcessSection from './sections/ExtractionProcessSection';
 import SettingsOverviewSection from './sections/SettingsOverviewSection';
 import EmailMonitoringSection from './sections/EmailMonitoringSection';
 import ExtractionTypesSection from './sections/ExtractionTypesSection';
+import TransformationTypesSection from './sections/TransformationTypesSection';
 import FieldMappingsSection from './sections/FieldMappingsSection';
 import WorkflowsSection from './sections/WorkflowsSection';
 import UserManagementSection from './sections/UserManagementSection';
@@ -29,9 +30,9 @@ export default function HelpPage() {
           <div className="bg-gradient-to-r from-blue-600 to-cyan-600 p-4 rounded-full w-20 h-20 mx-auto mb-6 flex items-center justify-center">
             <FileText className="h-10 w-10 text-white" />
           </div>
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">ParseIt Help Center</h1>
+          <h1 className="text-4xl font-bold text-gray-900 mb-4">Parse-It Help Center</h1>
           <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-            Complete guide to using ParseIt for PDF data extraction
+            Complete guide to using Parse-It for PDF data extraction
           </p>
         </div>
       </div>
@@ -43,6 +44,7 @@ export default function HelpPage() {
         <SettingsOverviewSection />
         <EmailMonitoringSection />
         <ExtractionTypesSection />
+        <TransformationTypesSection />
         <FieldMappingsSection />
         <WorkflowsSection />
         <UserManagementSection />
