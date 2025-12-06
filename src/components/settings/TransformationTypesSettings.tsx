@@ -4,6 +4,7 @@ import type { TransformationType, TransformationFieldMapping, PageGroupConfig } 
 import { useSupabaseData } from '../../hooks/useSupabaseData';
 import MappingPage from '../MappingPage';
 import PageGroupConfigEditor from './PageGroupConfigEditor';
+import Select from '../common/Select';
 
 interface TransformationTypesSettingsProps {
   transformationTypes: TransformationType[];
@@ -774,23 +775,20 @@ export default function TransformationTypesSettings({
       {localTransformationTypes.length > 0 && (
         <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 shadow-sm">
           <div className="flex items-center justify-between">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Select Transformation Type to Edit
-              </label>
-              <select
-                value={selectedTypeIndex}
-                onChange={(e) => setSelectedTypeIndex(parseInt(e.target.value))}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent min-w-64"
-              >
-                {localTransformationTypes.map((type, index) => (
-                  <option key={type.id} value={index}>
-                    {type.name || `Transformation Type ${index + 1}`}
-                  </option>
-                ))}
-              </select>
+            <div className="flex-1 mr-4">
+              <Select
+                label="Select Transformation Type to Edit"
+                value={selectedTypeIndex.toString()}
+                onValueChange={(value) => setSelectedTypeIndex(parseInt(value))}
+                options={localTransformationTypes.map((type, index) => ({
+                  value: index.toString(),
+                  label: type.name || `Transformation Type ${index + 1}`
+                }))}
+                placeholder="Select a transformation type..."
+                className="min-w-64"
+              />
             </div>
-            <div className="text-sm text-gray-500 dark:text-gray-400">
+            <div className="text-sm text-gray-500 dark:text-gray-400 mt-6">
               {localTransformationTypes.length} type{localTransformationTypes.length !== 1 ? 's' : ''} total
             </div>
           </div>
@@ -831,7 +829,7 @@ export default function TransformationTypesSettings({
                   type="text"
                   value={selectedType.name}
                   onChange={(e) => updateTransformationType(selectedTypeIndex, 'name', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 hover:border-orange-400 dark:hover:border-orange-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-colors duration-200"
                   placeholder="e.g., Invoice Renaming"
                 />
               </div>
@@ -843,7 +841,7 @@ export default function TransformationTypesSettings({
                   type="text"
                   value={selectedType.filenameTemplate}
                   onChange={(e) => updateTransformationType(selectedTypeIndex, 'filenameTemplate', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent font-mono"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 hover:border-orange-400 dark:hover:border-orange-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent font-mono transition-colors duration-200"
                   placeholder="e.g., {{invoiceNumber}}-{{customerName}}.pdf"
                 />
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -854,26 +852,22 @@ export default function TransformationTypesSettings({
 
             {/* Workflow Assignment */}
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Assigned Workflow (Optional)
-              </label>
-              <select
-                value={selectedType.workflowId || ''}
-                onChange={(e) => updateTransformationType(selectedTypeIndex, 'workflowId', e.target.value || undefined)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-              >
-                <option value="">No workflow assigned</option>
-                {workflows
-                  .filter(w => w.isActive)
-                  .map((workflow) => (
-                    <option key={workflow.id} value={workflow.id}>
-                      {workflow.name}
-                    </option>
-                  ))}
-              </select>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                When a workflow is assigned, it will be executed after data extraction for additional processing steps.
-              </p>
+              <Select
+                label="Assigned Workflow (Optional)"
+                value={selectedType.workflowId || '__none__'}
+                onValueChange={(value) => updateTransformationType(selectedTypeIndex, 'workflowId', value === '__none__' ? undefined : value)}
+                options={[
+                  { value: '__none__', label: 'No workflow assigned' },
+                  ...workflows
+                    .filter(w => w.isActive)
+                    .map((workflow) => ({
+                      value: workflow.id,
+                      label: workflow.name
+                    }))
+                ]}
+                placeholder="Select a workflow..."
+                helpText="When a workflow is assigned, it will be executed after data extraction for additional processing steps."
+              />
             </div>
 
             {/* Default Upload Mode */}
@@ -895,19 +889,17 @@ export default function TransformationTypesSettings({
                   </label>
                 </div>
               </div>
-              <select
-                value={selectedType.defaultUploadMode || ''}
-                onChange={(e) => updateTransformationType(selectedTypeIndex, 'defaultUploadMode', e.target.value || undefined)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-              >
-                <option value="">No default (use user preference)</option>
-                <option value="manual">Manual Selection</option>
-                <option value="auto">AI Auto-Detect</option>
-              </select>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                When set, the Transform page will automatically default to this upload mode when this transformation type is selected.
-                {selectedType.lockUploadMode && ' Lock Mode prevents users from changing the upload mode.'}
-              </p>
+              <Select
+                value={selectedType.defaultUploadMode || '__none__'}
+                onValueChange={(value) => updateTransformationType(selectedTypeIndex, 'defaultUploadMode', value === '__none__' ? undefined : value)}
+                options={[
+                  { value: '__none__', label: 'No default (use user preference)' },
+                  { value: 'manual', label: 'Manual Selection' },
+                  { value: 'auto', label: 'AI Auto-Detect' }
+                ]}
+                searchable={false}
+                helpText={`When set, the Transform page will automatically default to this upload mode when this transformation type is selected.${selectedType.lockUploadMode ? ' Lock Mode prevents users from changing the upload mode.' : ''}`}
+              />
             </div>
 
             {/* PDF Grouping Configuration */}
@@ -928,7 +920,7 @@ export default function TransformationTypesSettings({
                     max="50"
                     value={selectedType.pagesPerGroup || 1}
                     onChange={(e) => updateTransformationType(selectedTypeIndex, 'pagesPerGroup', parseInt(e.target.value) || 1)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 hover:border-orange-400 dark:hover:border-orange-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-colors duration-200"
                     placeholder="1"
                   />
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -953,7 +945,7 @@ export default function TransformationTypesSettings({
                       type="text"
                       value={selectedType.documentStartPattern || ''}
                       onChange={(e) => updateTransformationType(selectedTypeIndex, 'documentStartPattern', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 hover:border-orange-400 dark:hover:border-orange-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-colors duration-200"
                       placeholder="e.g., INVOICE / FACTURE"
                     />
                   )}
@@ -994,7 +986,7 @@ export default function TransformationTypesSettings({
               <textarea
                 value={selectedType.defaultInstructions}
                 onChange={(e) => updateTransformationType(selectedTypeIndex, 'defaultInstructions', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-vertical"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 hover:border-orange-400 dark:hover:border-orange-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-vertical transition-colors duration-200"
                 rows={3}
                 placeholder="Describe what data to extract from the PDF for renaming..."
               />
@@ -1011,7 +1003,7 @@ export default function TransformationTypesSettings({
               <textarea
                 value={selectedType.autoDetectInstructions || ''}
                 onChange={(e) => updateTransformationType(selectedTypeIndex, 'autoDetectInstructions', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-vertical"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 hover:border-orange-400 dark:hover:border-orange-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-vertical transition-colors duration-200"
                 rows={3}
                 placeholder="Describe the characteristics that identify this document type for transformation (e.g., 'Invoice documents that need to be renamed with invoice number and customer name')"
               />
@@ -1073,18 +1065,17 @@ export default function TransformationTypesSettings({
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                          Type
-                        </label>
-                        <select
+                        <Select
+                          label="Type"
                           value={mapping.type}
-                          onChange={(e) => updateFieldMapping(selectedTypeIndex, mappingIndex, 'type', e.target.value as 'ai' | 'mapped' | 'hardcoded')}
-                          className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded text-sm focus:outline-none focus:ring-1 focus:ring-orange-500"
-                        >
-                          <option value="ai">AI</option>
-                          <option value="mapped">Mapped</option>
-                          <option value="hardcoded">Hardcoded</option>
-                        </select>
+                          onValueChange={(value) => updateFieldMapping(selectedTypeIndex, mappingIndex, 'type', value as 'ai' | 'mapped' | 'hardcoded')}
+                          options={[
+                            { value: 'ai', label: 'AI' },
+                            { value: 'mapped', label: 'Mapped' },
+                            { value: 'hardcoded', label: 'Hardcoded' }
+                          ]}
+                          searchable={false}
+                        />
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
@@ -1126,21 +1117,20 @@ export default function TransformationTypesSettings({
                         </p>
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                          Data Type
-                        </label>
-                        <select
+                        <Select
+                          label="Data Type"
                           value={mapping.dataType || 'string'}
-                          onChange={(e) => updateFieldMapping(selectedTypeIndex, mappingIndex, 'dataType', e.target.value as 'string' | 'number' | 'integer' | 'boolean')}
-                          className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded text-sm focus:outline-none focus:ring-1 focus:ring-orange-500"
-                        >
-                          <option value="string">String</option>
-                          <option value="number">Number</option>
-                          <option value="integer">Integer</option>
-                          <option value="datetime">DateTime</option>
-                          <option value="phone">Phone Number</option>
-                          <option value="boolean">Boolean</option>
-                        </select>
+                          onValueChange={(value) => updateFieldMapping(selectedTypeIndex, mappingIndex, 'dataType', value as 'string' | 'number' | 'integer' | 'boolean')}
+                          options={[
+                            { value: 'string', label: 'String' },
+                            { value: 'number', label: 'Number' },
+                            { value: 'integer', label: 'Integer' },
+                            { value: 'datetime', label: 'DateTime' },
+                            { value: 'phone', label: 'Phone Number' },
+                            { value: 'boolean', label: 'Boolean' }
+                          ]}
+                          searchable={false}
+                        />
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
