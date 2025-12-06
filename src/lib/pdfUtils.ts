@@ -180,26 +180,69 @@ export async function splitPdfWithPageGroups(
 
     const results: PageGroupResult[] = [];
     let currentPage = 0;
+    const sortedConfigs = pageGroupConfigs.sort((a, b) => a.groupOrder - b.groupOrder);
 
-    for (const groupConfig of pageGroupConfigs.sort((a, b) => a.groupOrder - b.groupOrder)) {
-      if (currentPage >= totalPages) {
-        console.log(`Reached end of PDF at page ${currentPage + 1}, stopping group detection`);
-        break;
-      }
+    while (currentPage < totalPages) {
+      let documentSetFound = false;
+      const documentSetStartPage = currentPage;
 
-      console.log(`\n=== Processing Page Group ${groupConfig.groupOrder} ===`);
-      console.log('Config:', {
-        pagesPerGroup: groupConfig.pagesPerGroup,
-        smartDetectionPattern: groupConfig.smartDetectionPattern,
-        processMode: groupConfig.processMode,
-        workflowId: groupConfig.workflowId
-      });
+      console.log(`\n🔄 === Starting new document set search from page ${currentPage + 1} ===`);
 
-      let startPage = currentPage;
-      let endPage = currentPage;
-      let detectionMethod: 'smart' | 'fixed' = 'fixed';
+      for (const groupConfig of sortedConfigs) {
+        if (currentPage >= totalPages) {
+          console.log(`Reached end of PDF at page ${currentPage + 1}, stopping group detection`);
+          break;
+        }
 
-      if (groupConfig.smartDetectionPattern && groupConfig.smartDetectionPattern.trim()) {
+        console.log(`\n=== Processing Page Group ${groupConfig.groupOrder} ===`);
+        console.log('Config:', {
+          pagesPerGroup: groupConfig.pagesPerGroup,
+          smartDetectionPattern: groupConfig.smartDetectionPattern,
+          processMode: groupConfig.processMode,
+          workflowId: groupConfig.workflowId,
+          followsPreviousGroup: groupConfig.followsPreviousGroup
+        });
+
+        let startPage = currentPage;
+        let endPage = currentPage;
+        let detectionMethod: 'smart' | 'fixed' = 'fixed';
+
+        if (groupConfig.followsPreviousGroup) {
+          console.log('Using "follows previous group" mode - starting at page', currentPage + 1);
+          detectionMethod = 'fixed';
+          startPage = currentPage;
+          documentSetFound = true;
+
+        if (groupConfig.processMode === 'single') {
+          endPage = startPage;
+          console.log(`Single page mode: using only page ${startPage + 1}`);
+        } else {
+          console.log('All pages mode: finding next Group 1 boundary or using pagesPerGroup limit');
+          let maxEndPage = startPage + groupConfig.pagesPerGroup - 1;
+
+          const nextGroup1Config = pageGroupConfigs.find(cfg =>
+            cfg.groupOrder === 1 &&
+            (cfg.smartDetectionPattern && cfg.smartDetectionPattern.trim())
+          );
+
+          if (nextGroup1Config?.smartDetectionPattern) {
+            console.log('Searching for next Group 1 pattern:', nextGroup1Config.smartDetectionPattern);
+            const group1PatternLower = nextGroup1Config.smartDetectionPattern.toLowerCase();
+
+            for (let pageIdx = startPage + 1; pageIdx < totalPages && pageIdx <= maxEndPage; pageIdx++) {
+              const pageText = pageTexts[pageIdx];
+              if (pageText.toLowerCase().includes(group1PatternLower)) {
+                console.log(`Found next Group 1 pattern on page ${pageIdx + 1}, limiting current group`);
+                maxEndPage = pageIdx - 1;
+                break;
+              }
+            }
+          }
+
+          endPage = Math.min(maxEndPage, totalPages - 1);
+          console.log(`All pages mode: pages ${startPage + 1} to ${endPage + 1}`);
+        }
+      } else if (groupConfig.smartDetectionPattern && groupConfig.smartDetectionPattern.trim()) {
         console.log('Using smart detection with pattern:', groupConfig.smartDetectionPattern);
         console.log('AI detection enabled:', groupConfig.useAiDetection);
         console.log('Fallback behavior:', groupConfig.fallbackBehavior || 'skip');
@@ -230,6 +273,7 @@ export async function splitPdfWithPageGroups(
                 console.log(`✅ AI found pattern on page ${pageIdx + 1} (confidence: ${aiResult.confidence.toFixed(2)})`);
                 startPage = pageIdx;
                 foundPattern = true;
+                documentSetFound = true;
                 break;
               }
             } catch (aiError) {
@@ -240,6 +284,7 @@ export async function splitPdfWithPageGroups(
                 console.log(`⚠️ Fallback: Found pattern on page ${pageIdx + 1} using simple text search`);
                 startPage = pageIdx;
                 foundPattern = true;
+                documentSetFound = true;
                 break;
               }
             }
@@ -255,6 +300,7 @@ export async function splitPdfWithPageGroups(
               console.log(`Found pattern on page ${pageIdx + 1}`);
               startPage = pageIdx;
               foundPattern = true;
+              documentSetFound = true;
               break;
             }
           }
@@ -266,6 +312,10 @@ export async function splitPdfWithPageGroups(
 
           if (fallbackBehavior === 'skip') {
             console.log('Skipping this group');
+            if (groupConfig.groupOrder === 1) {
+              console.log('Group 1 pattern not found, stopping document set search');
+              break;
+            }
             continue;
           } else if (fallbackBehavior === 'error') {
             throw new Error(`Required pattern not found for group ${groupConfig.groupOrder}: "${groupConfig.smartDetectionPattern}"`);
@@ -273,11 +323,16 @@ export async function splitPdfWithPageGroups(
             console.log('Using fixed position as fallback');
             startPage = currentPage;
             foundPattern = true;
+            documentSetFound = true;
             detectionMethod = 'fixed';
           }
         }
 
         if (!foundPattern) {
+          if (groupConfig.groupOrder === 1) {
+            console.log('Group 1 pattern not found, stopping document set search');
+            break;
+          }
           continue;
         }
 
@@ -307,6 +362,7 @@ export async function splitPdfWithPageGroups(
         console.log('Using fixed position grouping');
         detectionMethod = 'fixed';
         startPage = currentPage;
+        documentSetFound = true;
 
         if (groupConfig.processMode === 'single') {
           endPage = startPage;
@@ -343,8 +399,21 @@ export async function splitPdfWithPageGroups(
         originalPdfPageEnd: endPage + 1
       });
 
-      currentPage = endPage + 1;
-      console.log(`Group ${groupConfig.groupOrder} complete. Next page to process: ${currentPage + 1}`);
+        currentPage = endPage + 1;
+        console.log(`Group ${groupConfig.groupOrder} complete. Next page to process: ${currentPage + 1}`);
+      }
+
+      if (!documentSetFound) {
+        console.log(`❌ No document set found starting from page ${documentSetStartPage + 1}, ending search`);
+        break;
+      }
+
+      if (currentPage >= totalPages) {
+        console.log(`✅ Reached end of PDF, stopping document set search`);
+        break;
+      }
+
+      console.log(`✅ Document set complete. Searching for next document set...`);
     }
 
     console.log(`\n✅ Created ${results.length} page groups from ${totalPages} pages`);
