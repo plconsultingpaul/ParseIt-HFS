@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      '@': path.resolve(__dirname, './src'),
       'jscanify': path.resolve(__dirname, 'node_modules/jscanify/src/jscanify.js'),
     },
   },
