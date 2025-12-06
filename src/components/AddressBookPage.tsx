@@ -14,6 +14,7 @@ import {
   CANADIAN_PROVINCES,
   COUNTRIES
 } from '../services/addressBookService';
+import Select from './common/Select';
 
 interface AddressBookPageProps {
   user: User;
@@ -259,7 +260,7 @@ export default function AddressBookPage({ user }: AddressBookPageProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
         <span className="ml-3 text-gray-600 dark:text-gray-400">Loading addresses...</span>
       </div>
     );
@@ -296,7 +297,7 @@ export default function AddressBookPage({ user }: AddressBookPageProps) {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search by name, city, or contact..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
           </div>
         </div>
@@ -306,7 +307,7 @@ export default function AddressBookPage({ user }: AddressBookPageProps) {
             onClick={() => setFilterActive(filterActive === true ? null : true)}
             className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-200 ${
               filterActive === true
-                ? 'bg-teal-100 text-teal-700 dark:bg-teal-900 dark:text-teal-300'
+                ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
                 : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
             }`}
           >
@@ -337,7 +338,7 @@ export default function AddressBookPage({ user }: AddressBookPageProps) {
 
           <button
             onClick={handleAddAddress}
-            className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2"
+            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2"
           >
             <Plus className="h-4 w-4" />
             <span>Add Address</span>
@@ -369,7 +370,7 @@ export default function AddressBookPage({ user }: AddressBookPageProps) {
             {addresses.length === 0 && (
               <button
                 onClick={handleAddAddress}
-                className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2 mx-auto"
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2 mx-auto"
               >
                 <Plus className="h-4 w-4" />
                 <span>Add First Address</span>
@@ -503,9 +504,9 @@ export default function AddressBookPage({ user }: AddressBookPageProps) {
         />
       )}
 
-      <div className="bg-teal-50 dark:bg-teal-900/20 border border-teal-200 dark:border-teal-700 rounded-lg p-4">
-        <h4 className="font-semibold text-teal-800 dark:text-teal-300 mb-2">Address Book Information</h4>
-        <ul className="text-sm text-teal-700 dark:text-teal-400 space-y-1">
+      <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700 rounded-lg p-4">
+        <h4 className="font-semibold text-purple-800 dark:text-purple-300 mb-2">Address Book Information</h4>
+        <ul className="text-sm text-purple-700 dark:text-purple-400 space-y-1">
           <li>• Manage all shipping and receiving addresses for your organization</li>
           <li>• Mark addresses as Shipper, Consignee, or both based on their purpose</li>
           <li>• Set appointment requirements for locations that need scheduled deliveries</li>
@@ -543,8 +544,8 @@ function AddressModal({
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 pt-10 overflow-y-auto">
       <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-2xl w-full mx-4 my-8 shadow-2xl">
         <div className="text-center mb-6">
-          <div className="bg-teal-100 dark:bg-teal-900/50 p-3 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-            {isEdit ? <Edit className="h-8 w-8 text-teal-600 dark:text-teal-400" /> : <Plus className="h-8 w-8 text-teal-600 dark:text-teal-400" />}
+          <div className="bg-purple-100 dark:bg-purple-900/50 p-3 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+            {isEdit ? <Edit className="h-8 w-8 text-purple-600 dark:text-purple-400" /> : <Plus className="h-8 w-8 text-purple-600 dark:text-purple-400" />}
           </div>
           <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">
             {isEdit ? 'Edit Address' : 'Add New Address'}
@@ -572,7 +573,7 @@ function AddressModal({
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value.substring(0, 40) })}
                 placeholder="Enter address name"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                 required
               />
             </div>
@@ -587,7 +588,7 @@ function AddressModal({
                 value={formData.address1}
                 onChange={(e) => setFormData({ ...formData, address1: e.target.value.substring(0, 40) })}
                 placeholder="Street address"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                 required
               />
             </div>
@@ -602,7 +603,7 @@ function AddressModal({
                 value={formData.address2}
                 onChange={(e) => setFormData({ ...formData, address2: e.target.value.substring(0, 40) })}
                 placeholder="Apt, suite, unit, etc."
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
             </div>
 
@@ -616,46 +617,39 @@ function AddressModal({
                 value={formData.city}
                 onChange={(e) => setFormData({ ...formData, city: e.target.value.substring(0, 30) })}
                 placeholder="City"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                 required
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Country <span className="text-red-500">*</span>
-              </label>
-              <select
+              <Select
+                label="Country"
                 value={formData.country}
-                onChange={(e) => setFormData({ ...formData, country: e.target.value, stateProv: '' })}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
+                onValueChange={(value) => setFormData({ ...formData, country: value, stateProv: '' })}
+                options={COUNTRIES.map((country) => ({
+                  value: country.code,
+                  label: country.name
+                }))}
                 required
-              >
-                {COUNTRIES.map((country) => (
-                  <option key={country.code} value={country.code}>
-                    {country.name}
-                  </option>
-                ))}
-              </select>
+                searchable={false}
+              />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                State/Province <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={formData.stateProv}
-                onChange={(e) => setFormData({ ...formData, stateProv: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
+              <Select
+                label="State/Province"
+                value={formData.stateProv || '__none__'}
+                onValueChange={(value) => setFormData({ ...formData, stateProv: value === '__none__' ? '' : value })}
+                options={[
+                  { value: '__none__', label: 'Select...' },
+                  ...getStateProvOptions().map((option) => ({
+                    value: option.code,
+                    label: `${option.name} (${option.code})`
+                  }))
+                ]}
                 required
-              >
-                <option value="">Select...</option>
-                {getStateProvOptions().map((option) => (
-                  <option key={option.code} value={option.code}>
-                    {option.name} ({option.code})
-                  </option>
-                ))}
-              </select>
+              />
             </div>
 
             <div className="md:col-span-2 border-t border-gray-200 dark:border-gray-600 pt-4 mt-2">
@@ -672,7 +666,7 @@ function AddressModal({
                 value={formData.contactName}
                 onChange={(e) => setFormData({ ...formData, contactName: e.target.value.substring(0, 128) })}
                 placeholder="Contact person"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
             </div>
 
@@ -686,7 +680,7 @@ function AddressModal({
                 value={formData.contactEmail}
                 onChange={(e) => setFormData({ ...formData, contactEmail: e.target.value.substring(0, 40) })}
                 placeholder="email@example.com"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
             </div>
 
@@ -700,7 +694,7 @@ function AddressModal({
                 value={formData.contactPhone}
                 onChange={(e) => handlePhoneChange(e.target.value)}
                 placeholder="123-456-7890"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
             </div>
 
@@ -714,7 +708,7 @@ function AddressModal({
                 value={formData.contactPhoneExt}
                 onChange={(e) => setFormData({ ...formData, contactPhoneExt: e.target.value.substring(0, 5) })}
                 placeholder="Ext."
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
             </div>
 
@@ -729,10 +723,10 @@ function AddressModal({
                   id="appointmentReq"
                   checked={formData.appointmentReq}
                   onChange={(e) => setFormData({ ...formData, appointmentReq: e.target.checked })}
-                  className="w-4 h-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500"
+                  className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
                 />
                 <label htmlFor="appointmentReq" className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center space-x-2">
-                  <Calendar className="h-4 w-4 text-teal-600" />
+                  <Calendar className="h-4 w-4 text-purple-600" />
                   <span>Appointment Required</span>
                 </label>
               </div>
@@ -743,10 +737,10 @@ function AddressModal({
                   id="active"
                   checked={formData.active}
                   onChange={(e) => setFormData({ ...formData, active: e.target.checked })}
-                  className="w-4 h-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500"
+                  className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
                 />
                 <label htmlFor="active" className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center space-x-2">
-                  <CheckCircle className="h-4 w-4 text-teal-600" />
+                  <CheckCircle className="h-4 w-4 text-purple-600" />
                   <span>Active</span>
                 </label>
               </div>
@@ -757,10 +751,10 @@ function AddressModal({
                   id="isShipper"
                   checked={formData.isShipper}
                   onChange={(e) => setFormData({ ...formData, isShipper: e.target.checked })}
-                  className="w-4 h-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500"
+                  className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
                 />
                 <label htmlFor="isShipper" className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center space-x-2">
-                  <Truck className="h-4 w-4 text-teal-600" />
+                  <Truck className="h-4 w-4 text-purple-600" />
                   <span>Is Shipper</span>
                 </label>
               </div>
@@ -771,10 +765,10 @@ function AddressModal({
                   id="isConsignee"
                   checked={formData.isConsignee}
                   onChange={(e) => setFormData({ ...formData, isConsignee: e.target.checked })}
-                  className="w-4 h-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500"
+                  className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
                 />
                 <label htmlFor="isConsignee" className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center space-x-2">
-                  <Building className="h-4 w-4 text-teal-600" />
+                  <Building className="h-4 w-4 text-purple-600" />
                   <span>Is Consignee</span>
                 </label>
               </div>
@@ -791,7 +785,7 @@ function AddressModal({
             <button
               type="submit"
               disabled={isSaving}
-              className="flex-1 px-4 py-3 bg-teal-600 hover:bg-teal-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200"
+              className="flex-1 px-4 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200"
             >
               {isSaving ? 'Saving...' : isEdit ? 'Update Address' : 'Create Address'}
             </button>
