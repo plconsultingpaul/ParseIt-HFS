@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Save, AlertCircle, CheckCircle, Loader2, Truck, Download } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type { Workflow, DriverCheckinSettings as DriverCheckinSettingsType } from '../../types';
+import Select from '../common/Select';
 
 interface DriverCheckinSettingsProps {
   workflows: Workflow[];
@@ -240,7 +241,7 @@ export default function DriverCheckinSettings({ workflows }: DriverCheckinSettin
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
             placeholder="https://yourdomain.com"
-            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all hover:border-blue-400 dark:hover:border-blue-500"
           />
         </div>
 
@@ -249,22 +250,19 @@ export default function DriverCheckinSettings({ workflows }: DriverCheckinSettin
             Fallback Workflow
             <span className="text-red-500 ml-1">*</span>
           </label>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            This workflow will be used when AI auto-detection fails to identify the BOL document type
-          </p>
-          <select
-            value={fallbackWorkflowId}
-            onChange={(e) => setFallbackWorkflowId(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="">Select a workflow...</option>
-            {activeWorkflows.map((workflow) => (
-              <option key={workflow.id} value={workflow.id}>
-                {workflow.name}
-                {workflow.description ? ` - ${workflow.description}` : ''}
-              </option>
-            ))}
-          </select>
+          <Select
+            value={fallbackWorkflowId || '__none__'}
+            onValueChange={(value) => setFallbackWorkflowId(value === '__none__' ? '' : value)}
+            options={[
+              { value: '__none__', label: 'Select a workflow...' },
+              ...activeWorkflows.map((workflow) => ({
+                value: workflow.id,
+                label: `${workflow.name}${workflow.description ? ` - ${workflow.description}` : ''}`
+              }))
+            ]}
+            helpText="This workflow will be used when AI auto-detection fails to identify the BOL document type"
+            required
+          />
           {fallbackWorkflowId && selectedWorkflow && (
             <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg">
               <p className="text-sm text-blue-900 dark:text-blue-300">
