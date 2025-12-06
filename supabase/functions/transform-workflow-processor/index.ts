@@ -6,6 +6,17 @@ const corsHeaders = {
 };
 async function createStepLog(supabaseUrl, supabaseServiceKey, workflowExecutionLogId, workflowId, step, status, startedAt, completedAt, durationMs, errorMessage, inputData, outputData) {
   try {
+    console.log('🔍 === DIAGNOSTIC: createStepLog called ===');
+    console.log('🔍 Parameters:', {
+      workflowExecutionLogId,
+      workflowId,
+      stepId: step?.id,
+      stepName: step?.step_name,
+      stepType: step?.step_type,
+      stepOrder: step?.step_order,
+      status
+    });
+
     const stepLogPayload = {
       workflow_execution_log_id: workflowExecutionLogId,
       workflow_id: workflowId,
@@ -22,6 +33,11 @@ async function createStepLog(supabaseUrl, supabaseServiceKey, workflowExecutionL
       output_data: outputData || null,
       created_at: new Date().toISOString()
     };
+
+    console.log('🔍 Step log payload to be sent:', JSON.stringify(stepLogPayload, null, 2));
+    console.log('🔍 Supabase URL:', supabaseUrl);
+    console.log('🔍 Service key present:', !!supabaseServiceKey);
+
     const stepLogResponse = await fetch(`${supabaseUrl}/rest/v1/workflow_step_logs`, {
       method: 'POST',
       headers: {
@@ -32,15 +48,34 @@ async function createStepLog(supabaseUrl, supabaseServiceKey, workflowExecutionL
       },
       body: JSON.stringify(stepLogPayload)
     });
+
+    console.log('🔍 Step log response status:', stepLogResponse.status);
+    console.log('🔍 Step log response ok:', stepLogResponse.ok);
+
     if (stepLogResponse.ok) {
       const stepLogData = await stepLogResponse.json();
       console.log(`✅ Step log created for step ${step.step_order}:`, stepLogData[0]?.id);
       return stepLogData[0]?.id;
     } else {
-      console.error('❌ Failed to create step log:', stepLogResponse.status);
+      const errorText = await stepLogResponse.text();
+      console.error('❌ Failed to create step log');
+      console.error('❌ Status code:', stepLogResponse.status);
+      console.error('❌ Error response:', errorText);
+      console.error('❌ Failed payload was:', JSON.stringify(stepLogPayload, null, 2));
+
+      try {
+        const errorJson = JSON.parse(errorText);
+        console.error('❌ Parsed error details:', JSON.stringify(errorJson, null, 2));
+      } catch (parseError) {
+        console.error('❌ Error response is not JSON');
+      }
     }
   } catch (error) {
-    console.error('❌ Error creating step log:', error);
+    console.error('❌ Exception in createStepLog function');
+    console.error('❌ Error type:', error?.constructor?.name);
+    console.error('❌ Error message:', error?.message);
+    console.error('❌ Error stack:', error?.stack);
+    console.error('❌ Full error object:', error);
   }
   return null;
 }
@@ -126,6 +161,8 @@ Deno.serve(async (req)=>{
     console.log('📊 Workflow ID:', requestData.workflowId);
     console.log('👤 User ID:', requestData.userId || 'none');
     console.log('📄 PDF filename:', requestData.pdfFilename);
+    console.log('🔗 Session ID:', requestData.sessionId || 'none');
+    console.log('🔢 Group Order:', requestData.groupOrder || 'none');
     console.log('🔍 === FETCHING TYPE DETAILS ===');
     let typeDetails = null;
     let formatType = 'JSON';
@@ -190,6 +227,8 @@ Deno.serve(async (req)=>{
           extraction_status: 'success',
           extracted_data: requestData.extractedData || null,
           processing_mode: requestData.transformationTypeId ? 'transformation' : 'extraction',
+          session_id: requestData.sessionId || null,
+          group_order: requestData.groupOrder || null,
           created_at: new Date().toISOString()
         })
       });
@@ -378,6 +417,48 @@ Deno.serve(async (req)=>{
     } else {
       console.log('📊 Context data created without spreading (CSV format or non-object data)');
     }
+
+    // Retrieve and merge previous group data if this is a subsequent group
+    if (requestData.sessionId && requestData.groupOrder && requestData.groupOrder > 1) {
+      try {
+        console.log('🔗 Retrieving previous group data for session:', requestData.sessionId);
+        const prevGroupsResponse = await fetch(
+          `${supabaseUrl}/rest/v1/extraction_group_data?session_id=eq.${requestData.sessionId}&group_order=lt.${requestData.groupOrder}&order=group_order.asc`,
+          {
+            headers: {
+              'Authorization': `Bearer ${supabaseServiceKey}`,
+              'Content-Type': 'application/json',
+              'apikey': supabaseServiceKey
+            }
+          }
+        );
+
+        if (prevGroupsResponse.ok) {
+          const prevGroups = await prevGroupsResponse.json();
+          console.log(`✅ Found ${prevGroups.length} previous groups`);
+
+          // Merge previous group fields with group prefixes
+          for (const prevGroup of prevGroups) {
+            const groupPrefix = `group${prevGroup.group_order}_`;
+            const prevFields = prevGroup.extracted_fields || {};
+
+            for (const [fieldName, fieldValue] of Object.entries(prevFields)) {
+              const prefixedFieldName = `${groupPrefix}${fieldName}`;
+              contextData[prefixedFieldName] = fieldValue;
+              console.log(`  ✓ Added ${prefixedFieldName} = ${fieldValue}`);
+            }
+          }
+
+          console.log(`✅ Context data now has ${Object.keys(contextData).length} total fields including previous groups`);
+        } else {
+          console.log('⚠️ No previous group data found or error fetching:', prevGroupsResponse.status);
+        }
+      } catch (prevGroupError) {
+        console.error('❌ Failed to retrieve previous group data:', prevGroupError);
+        console.log('⚠️ Continuing without previous group data');
+      }
+    }
+
     // === DIAGNOSTIC START: Context Initialization ===
     try {
       console.log('DIAGNOSTIC: CONTEXT INITIALIZATION');
@@ -735,124 +816,130 @@ Deno.serve(async (req)=>{
             console.error('📄 Problematic response:', responseText);
             throw new Error(`API response is not valid JSON: ${responseParseError.message}`);
           }
-          if (config.responseDataPath && config.updateJsonPath) {
+          // Support both old format (responseDataPath/updateJsonPath) and new format (responseDataMappings)
+          let mappingsToProcess = []
+          if (config.responseDataMappings && Array.isArray(config.responseDataMappings)) {
+            mappingsToProcess = config.responseDataMappings
+            console.log('📋 Using new format: processing', mappingsToProcess.length, 'mapping(s)')
+          } else if (config.responseDataPath && config.updateJsonPath) {
+            mappingsToProcess = [{
+              responsePath: config.responseDataPath,
+              updatePath: config.updateJsonPath
+            }]
+            console.log('📋 Using old format: converted to single mapping')
+          }
+
+          if (mappingsToProcess.length > 0) {
             console.log('🔄 === EXTRACTING DATA FROM API RESPONSE ===');
-            console.log('🔍 DEBUG - responseDataPath:', JSON.stringify(config.responseDataPath));
-            console.log('🔍 DEBUG - updateJsonPath:', JSON.stringify(config.updateJsonPath));
             console.log('🔍 DEBUG - Full API responseData:', JSON.stringify(responseData, null, 2));
             console.log('🔍 DEBUG - contextData BEFORE update:', JSON.stringify(contextData, null, 2));
-            try {
-              console.log('🔍 === STEP 1: EXTRACTING VALUE FROM API RESPONSE ===');
-              let responseValue = getValueByPath(responseData, config.responseDataPath, true);
-              console.log('✅ Extracted value from API response:', responseValue);
-              console.log('📊 DEBUG - Extracted value type:', typeof responseValue);
-              console.log('📊 DEBUG - Extracted value stringified:', JSON.stringify(responseValue));
-              console.log('🔍 === STEP 2: STORING VALUE IN CONTEXT DATA ===');
-              // Strip 'extractedData.' prefix if present since extractedData is spread at contextData root
-              let actualUpdatePath = config.updateJsonPath;
-              if (config.updateJsonPath.startsWith('extractedData.')) {
-                actualUpdatePath = config.updateJsonPath.substring('extractedData.'.length);
-                console.log('🔍 DEBUG - Stripped "extractedData." prefix from updateJsonPath');
-                console.log('🔍 DEBUG - Original path:', config.updateJsonPath);
-                console.log('🔍 DEBUG - New path:', actualUpdatePath);
+
+            for (const mapping of mappingsToProcess) {
+              if (!mapping.responsePath || !mapping.updatePath) {
+                console.warn('⚠️ Skipping mapping with missing responsePath or updatePath:', mapping)
+                continue
               }
-              const updatePathParts = actualUpdatePath.split('.');
-              console.log('🔍 DEBUG - updatePathParts:', JSON.stringify(updatePathParts));
-              console.log('🔍 DEBUG - Will navigate through', updatePathParts.length - 1, 'intermediate parts');
-              let current = contextData;
-              for(let j = 0; j < updatePathParts.length - 1; j++){
-                const part = updatePathParts[j];
-                console.log(`🔍 DEBUG - Processing intermediate part ${j + 1}/${updatePathParts.length - 1}: "${part}"`);
-                if (part.includes('[') && part.includes(']')) {
-                  const arrayName = part.substring(0, part.indexOf('['));
-                  const arrayIndex = parseInt(part.substring(part.indexOf('[') + 1, part.indexOf(']')));
-                  console.log(`🔍 DEBUG - Array navigation: ${arrayName}[${arrayIndex}]`);
+
+              try {
+                console.log('🔍 === PROCESSING MAPPING ===');
+                console.log('🔍 DEBUG - responsePath:', JSON.stringify(mapping.responsePath));
+                console.log('🔍 DEBUG - updatePath:', JSON.stringify(mapping.updatePath));
+
+                console.log('🔍 === STEP 1: EXTRACTING VALUE FROM API RESPONSE ===');
+                let responseValue = getValueByPath(responseData, mapping.responsePath, true);
+                console.log('✅ Extracted value from API response:', responseValue);
+                console.log('📊 DEBUG - Extracted value type:', typeof responseValue);
+                console.log('📊 DEBUG - Extracted value stringified:', JSON.stringify(responseValue));
+
+                console.log('🔍 === STEP 2: STORING VALUE IN CONTEXT DATA ===');
+                // Strip 'extractedData.' prefix if present since extractedData is spread at contextData root
+                let actualUpdatePath = mapping.updatePath;
+                if (mapping.updatePath.startsWith('extractedData.')) {
+                  actualUpdatePath = mapping.updatePath.substring('extractedData.'.length);
+                  console.log('🔍 DEBUG - Stripped "extractedData." prefix from updatePath');
+                  console.log('🔍 DEBUG - Original path:', mapping.updatePath);
+                  console.log('🔍 DEBUG - New path:', actualUpdatePath);
+                }
+
+                const updatePathParts = actualUpdatePath.split('.');
+                console.log('🔍 DEBUG - updatePathParts:', JSON.stringify(updatePathParts));
+                console.log('🔍 DEBUG - Will navigate through', updatePathParts.length - 1, 'intermediate parts');
+                let current = contextData;
+
+                for(let j = 0; j < updatePathParts.length - 1; j++){
+                  const part = updatePathParts[j];
+                  console.log(`🔍 DEBUG - Processing intermediate part ${j + 1}/${updatePathParts.length - 1}: "${part}"`);
+                  if (part.includes('[') && part.includes(']')) {
+                    const arrayName = part.substring(0, part.indexOf('['));
+                    const arrayIndex = parseInt(part.substring(part.indexOf('[') + 1, part.indexOf(']')));
+                    console.log(`🔍 DEBUG - Array navigation: ${arrayName}[${arrayIndex}]`);
+                    if (!current[arrayName]) {
+                      console.log(`🔍 DEBUG - Creating array: ${arrayName}`);
+                      current[arrayName] = [];
+                    }
+                    console.log(`🔍 DEBUG - Current array length: ${current[arrayName].length}, need index: ${arrayIndex}`);
+                    while(current[arrayName].length <= arrayIndex){
+                      console.log(`🔍 DEBUG - Expanding array, adding object at index ${current[arrayName].length}`);
+                      current[arrayName].push({});
+                    }
+                    current = current[arrayName][arrayIndex];
+                    console.log(`🔍 DEBUG - Navigated to ${arrayName}[${arrayIndex}]:`, JSON.stringify(current));
+                  } else {
+                    console.log(`🔍 DEBUG - Object navigation: .${part}`);
+                    if (!current[part]) {
+                      console.log(`🔍 DEBUG - Creating object property: ${part}`);
+                      current[part] = {};
+                    }
+                    current = current[part];
+                    console.log(`🔍 DEBUG - Navigated to .${part}:`, JSON.stringify(current));
+                  }
+                }
+
+                const finalPart = updatePathParts[updatePathParts.length - 1];
+                console.log('🔍 === STEP 3: STORING VALUE AT FINAL LOCATION ===');
+                console.log('🔍 DEBUG - Final part to store at:', finalPart);
+                console.log('🔍 DEBUG - Current object before storage:', JSON.stringify(current));
+                if (finalPart.includes('[') && finalPart.includes(']')) {
+                  const arrayName = finalPart.substring(0, finalPart.indexOf('['));
+                  const arrayIndex = parseInt(finalPart.substring(finalPart.indexOf('[') + 1, finalPart.indexOf(']')));
+                  console.log(`🔍 DEBUG - Storing in array: ${arrayName}[${arrayIndex}]`);
                   if (!current[arrayName]) {
-                    console.log(`🔍 DEBUG - Creating array: ${arrayName}`);
+                    console.log(`🔍 DEBUG - Creating final array: ${arrayName}`);
                     current[arrayName] = [];
                   }
-                  console.log(`🔍 DEBUG - Current array length: ${current[arrayName].length}, need index: ${arrayIndex}`);
                   while(current[arrayName].length <= arrayIndex){
-                    console.log(`🔍 DEBUG - Expanding array, adding object at index ${current[arrayName].length}`);
+                    console.log(`🔍 DEBUG - Expanding final array, adding object at index ${current[arrayName].length}`);
                     current[arrayName].push({});
                   }
-                  current = current[arrayName][arrayIndex];
-                  console.log(`🔍 DEBUG - Navigated to ${arrayName}[${arrayIndex}]:`, JSON.stringify(current));
+                  current[arrayName][arrayIndex] = responseValue;
+                  console.log(`✅ Stored value at ${arrayName}[${arrayIndex}]:`, current[arrayName][arrayIndex]);
                 } else {
-                  console.log(`🔍 DEBUG - Object navigation: .${part}`);
-                  if (!current[part]) {
-                    console.log(`🔍 DEBUG - Creating object property: ${part}`);
-                    current[part] = {};
-                  }
-                  current = current[part];
-                  console.log(`🔍 DEBUG - Navigated to .${part}:`, JSON.stringify(current));
+                  current[finalPart] = responseValue;
+                  console.log('✅ Stored value at final property "' + finalPart + '":', current[finalPart]);
                 }
-              }
-              const finalPart = updatePathParts[updatePathParts.length - 1];
-              console.log('🔍 === STEP 3: STORING VALUE AT FINAL LOCATION ===');
-              console.log('🔍 DEBUG - Final part to store at:', finalPart);
-              console.log('🔍 DEBUG - Current object before storage:', JSON.stringify(current));
-              if (finalPart.includes('[') && finalPart.includes(']')) {
-                const arrayName = finalPart.substring(0, finalPart.indexOf('['));
-                const arrayIndex = parseInt(finalPart.substring(finalPart.indexOf('[') + 1, finalPart.indexOf(']')));
-                console.log(`🔍 DEBUG - Storing in array: ${arrayName}[${arrayIndex}]`);
-                if (!current[arrayName]) {
-                  console.log(`🔍 DEBUG - Creating final array: ${arrayName}`);
-                  current[arrayName] = [];
+
+                console.log('🔍 === STEP 4: VERIFICATION ===');
+                console.log(`✅ Updated context data at path "${mapping.updatePath}"`);
+                console.log('🔍 DEBUG - Verifying stored value by re-reading path:', mapping.updatePath);
+                const verificationValue = getValueByPath(contextData, mapping.updatePath, true);
+                console.log('🔍 DEBUG - Verification read result:', verificationValue);
+                if (verificationValue === responseValue) {
+                  console.log('✅✅✅ VERIFICATION PASSED: Value successfully stored and retrieved!');
+                } else {
+                  console.log('❌❌❌ VERIFICATION FAILED: Retrieved value does not match stored value!');
+                  console.log('Expected:', responseValue);
+                  console.log('Got:', verificationValue);
                 }
-                while(current[arrayName].length <= arrayIndex){
-                  console.log(`🔍 DEBUG - Expanding final array, adding object at index ${current[arrayName].length}`);
-                  current[arrayName].push({});
-                }
-                current[arrayName][arrayIndex] = responseValue;
-                console.log(`✅ Stored value at ${arrayName}[${arrayIndex}]:`, current[arrayName][arrayIndex]);
-              } else {
-                current[finalPart] = responseValue;
-                console.log('✅ Stored value at final property "' + finalPart + '":', current[finalPart]);
+              } catch (extractError) {
+                console.error(`❌ Failed to process mapping "${mapping.responsePath}" -> "${mapping.updatePath}":`, extractError);
+                console.error('❌ DEBUG - Full error:', extractError);
               }
-              console.log('🔍 === STEP 4: VERIFICATION ===');
-              console.log('✅ Updated context data with API response');
-              console.log('🔍 DEBUG - Full contextData after update:', JSON.stringify(contextData, null, 2));
-              console.log('🔍 DEBUG - contextData keys after update:', Object.keys(contextData));
-              console.log('🔍 DEBUG - Verifying stored value by re-reading path:', config.updateJsonPath);
-              const verificationValue = getValueByPath(contextData, config.updateJsonPath, true);
-              console.log('🔍 DEBUG - Verification read result:', verificationValue);
-              if (verificationValue === responseValue) {
-                console.log('✅✅✅ VERIFICATION PASSED: Value successfully stored and retrieved!');
-              } else {
-                console.log('❌❌❌ VERIFICATION FAILED: Retrieved value does not match stored value!');
-                console.log('Expected:', responseValue);
-                console.log('Got:', verificationValue);
-              }
-              // === DIAGNOSTIC START: After Update ===
-              try {
-                console.log('DIAGNOSTIC: AFTER UPDATE STEP', step.step_order);
-                console.log('DIAGNOSTIC: Step Name:', step.step_name);
-                console.log('DIAGNOSTIC: updateJsonPath:', config.updateJsonPath);
-                console.log('DIAGNOSTIC: Response value stored:', responseValue);
-                const clientIdFromOrders = getValueByPath(contextData, 'orders[0].consignee.clientId');
-                const clientIdFromExtracted = getValueByPath(contextData, 'extractedData.orders[0].consignee.clientId');
-                console.log('DIAGNOSTIC: contextData.orders[0]?.consignee?.clientId:', clientIdFromOrders);
-                console.log('DIAGNOSTIC: contextData.extractedData?.orders?.[0]?.consignee?.clientId:', clientIdFromExtracted);
-                console.log('DIAGNOSTIC: Values Match:', clientIdFromOrders === clientIdFromExtracted);
-                if (contextData.extractedData && contextData.orders) {
-                  const refCheck = contextData.extractedData.orders === contextData.orders;
-                  console.log('DIAGNOSTIC: Reference Check:', refCheck ? 'SAME' : 'DIFFERENT');
-                }
-              } catch (e) {
-                console.error('DIAGNOSTIC ERROR: After Update', e);
-              }
-            // === DIAGNOSTIC END: After Update ===
-            } catch (extractError) {
-              console.error('❌ Failed to extract data from API response:', extractError);
-              console.error('❌ DEBUG - Full error:', extractError);
             }
+
+            console.log('🔍 DEBUG - Full contextData after all updates:', JSON.stringify(contextData, null, 2));
+            console.log('🔍 DEBUG - contextData keys after update:', Object.keys(contextData));
           } else {
-            console.log('⚠️ DEBUG - Skipping data extraction:');
-            console.log('  - responseDataPath present:', !!config.responseDataPath);
-            console.log('  - updateJsonPath present:', !!config.updateJsonPath);
-            console.log('  - responseDataPath value:', config.responseDataPath);
-            console.log('  - updateJsonPath value:', config.updateJsonPath);
+            console.log('⚠️ DEBUG - Skipping data extraction: no mappings configured');
           }
           // === SYNC FIX: Ensure extractedData stays synchronized with top-level properties ===
           console.log('🔄 === SYNCHRONIZING CONTEXT DATA ===');
@@ -875,6 +962,228 @@ Deno.serve(async (req)=>{
             console.log('  - Values match:', clientIdFromOrders === clientIdFromExtracted);
           }
           console.log('✅ === CONTEXT DATA SYNCHRONIZED ===');
+        } else if (step.step_type === 'api_endpoint') {
+          console.log('🌐 === EXECUTING API ENDPOINT STEP ===');
+          const config = step.config_json || {};
+          console.log('🔧 API endpoint config:', JSON.stringify(config, null, 2));
+
+          // Determine which API configuration to use
+          let baseUrl = '';
+          let authToken = '';
+
+          if (config.apiSourceType === 'main') {
+            // Load main API config
+            const apiConfigResponse = await fetch(`${supabaseUrl}/rest/v1/api_settings?select=*`, {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${supabaseServiceKey}`,
+                'apikey': supabaseServiceKey,
+                'Content-Type': 'application/json'
+              }
+            });
+
+            if (apiConfigResponse.ok) {
+              const apiSettings = await apiConfigResponse.json();
+              if (apiSettings && apiSettings.length > 0) {
+                baseUrl = apiSettings[0].path || '';
+                authToken = apiSettings[0].password || '';
+                console.log('✅ Loaded main API config');
+                console.log('🔑 Auth token loaded:', authToken ? `${authToken.substring(0, 10)}...` : 'EMPTY');
+              }
+            }
+          } else if (config.apiSourceType === 'secondary' && config.secondaryApiId) {
+            // Load secondary API config
+            const secondaryApiResponse = await fetch(`${supabaseUrl}/rest/v1/secondary_api_configs?id=eq.${config.secondaryApiId}&select=*`, {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${supabaseServiceKey}`,
+                'apikey': supabaseServiceKey,
+                'Content-Type': 'application/json'
+              }
+            });
+
+            if (secondaryApiResponse.ok) {
+              const secondaryApis = await secondaryApiResponse.json();
+              if (secondaryApis && secondaryApis.length > 0) {
+                baseUrl = secondaryApis[0].base_url || '';
+                authToken = secondaryApis[0].auth_token || '';
+                console.log('✅ Loaded secondary API config');
+                console.log('🔑 Auth token loaded:', authToken ? `${authToken.substring(0, 10)}...` : 'EMPTY');
+              }
+            }
+          }
+
+          // Build URL with path and query parameters
+          let apiPath = config.apiPath || '';
+          const httpMethod = config.httpMethod || 'GET';
+
+          // Replace path variables (e.g., {id} or ${id})
+          const pathVarRegex = /\{([^}]+)\}|\$\{([^}]+)\}/g;
+          let pathMatch;
+          while ((pathMatch = pathVarRegex.exec(apiPath)) !== null) {
+            const variableName = pathMatch[1] || pathMatch[2];
+            const value = getValueByPath(contextData, variableName);
+            if (value !== undefined && value !== null) {
+              apiPath = apiPath.replace(pathMatch[0], String(value));
+              console.log(`🔄 Replaced path variable ${pathMatch[0]} with: ${value}`);
+            }
+          }
+
+          // Build query string from enabled parameters
+          const queryParams = new URLSearchParams();
+          const queryParameterConfig = config.queryParameterConfig || {};
+
+          for (const [paramName, paramConfig] of Object.entries(queryParameterConfig)) {
+            if (paramConfig.enabled && paramConfig.value) {
+              let paramValue = paramConfig.value;
+
+              // Replace variables in parameter values using replaceAll approach
+              const valueVarRegex = /\{\{([^}]+)\}\}|\$\{([^}]+)\}/g;
+              paramValue = paramConfig.value.replace(valueVarRegex, (match, doubleBrace, dollarBrace) => {
+                const variableName = doubleBrace || dollarBrace;
+                const value = getValueByPath(contextData, variableName);
+                if (value !== undefined && value !== null) {
+                  console.log(`🔄 Replaced query param variable ${match} with: ${value}`);
+                  return String(value);
+                }
+                console.warn(`⚠️ Variable ${match} not found in context, leaving unchanged`);
+                return match;
+              });
+              console.log(`📋 Final param value for "${paramName}":`, paramValue);
+
+              queryParams.append(paramName, paramValue);
+            }
+          }
+
+          const queryString = queryParams.toString();
+          const fullUrl = `${baseUrl}${apiPath}${queryString ? '?' + queryString : ''}`;
+          console.log('🔗 Full API Endpoint URL:', fullUrl);
+
+          // Validate auth token
+          if (!authToken) {
+            console.warn('⚠️ WARNING: No auth token found! API call may fail due to authentication.');
+          }
+
+          // Prepare headers
+          const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          };
+
+          // Store request details for error logging (before the fetch call)
+          const apiRequestDetails = {
+            url: fullUrl,
+            method: httpMethod,
+            baseUrl: baseUrl,
+            apiPath: apiPath,
+            queryString: queryString,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': authToken ? `Bearer ${authToken.substring(0, 10)}...` : 'MISSING'
+            }
+          };
+
+          // Make the API call
+          console.log(`📤 Making ${httpMethod} request to API endpoint`);
+          console.log('📋 Request Details:');
+          console.log('  - URL:', fullUrl);
+          console.log('  - Method:', httpMethod);
+          console.log('  - Headers:', JSON.stringify(headers, null, 2));
+          console.log('  - Base URL:', baseUrl);
+          console.log('  - API Path:', apiPath);
+          console.log('  - Query String:', queryString);
+          const apiResponse = await fetch(fullUrl, {
+            method: httpMethod,
+            headers: headers
+          });
+
+          console.log('📥 API endpoint response status:', apiResponse.status);
+
+          if (!apiResponse.ok) {
+            const errorText = await apiResponse.text();
+            console.error('❌ API endpoint call failed:', errorText);
+            // Store request details in stepOutputData before throwing error
+            stepOutputData = {
+              requestAttempted: apiRequestDetails,
+              responseStatus: apiResponse.status,
+              error: errorText
+            };
+            throw new Error(`API endpoint call failed with status ${apiResponse.status}: ${errorText}`);
+          }
+
+          const responseData = await apiResponse.json();
+          console.log('✅ API endpoint call successful');
+          console.log('📄 Response data (first 500 chars):', JSON.stringify(responseData).substring(0, 500));
+          console.log('📄 Full Response data:', JSON.stringify(responseData, null, 2));
+
+          lastApiResponse = responseData;
+
+          // Support both old format (responsePath/updateJsonPath) and new format (responseDataMappings)
+          let mappingsToProcess = []
+          if (config.responseDataMappings && Array.isArray(config.responseDataMappings)) {
+            mappingsToProcess = config.responseDataMappings
+            console.log('📋 Using new format: processing', mappingsToProcess.length, 'mapping(s)')
+          } else if (config.responsePath && config.updateJsonPath) {
+            mappingsToProcess = [{
+              responsePath: config.responsePath,
+              updatePath: config.updateJsonPath
+            }]
+            console.log('📋 Using old format: converted to single mapping')
+          }
+
+          const extractedValues = []
+          if (mappingsToProcess.length > 0) {
+            console.log('🔄 Extracting data from API response...')
+            for (const mapping of mappingsToProcess) {
+              if (!mapping.responsePath || !mapping.updatePath) {
+                console.warn('⚠️ Skipping mapping with missing responsePath or updatePath:', mapping)
+                continue
+              }
+
+              try {
+                const extractedValue = getValueByPath(responseData, mapping.responsePath)
+                console.log(`🔍 Extracted value from path "${mapping.responsePath}":`, extractedValue)
+
+                if (extractedValue !== undefined) {
+                  const pathParts = mapping.updatePath.split(/[.\[\]]/).filter(Boolean)
+                  let current = contextData.extractedData || contextData
+
+                  for (let i = 0; i < pathParts.length - 1; i++) {
+                    const part = pathParts[i]
+                    if (!(part in current)) {
+                      current[part] = {}
+                    }
+                    current = current[part]
+                  }
+
+                  const lastPart = pathParts[pathParts.length - 1]
+                  current[lastPart] = extractedValue
+                  console.log(`✅ Updated context data at path "${mapping.updatePath}"`)
+
+                  // Also update root contextData for easy access
+                  contextData[lastPart] = extractedValue
+
+                  extractedValues.push({
+                    path: mapping.responsePath,
+                    updatePath: mapping.updatePath,
+                    value: extractedValue
+                  })
+                }
+              } catch (extractError) {
+                console.error(`❌ Failed to process mapping "${mapping.responsePath}" -> "${mapping.updatePath}":`, extractError)
+              }
+            }
+          }
+
+          stepOutputData = {
+            url: fullUrl,
+            method: httpMethod,
+            responseStatus: apiResponse.status,
+            extractedValues,
+            updatedPaths: mappingsToProcess.map(m => m.updatePath)
+          };
+
+          console.log('✅ === API ENDPOINT STEP COMPLETED ===');
         } else if (step.step_type === 'rename_file' || step.step_type === 'rename_pdf') {
           console.log('📝 === EXECUTING RENAME FILE STEP ===');
           const config = step.config_json || {};
@@ -1390,13 +1699,13 @@ Deno.serve(async (req)=>{
               tenant_id: emailConfigRecord.tenant_id,
               client_id: emailConfigRecord.client_id,
               client_secret: emailConfigRecord.client_secret,
-              default_send_from_email: emailConfigRecord.monitored_email
+              default_send_from_email: emailConfigRecord.default_send_from_email
             } : undefined,
             gmail: emailConfigRecord.provider === 'gmail' ? {
               client_id: emailConfigRecord.gmail_client_id,
               client_secret: emailConfigRecord.gmail_client_secret,
               refresh_token: emailConfigRecord.gmail_refresh_token,
-              default_send_from_email: emailConfigRecord.monitored_email
+              default_send_from_email: emailConfigRecord.default_send_from_email
             } : undefined
           };
           let emailResult;
@@ -1626,6 +1935,9 @@ Deno.serve(async (req)=>{
         if (step.step_type === 'api_call') {
           console.log('📊 Last API response:', JSON.stringify(lastApiResponse, null, 2));
         }
+        if (step.step_type === 'api_endpoint') {
+          console.log('📊 Last API Endpoint response:', JSON.stringify(lastApiResponse, null, 2));
+        }
         console.log('📊 === END CONTEXT DATA SNAPSHOT ===');
         if (workflowExecutionLogId) {
           await createStepLog(supabaseUrl, supabaseServiceKey, workflowExecutionLogId, requestData.workflowId, step, 'completed', stepStartTime, stepEndTime, stepDurationMs, undefined, {
@@ -1637,9 +1949,11 @@ Deno.serve(async (req)=>{
         const stepDurationMs = Date.now() - stepStartMs;
         console.error(`❌ Step ${step.step_order} failed:`, stepError);
         if (workflowExecutionLogId) {
+          // For API endpoint steps, include request details in output data if available
+          const errorOutputData = (step.step_type === 'api_endpoint' && stepOutputData) ? stepOutputData : null;
           await createStepLog(supabaseUrl, supabaseServiceKey, workflowExecutionLogId, requestData.workflowId, step, 'failed', stepStartTime, stepEndTime, stepDurationMs, stepError.message, {
             config: step.config_json
-          }, null);
+          }, errorOutputData);
           try {
             await fetch(`${supabaseUrl}/rest/v1/workflow_execution_logs?id=eq.${workflowExecutionLogId}`, {
               method: 'PATCH',
