@@ -400,7 +400,7 @@ export default function WorkflowExecutionLogsSettings({
                               {/* Workflow Steps Progress */}
                               <div>
                                 <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-3 flex items-center space-x-2">
-                                  <GitBranch className="h-5 w-5 text-teal-600" />
+                                  <GitBranch className="h-5 w-5 text-purple-600" />
                                   <span>Workflow Steps Execution</span>
                                   <span className="text-sm text-gray-600 dark:text-gray-400">({stepLogs.length} step{stepLogs.length !== 1 ? 's' : ''})</span>
                                 </h4>
