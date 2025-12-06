@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Save, FileText, Code, Database, Map, Brain, Copy, Split } from 'lucide-react';
+import { Plus, Trash2, Save, FileText, Code, Database, Map, Brain, Copy, Split, AlertTriangle } from 'lucide-react';
 import type { ExtractionType, FieldMapping, ArraySplitConfig } from '../../types';
 import { useSupabaseData } from '../../hooks/useSupabaseData';
 import MappingPage from '../MappingPage';
 import { supabase } from '../../lib/supabase';
+import Select from '../common/Select';
 
 interface ExtractionTypesSettingsProps {
   extractionTypes: ExtractionType[];
@@ -40,6 +41,8 @@ export default function ExtractionTypesSettings({
     splitStrategy: 'one_per_entry',
     defaultToOneIfMissing: false
   });
+  const [showJsonErrorModal, setShowJsonErrorModal] = useState(false);
+  const [jsonErrorMessage, setJsonErrorMessage] = useState('');
 
   const handleAddTypeClick = () => {
     setShowAddModal(true);
@@ -268,7 +271,8 @@ export default function ExtractionTypesSettings({
   const generateFieldMappingsFromTemplateAsync = async (typeIndex: number) => {
     const extractionType = localExtractionTypes[typeIndex];
     if (!extractionType.formatTemplate) {
-      alert('Please add a JSON template first');
+      setJsonErrorMessage('Please add a JSON template first');
+      setShowJsonErrorModal(true);
       return;
     }
 
@@ -342,11 +346,13 @@ export default function ExtractionTypesSettings({
         setTimeout(() => setSaveSuccess(false), 3000);
       } catch (error) {
         console.error('Failed to auto-save after mapping JSON:', error);
-        alert('Field mappings generated but failed to save automatically. Please use the Save button to save your changes.');
+        setJsonErrorMessage('Field mappings generated but failed to save automatically. Please use the Save button to save your changes.');
+        setShowJsonErrorModal(true);
       }
 
     } catch (error) {
-      alert('Invalid JSON template. Please check the JSON syntax.');
+      setJsonErrorMessage('Invalid JSON template. Please check the JSON syntax.');
+      setShowJsonErrorModal(true);
     }
   };
 
@@ -724,22 +730,19 @@ export default function ExtractionTypesSettings({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Split Strategy
-                </label>
-                <select
+                <Select
+                  label="Split Strategy"
                   value={arraySplitForm.splitStrategy || 'one_per_entry'}
-                  onChange={(e) => setArraySplitForm({ ...arraySplitForm, splitStrategy: e.target.value as 'one_per_entry' | 'divide_evenly' })}
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="one_per_entry">One Per Entry (each entry gets 1)</option>
-                  <option value="divide_evenly">Divide Evenly (split total across entries)</option>
-                </select>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  {arraySplitForm.splitStrategy === 'one_per_entry'
+                  onValueChange={(value) => setArraySplitForm({ ...arraySplitForm, splitStrategy: value as 'one_per_entry' | 'divide_evenly' })}
+                  options={[
+                    { value: 'one_per_entry', label: 'One Per Entry (each entry gets 1)' },
+                    { value: 'divide_evenly', label: 'Divide Evenly (split total across entries)' }
+                  ]}
+                  searchable={false}
+                  helpText={arraySplitForm.splitStrategy === 'one_per_entry'
                     ? 'If pieces = 3, create 3 entries each with pieces = 1'
                     : 'If pieces = 9, you can manually distribute across entries'}
-                </p>
+                />
               </div>
 
               <div>
@@ -786,6 +789,30 @@ export default function ExtractionTypesSettings({
         </div>
       )}
 
+      {/* JSON Error Modal */}
+      {showJsonErrorModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 pt-20">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+            <div className="text-center mb-6">
+              <div className="bg-red-100 dark:bg-red-900/50 p-3 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                <AlertTriangle className="h-8 w-8 text-red-600 dark:text-red-400" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">Invalid JSON Template</h3>
+              <p className="text-gray-600 dark:text-gray-400">{jsonErrorMessage}</p>
+            </div>
+
+            <div className="flex justify-center">
+              <button
+                onClick={() => setShowJsonErrorModal(false)}
+                className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors duration-200"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">Extraction Types</h3>
@@ -826,20 +853,6 @@ export default function ExtractionTypesSettings({
         </div>
       </div>
 
-      <div className="space-y-6">
-        {/* Information Panel */}
-        <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700 rounded-lg p-4">
-          <h4 className="font-semibold text-purple-800 dark:text-purple-300 mb-2">How Extraction Types Work</h4>
-          <ul className="text-sm text-purple-700 dark:text-purple-400 space-y-1">
-            <li>• Extraction types define templates for extracting specific data from PDFs</li>
-            <li>• Use field mappings to specify exactly what data to extract (AI, Mapped coordinates, or Hardcoded values)</li>
-            <li>• JSON templates use placeholders like {`{{PARSEIT_ID_PLACEHOLDER}}`} that get replaced with actual IDs</li>
-            <li>• XML templates can include {`{{PARSEIT_ID_PLACEHOLDER}}`} directly in the XML structure</li>
-            <li>• Auto-detection instructions help AI choose the right extraction type automatically</li>
-          </ul>
-        </div>
-      </div>
-
       {saveSuccess && (
         <div className="bg-green-50 border border-green-200 rounded-lg p-4">
           <div className="flex items-center space-x-2">
@@ -854,23 +867,20 @@ export default function ExtractionTypesSettings({
       {localExtractionTypes.length > 0 && (
         <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 shadow-sm">
           <div className="flex items-center justify-between">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Select Extraction Type to Edit
-              </label>
-              <select
-                value={selectedTypeIndex}
-                onChange={(e) => setSelectedTypeIndex(parseInt(e.target.value))}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent min-w-64"
-              >
-                {localExtractionTypes.map((type, index) => (
-                  <option key={type.id} value={index}>
-                    {type.name || `Extraction Type ${index + 1}`} ({type.formatType})
-                  </option>
-                ))}
-              </select>
+            <div className="flex-1 mr-4">
+              <Select
+                label="Select Extraction Type to Edit"
+                value={selectedTypeIndex.toString()}
+                onValueChange={(value) => setSelectedTypeIndex(parseInt(value))}
+                options={localExtractionTypes.map((type, index) => ({
+                  value: index.toString(),
+                  label: `${type.name || `Extraction Type ${index + 1}`} (${type.formatType})`
+                }))}
+                placeholder="Select an extraction type..."
+                className="min-w-64"
+              />
             </div>
-            <div className="text-sm text-gray-500 dark:text-gray-400">
+            <div className="text-sm text-gray-500 dark:text-gray-400 mt-6">
               {localExtractionTypes.length} type{localExtractionTypes.length !== 1 ? 's' : ''} total
             </div>
           </div>
@@ -915,7 +925,7 @@ export default function ExtractionTypesSettings({
                   type="text"
                   value={selectedType.name}
                   onChange={(e) => updateExtractionType(selectedTypeIndex, 'name', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 hover:border-purple-400 dark:hover:border-purple-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-colors duration-200"
                   placeholder="e.g., Invoice Data"
                 />
               </div>
@@ -927,7 +937,7 @@ export default function ExtractionTypesSettings({
                   type="text"
                   value={selectedType.filename}
                   onChange={(e) => updateExtractionType(selectedTypeIndex, 'filename', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 hover:border-purple-400 dark:hover:border-purple-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-colors duration-200"
                   placeholder="e.g., invoice"
                 />
               </div>
@@ -935,18 +945,17 @@ export default function ExtractionTypesSettings({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Format Type
-                </label>
-                <select
+                <Select
+                  label="Format Type"
                   value={selectedType.formatType}
-                  onChange={(e) => updateExtractionType(selectedTypeIndex, 'formatType', e.target.value as 'XML' | 'JSON' | 'CSV')}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                >
-                  <option value="XML">XML</option>
-                  <option value="JSON">JSON</option>
-                  <option value="CSV">CSV</option>
-                </select>
+                  onValueChange={(value) => updateExtractionType(selectedTypeIndex, 'formatType', value as 'XML' | 'JSON' | 'CSV')}
+                  options={[
+                    { value: 'XML', label: 'XML' },
+                    { value: 'JSON', label: 'JSON' },
+                    { value: 'CSV', label: 'CSV' }
+                  ]}
+                  searchable={false}
+                />
               </div>
               {selectedType.formatType === 'JSON' && (
                 <div>
@@ -957,7 +966,7 @@ export default function ExtractionTypesSettings({
                     type="text"
                     value={selectedType.jsonPath || ''}
                     onChange={(e) => updateExtractionType(selectedTypeIndex, 'jsonPath', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 hover:border-purple-400 dark:hover:border-purple-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-colors duration-200"
                     placeholder="e.g., /api/orders"
                   />
                 </div>
@@ -965,19 +974,18 @@ export default function ExtractionTypesSettings({
               {selectedType.formatType === 'CSV' && (
                 <>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      CSV Delimiter
-                    </label>
-                    <select
+                    <Select
+                      label="CSV Delimiter"
                       value={selectedType.csvDelimiter || ','}
-                      onChange={(e) => updateExtractionType(selectedTypeIndex, 'csvDelimiter', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    >
-                      <option value=",">Comma (,)</option>
-                      <option value=";">Semicolon (;)</option>
-                      <option value="\t">Tab</option>
-                      <option value="|">Pipe (|)</option>
-                    </select>
+                      onValueChange={(value) => updateExtractionType(selectedTypeIndex, 'csvDelimiter', value)}
+                      options={[
+                        { value: ',', label: 'Comma (,)' },
+                        { value: ';', label: 'Semicolon (;)' },
+                        { value: '\t', label: 'Tab' },
+                        { value: '|', label: 'Pipe (|)' }
+                      ]}
+                      searchable={false}
+                    />
                   </div>
                   <div className="flex items-center space-x-3">
                     <input
@@ -991,29 +999,54 @@ export default function ExtractionTypesSettings({
                       Include Header Row
                     </label>
                   </div>
-                  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
-                    <div className="flex items-start space-x-3">
-                      <input
-                        type="checkbox"
-                        id={`csvMultiPage-${selectedTypeIndex}`}
-                        checked={selectedType.csvMultiPageProcessing === true}
-                        onChange={(e) => updateExtractionType(selectedTypeIndex, 'csvMultiPageProcessing', e.target.checked)}
-                        className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded focus:ring-blue-500"
-                      />
-                      <div className="flex-1">
-                        <label htmlFor={`csvMultiPage-${selectedTypeIndex}`} className="text-sm font-semibold text-gray-900 dark:text-gray-100 cursor-pointer">
-                          Process all pages as one CSV document
-                        </label>
-                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                          When enabled, all pages from a multi-page PDF will be processed together and output as a single CSV file.
-                          This is useful for documents where tabular data spans multiple pages (e.g., multi-page invoices, order lists).
-                        </p>
-                      </div>
-                    </div>
-                  </div>
                 </>
               )}
             </div>
+
+            {selectedType.formatType === 'JSON' && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4 mb-4">
+                <div className="flex items-start space-x-3">
+                  <input
+                    type="checkbox"
+                    id={`jsonMultiPage-${selectedTypeIndex}`}
+                    checked={selectedType.jsonMultiPageProcessing === true}
+                    onChange={(e) => updateExtractionType(selectedTypeIndex, 'jsonMultiPageProcessing', e.target.checked)}
+                    className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded focus:ring-blue-500"
+                  />
+                  <div className="flex-1">
+                    <label htmlFor={`jsonMultiPage-${selectedTypeIndex}`} className="text-sm font-semibold text-gray-900 dark:text-gray-100 cursor-pointer">
+                      Process all pages as one JSON document
+                    </label>
+                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                      When enabled, all pages from each multi-page PDF will be processed together and output as a single JSON file per PDF. Each PDF is treated as a separate document. This is useful for documents where data spans multiple pages (e.g., multi-page invoices, order lists).
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {selectedType.formatType === 'CSV' && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4 mb-4">
+                <div className="flex items-start space-x-3">
+                  <input
+                    type="checkbox"
+                    id={`csvMultiPage-${selectedTypeIndex}`}
+                    checked={selectedType.csvMultiPageProcessing === true}
+                    onChange={(e) => updateExtractionType(selectedTypeIndex, 'csvMultiPageProcessing', e.target.checked)}
+                    className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded focus:ring-blue-500"
+                  />
+                  <div className="flex-1">
+                    <label htmlFor={`csvMultiPage-${selectedTypeIndex}`} className="text-sm font-semibold text-gray-900 dark:text-gray-100 cursor-pointer">
+                      Process all pages as one CSV document
+                    </label>
+                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                      When enabled, all pages from a multi-page PDF will be processed together and output as a single CSV file.
+                      This is useful for documents where tabular data spans multiple pages (e.g., multi-page invoices, order lists).
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* CSV Row Detection Instructions */}
             {selectedType.formatType === 'CSV' && (
@@ -1027,7 +1060,7 @@ export default function ExtractionTypesSettings({
                 <textarea
                   value={selectedType.csvRowDetectionInstructions || ''}
                   onChange={(e) => updateExtractionType(selectedTypeIndex, 'csvRowDetectionInstructions', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-vertical"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 hover:border-purple-400 dark:hover:border-purple-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-vertical transition-colors duration-200"
                   rows={3}
                   placeholder="e.g., 'Each Carrier Reference 1 field creates a new row in the CSV'"
                 />
@@ -1039,26 +1072,22 @@ export default function ExtractionTypesSettings({
 
             {/* Workflow Assignment */}
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Assigned Workflow (Optional)
-              </label>
-              <select
-                value={selectedType.workflowId || ''}
-                onChange={(e) => updateExtractionType(selectedTypeIndex, 'workflowId', e.target.value || undefined)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-              >
-                <option value="">No workflow assigned</option>
-                {workflows
-                  .filter(w => w.isActive)
-                  .map((workflow) => (
-                    <option key={workflow.id} value={workflow.id}>
-                      {workflow.name}
-                    </option>
-                  ))}
-              </select>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                When a workflow is assigned, it will be executed after data extraction for additional processing steps.
-              </p>
+              <Select
+                label="Assigned Workflow (Optional)"
+                value={selectedType.workflowId || '__none__'}
+                onValueChange={(value) => updateExtractionType(selectedTypeIndex, 'workflowId', value === '__none__' ? undefined : value)}
+                options={[
+                  { value: '__none__', label: 'No workflow assigned' },
+                  ...workflows
+                    .filter(w => w.isActive)
+                    .map((workflow) => ({
+                      value: workflow.id,
+                      label: workflow.name
+                    }))
+                ]}
+                placeholder="Select a workflow..."
+                helpText="When a workflow is assigned, it will be executed after data extraction for additional processing steps."
+              />
             </div>
 
             {/* Default Upload Mode */}
@@ -1080,21 +1109,127 @@ export default function ExtractionTypesSettings({
                   </label>
                 </div>
               </div>
-              <select
-                value={selectedType.defaultUploadMode || ''}
-                onChange={(e) => updateExtractionType(selectedTypeIndex, 'defaultUploadMode', e.target.value || undefined)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-              >
-                <option value="">No default (use user preference)</option>
-                <option value="manual">Manual Selection</option>
-                <option value="auto">AI Auto-Detect</option>
-              </select>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                When set, the Extract page will automatically default to this upload mode when this extraction type is selected.
-                {selectedType.lockUploadMode && ' Lock Mode prevents users from changing the upload mode.'}
-              </p>
+              <Select
+                value={selectedType.defaultUploadMode || '__none__'}
+                onValueChange={(value) => updateExtractionType(selectedTypeIndex, 'defaultUploadMode', value === '__none__' ? undefined : value)}
+                options={[
+                  { value: '__none__', label: 'No default (use user preference)' },
+                  { value: 'manual', label: 'Manual Selection' },
+                  { value: 'auto', label: 'AI Auto-Detect' }
+                ]}
+                searchable={false}
+                helpText={`When set, the Extract page will automatically default to this upload mode when this extraction type is selected.${selectedType.lockUploadMode ? ' Lock Mode prevents users from changing the upload mode.' : ''}`}
+              />
             </div>
 
+            {/* Page Processing Settings */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Page Processing Options
+              </label>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                Configure which pages to extract from each PDF. This applies to EACH uploaded PDF individually.
+              </p>
+
+              <div className="flex items-start gap-4">
+                <div className="w-64 flex-shrink-0">
+                  <Select
+                    value={selectedType.pageProcessingMode || 'all'}
+                    onValueChange={(value) => {
+                      updateExtractionType(selectedTypeIndex, 'pageProcessingMode', value);
+                      if (value === 'single' && !selectedType.pageProcessingSinglePage) {
+                        updateExtractionType(selectedTypeIndex, 'pageProcessingSinglePage', 1);
+                      }
+                      if (value === 'range') {
+                        if (!selectedType.pageProcessingRangeStart) {
+                          updateExtractionType(selectedTypeIndex, 'pageProcessingRangeStart', 1);
+                        }
+                        if (!selectedType.pageProcessingRangeEnd) {
+                          updateExtractionType(selectedTypeIndex, 'pageProcessingRangeEnd', 2);
+                        }
+                      }
+                    }}
+                    options={[
+                      { value: 'all', label: 'All Pages' },
+                      { value: 'single', label: 'Single Page' },
+                      { value: 'range', label: 'Page Range' }
+                    ]}
+                    searchable={false}
+                  />
+                </div>
+
+                <div className="flex-1 flex items-center gap-3">
+                  {selectedType.pageProcessingMode === 'single' && (
+                    <>
+                      <label className="text-sm text-gray-600 dark:text-gray-400">Page:</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={selectedType.pageProcessingSinglePage || 1}
+                        onChange={(e) => {
+                          const value = parseInt(e.target.value);
+                          if (value >= 1) {
+                            updateExtractionType(selectedTypeIndex, 'pageProcessingSinglePage', value);
+                          }
+                        }}
+                        className="w-20 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        (e.g., Page {selectedType.pageProcessingSinglePage || 1} from each PDF)
+                      </span>
+                    </>
+                  )}
+
+                  {selectedType.pageProcessingMode === 'range' && (
+                    <>
+                      <label className="text-sm text-gray-600 dark:text-gray-400">From:</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={selectedType.pageProcessingRangeStart || 1}
+                        onChange={(e) => {
+                          const value = parseInt(e.target.value);
+                          if (value >= 1) {
+                            updateExtractionType(selectedTypeIndex, 'pageProcessingRangeStart', value);
+                            if (selectedType.pageProcessingRangeEnd && value > selectedType.pageProcessingRangeEnd) {
+                              updateExtractionType(selectedTypeIndex, 'pageProcessingRangeEnd', value);
+                            }
+                          }
+                        }}
+                        className="w-20 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <label className="text-sm text-gray-600 dark:text-gray-400">To:</label>
+                      <input
+                        type="number"
+                        min={selectedType.pageProcessingRangeStart || 1}
+                        value={selectedType.pageProcessingRangeEnd || 2}
+                        onChange={(e) => {
+                          const value = parseInt(e.target.value);
+                          const start = selectedType.pageProcessingRangeStart || 1;
+                          if (value >= start) {
+                            updateExtractionType(selectedTypeIndex, 'pageProcessingRangeEnd', value);
+                          }
+                        }}
+                        className="w-20 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        (Pages {selectedType.pageProcessingRangeStart || 1}-{selectedType.pageProcessingRangeEnd || 2} from each PDF)
+                      </span>
+                    </>
+                  )}
+
+                  {(!selectedType.pageProcessingMode || selectedType.pageProcessingMode === 'all') && (
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      Extract all pages from each PDF (default behavior)
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                <strong>Example:</strong> If you upload 2 PDFs with "Single Page: Page 1" selected, page 1 from EACH PDF will be extracted (2 pages total).
+              </p>
+            </div>
 
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -1103,7 +1238,7 @@ export default function ExtractionTypesSettings({
               <textarea
                 value={selectedType.defaultInstructions}
                 onChange={(e) => updateExtractionType(selectedTypeIndex, 'defaultInstructions', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-vertical"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 hover:border-purple-400 dark:hover:border-purple-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-vertical transition-colors duration-200"
                 rows={3}
                 placeholder="Describe what data to extract from the PDF..."
               />
@@ -1117,11 +1252,11 @@ export default function ExtractionTypesSettings({
                 <textarea
                   value={selectedType.formatTemplate}
                   onChange={(e) => updateExtractionType(selectedTypeIndex, 'formatTemplate', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-vertical font-mono text-sm"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 hover:border-purple-400 dark:hover:border-purple-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-vertical font-mono text-sm transition-colors duration-200"
                   rows={6}
                   placeholder={selectedType.formatType === 'JSON' ?
                     '{\n  "field1": "value1",\n  "field2": "value2"\n}' :
-                    '<Trace>\n  <TraceType type="">\n    <Number>{{PARSEIT_ID_PLACEHOLDER}}</Number>\n  </TraceType>\n</Trace>'
+                    '<Trace>\n  <TraceType type="">\n    <Number>{{PARSE_IT_ID_PLACEHOLDER}}</Number>\n  </TraceType>\n</Trace>'
                   }
                 />
               </div>
@@ -1138,7 +1273,7 @@ export default function ExtractionTypesSettings({
               <textarea
                 value={selectedType.autoDetectInstructions || ''}
                 onChange={(e) => updateExtractionType(selectedTypeIndex, 'autoDetectInstructions', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-vertical"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 hover:border-purple-400 dark:hover:border-purple-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-vertical transition-colors duration-200"
                 rows={3}
                 placeholder="Describe the characteristics that identify this document type (e.g., 'Invoice documents with company letterhead, contains invoice number, billing address, line items with quantities and prices')"
               />
@@ -1166,7 +1301,7 @@ export default function ExtractionTypesSettings({
                   </button>
                 </div>
 
-                {selectedType.arraySplitConfigs && selectedType.arraySplitConfigs.length > 0 ? (
+                {selectedType.arraySplitConfigs && selectedType.arraySplitConfigs.length > 0 && (
                   <div className="space-y-2">
                     {selectedType.arraySplitConfigs.map((split) => (
                       <div
@@ -1212,16 +1347,6 @@ export default function ExtractionTypesSettings({
                         </div>
                       </div>
                     ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-6 bg-gray-50 dark:bg-gray-700/50 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
-                    <Split className="h-8 w-8 text-gray-400 dark:text-gray-500 mx-auto mb-2" />
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      No array split rules configured
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
-                      Add a rule to automatically split arrays based on field values
-                    </p>
                   </div>
                 )}
 
@@ -1271,13 +1396,13 @@ export default function ExtractionTypesSettings({
                 <div className="space-y-3">
                   {(selectedType.fieldMappings || []).map((mapping, mappingIndex) => (
                     <div key={mappingIndex} className={`p-3 rounded-lg border-2 ${
-                      mapping.type === 'hardcoded' 
-                       ? 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700' 
+                      mapping.type === 'hardcoded'
+                       ? 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700'
                         : mapping.type === 'mapped'
                        ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-700'
                        : 'bg-orange-50 dark:bg-orange-900/20 border-orange-300 dark:border-orange-700'
                     }`}>
-                      <div className="grid grid-cols-1 md:grid-cols-7 gap-3 items-end">
+                      <div className="grid grid-cols-1 md:grid-cols-[minmax(120px,1fr)_120px_minmax(200px,2fr)_150px_80px_60px_60px_40px] gap-3 items-end">
                         <div>
                           <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
                             Field Name
@@ -1297,18 +1422,17 @@ export default function ExtractionTypesSettings({
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                            Type
-                          </label>
-                          <select
+                          <Select
+                            label="Type"
                             value={mapping.type}
-                            onChange={(e) => updateFieldMapping(selectedTypeIndex, mappingIndex, 'type', e.target.value as 'mapped' | 'hardcoded')}
-                            className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
-                          >
-                            <option value="ai">AI</option>
-                            <option value="mapped">Mapped</option>
-                            <option value="hardcoded">Hardcoded</option>
-                          </select>
+                            onValueChange={(value) => updateFieldMapping(selectedTypeIndex, mappingIndex, 'type', value as 'mapped' | 'hardcoded')}
+                            options={[
+                              { value: 'ai', label: 'AI' },
+                              { value: 'mapped', label: 'Mapped' },
+                              { value: 'hardcoded', label: 'Hardcoded' }
+                            ]}
+                            searchable={false}
+                          />
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
@@ -1327,21 +1451,20 @@ export default function ExtractionTypesSettings({
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                            Data Type
-                          </label>
-                          <select
+                          <Select
+                            label="Data Type"
                             value={mapping.dataType || 'string'}
-                            onChange={(e) => updateFieldMapping(selectedTypeIndex, mappingIndex, 'dataType', e.target.value as 'string' | 'number' | 'integer' | 'boolean')}
-                            className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
-                          >
-                            <option value="string">String</option>
-                            <option value="number">Number</option>
-                            <option value="integer">Integer</option>
-                            <option value="datetime">DateTime</option>
-                            <option value="phone">Phone Number</option>
-                            <option value="boolean">Boolean</option>
-                          </select>
+                            onValueChange={(value) => updateFieldMapping(selectedTypeIndex, mappingIndex, 'dataType', value as 'string' | 'number' | 'integer' | 'boolean')}
+                            options={[
+                              { value: 'string', label: 'String' },
+                              { value: 'number', label: 'Number' },
+                              { value: 'integer', label: 'Integer' },
+                              { value: 'datetime', label: 'DateTime' },
+                              { value: 'phone', label: 'Phone Number' },
+                              { value: 'boolean', label: 'Boolean' }
+                            ]}
+                            searchable={false}
+                          />
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
@@ -1352,19 +1475,19 @@ export default function ExtractionTypesSettings({
                               type="number"
                               value={mapping.maxLength || ''}
                               onChange={(e) => updateFieldMapping(selectedTypeIndex, mappingIndex, 'maxLength', e.target.value ? parseInt(e.target.value) : undefined)}
-                              className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
+                              className="w-20 px-2 py-1 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
                               placeholder="40"
                               min="1"
                             />
                           ) : (
-                            <div className="w-full px-2 py-1 text-xs text-gray-400 dark:text-gray-500 italic">
+                            <div className="px-2 py-1 text-xs text-gray-400 dark:text-gray-500 italic">
                               {(mapping.dataType === 'phone') ? 'Auto' : (mapping.dataType === 'boolean') ? 'True/False' : 'N/A'}
                             </div>
                           )}
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                            Remove if Null
+                          <label className="block text-center text-xs font-medium text-gray-600 dark:text-gray-400 mb-1" title="Remove if Null">
+                            RIN
                           </label>
                           <div className="flex items-center justify-center h-[34px]">
                             <input
@@ -1372,6 +1495,21 @@ export default function ExtractionTypesSettings({
                               checked={mapping.removeIfNull || false}
                               onChange={(e) => updateFieldMapping(selectedTypeIndex, mappingIndex, 'removeIfNull', e.target.checked)}
                               className="w-4 h-4 text-blue-600 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 focus:ring-2"
+                              title="Remove if Null"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-center text-xs font-medium text-gray-600 dark:text-gray-400 mb-1" title="Workflow Only">
+                            WFO
+                          </label>
+                          <div className="flex items-center justify-center h-[34px]">
+                            <input
+                              type="checkbox"
+                              checked={mapping.isWorkflowOnly || false}
+                              onChange={(e) => updateFieldMapping(selectedTypeIndex, mappingIndex, 'isWorkflowOnly', e.target.checked)}
+                              className="w-4 h-4 text-purple-600 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-purple-500 focus:ring-2"
+                              title="Workflow Only - This field will be excluded from the extracted output but available in workflows"
                             />
                           </div>
                         </div>
@@ -1405,6 +1543,18 @@ export default function ExtractionTypesSettings({
             </button>
           </div>
         )}
+      </div>
+
+      {/* Information Panel */}
+      <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700 rounded-lg p-4">
+        <h4 className="font-semibold text-purple-800 dark:text-purple-300 mb-2">How Extraction Types Work</h4>
+        <ul className="text-sm text-purple-700 dark:text-purple-400 space-y-1">
+          <li>• Extraction types define templates for extracting specific data from PDFs</li>
+          <li>• Use field mappings to specify exactly what data to extract (AI, Mapped coordinates, or Hardcoded values)</li>
+          <li>• JSON templates use placeholders like {`{{PARSE_IT_ID_PLACEHOLDER}}`} that get replaced with actual IDs</li>
+          <li>• XML templates can include {`{{PARSE_IT_ID_PLACEHOLDER}}`} directly in the XML structure</li>
+          <li>• Auto-detection instructions help AI choose the right extraction type automatically</li>
+        </ul>
       </div>
     </div>
   );
