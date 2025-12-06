@@ -220,6 +220,7 @@ export async function updateWorkflowSteps(workflowId: string, steps: WorkflowSte
       });
 
       console.log('Inserting steps with IDs:', stepsToInsert);
+      console.log('Inserting steps with full data:', JSON.stringify(stepsToInsert, null, 2));
 
       // Insert with specified id field to preserve UUIDs from copy operation
       const { data: insertedSteps, error: insertError } = await supabase
@@ -228,8 +229,20 @@ export async function updateWorkflowSteps(workflowId: string, steps: WorkflowSte
         .select();
 
       if (insertError) {
-        console.error('Insert error:', insertError);
-        throw insertError;
+        console.error('❌ Insert error details:', {
+          message: insertError.message,
+          details: insertError.details,
+          hint: insertError.hint,
+          code: insertError.code,
+          fullError: insertError
+        });
+
+        // Create a more descriptive error message
+        const errorMsg = insertError.message || 'Database insert failed';
+        const errorDetails = insertError.details ? ` Details: ${insertError.details}` : '';
+        const errorHint = insertError.hint ? ` Hint: ${insertError.hint}` : '';
+
+        throw new Error(`${errorMsg}${errorDetails}${errorHint}`);
       }
       console.log('✅ Steps inserted successfully:', insertedSteps?.length);
     }
@@ -254,8 +267,20 @@ export async function updateWorkflowSteps(workflowId: string, steps: WorkflowSte
           .eq('workflow_id', workflowId);
 
         if (updateError) {
-          console.error('Update error for step:', step.id, updateError);
-          throw updateError;
+          console.error('❌ Update error for step:', step.id, {
+            message: updateError.message,
+            details: updateError.details,
+            hint: updateError.hint,
+            code: updateError.code,
+            fullError: updateError
+          });
+
+          // Create a more descriptive error message
+          const errorMsg = updateError.message || 'Database update failed';
+          const errorDetails = updateError.details ? ` Details: ${updateError.details}` : '';
+          const errorHint = updateError.hint ? ` Hint: ${updateError.hint}` : '';
+
+          throw new Error(`${errorMsg}${errorDetails}${errorHint}`);
         }
       }
       console.log('✅ Existing steps updated');
