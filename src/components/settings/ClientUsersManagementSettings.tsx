@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Edit, Users, Shield, Eye, EyeOff, FileText, DollarSign, AlertCircle, BookUser } from 'lucide-react';
+import { Plus, Trash2, Edit, Users, Shield, Eye, EyeOff, FileText, DollarSign, AlertCircle, BookUser, Mail, Send } from 'lucide-react';
 import type { User, Client } from '../../types';
 import { supabase } from '../../lib/supabase';
+import Select from '../common/Select';
 
 interface ClientUsersManagementSettingsProps {
   currentUser: User;
@@ -54,6 +55,7 @@ export default function ClientUsersManagementSettings({
   const [isCreating, setIsCreating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState<string | null>(null);
 
   useEffect(() => {
     loadClients();
@@ -308,10 +310,48 @@ export default function ClientUsersManagementSettings({
     }
   };
 
+  const handleSendRegistrationEmail = async (user: User) => {
+    if (!user.email) {
+      setError('Cannot send registration email - user has no email address');
+      setTimeout(() => setError(''), 3000);
+      return;
+    }
+
+    setSendingEmail(user.id);
+    setError('');
+    setSuccess('');
+
+    try {
+      const { data, error } = await supabase.functions.invoke('send-registration-email', {
+        body: {
+          userId: user.id,
+          userEmail: user.email,
+          userName: user.username
+        }
+      });
+
+      if (error) throw error;
+
+      if (data.success) {
+        setSuccess(`Registration email sent to ${user.email}`);
+        setTimeout(() => setSuccess(''), 5000);
+      } else {
+        setError(data.message || 'Failed to send registration email');
+        setTimeout(() => setError(''), 5000);
+      }
+    } catch (error: any) {
+      console.error('Failed to send registration email:', error);
+      setError(error.message || 'Failed to send registration email');
+      setTimeout(() => setError(''), 5000);
+    } finally {
+      setSendingEmail(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
         <span className="ml-3 text-gray-600">Loading users...</span>
       </div>
     );
@@ -335,8 +375,8 @@ export default function ClientUsersManagementSettings({
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 pt-20 overflow-y-auto">
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-md w-full mx-4 my-8 shadow-2xl">
             <div className="text-center mb-6">
-              <div className="bg-teal-100 dark:bg-teal-900/50 p-3 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-                <Plus className="h-8 w-8 text-teal-600 dark:text-teal-400" />
+              <div className="bg-purple-100 dark:bg-purple-900/50 p-3 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                <Plus className="h-8 w-8 text-purple-600 dark:text-purple-400" />
               </div>
               <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">Add User</h3>
               <p className="text-gray-600 dark:text-gray-400">Create a new user for {selectedClient.clientName}</p>
@@ -352,7 +392,7 @@ export default function ClientUsersManagementSettings({
                   value={newUser.username}
                   onChange={(e) => setNewUser(prev => ({ ...prev, username: e.target.value }))}
                   placeholder="Enter username"
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 />
               </div>
 
@@ -366,7 +406,7 @@ export default function ClientUsersManagementSettings({
                     value={newUser.password}
                     onChange={(e) => setNewUser(prev => ({ ...prev, password: e.target.value }))}
                     placeholder="Enter password"
-                    className="w-full px-4 py-3 pr-12 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    className="w-full px-4 py-3 pr-12 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                   />
                   <button
                     type="button"
@@ -391,7 +431,7 @@ export default function ClientUsersManagementSettings({
                   value={newUser.email}
                   onChange={(e) => setNewUser(prev => ({ ...prev, email: e.target.value }))}
                   placeholder="Enter email"
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 />
               </div>
 
@@ -408,10 +448,10 @@ export default function ClientUsersManagementSettings({
                       hasAddressBookAccess: isAdmin ? true : prev.hasAddressBookAccess
                     }));
                   }}
-                  className="w-4 h-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500"
+                  className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
                 />
                 <label htmlFor="newUserClientAdmin" className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center space-x-2">
-                  <Shield className="h-4 w-4 text-teal-600" />
+                  <Shield className="h-4 w-4 text-purple-600" />
                   <span>Client Admin</span>
                 </label>
               </div>
@@ -427,7 +467,7 @@ export default function ClientUsersManagementSettings({
                       checked={newUser.hasOrderEntryAccess}
                       onChange={(e) => setNewUser(prev => ({ ...prev, hasOrderEntryAccess: e.target.checked }))}
                       disabled={!selectedClient.hasOrderEntryAccess}
-                      className="w-4 h-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500 disabled:opacity-50"
+                      className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 disabled:opacity-50"
                     />
                     <label htmlFor="newUserOrderEntry" className={`text-sm flex items-center space-x-2 ${!selectedClient.hasOrderEntryAccess ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-300'}`}>
                       <FileText className="h-4 w-4" />
@@ -443,7 +483,7 @@ export default function ClientUsersManagementSettings({
                       checked={newUser.hasRateQuoteAccess}
                       onChange={(e) => setNewUser(prev => ({ ...prev, hasRateQuoteAccess: e.target.checked }))}
                       disabled={!selectedClient.hasRateQuoteAccess}
-                      className="w-4 h-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500 disabled:opacity-50"
+                      className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 disabled:opacity-50"
                     />
                     <label htmlFor="newUserRateQuote" className={`text-sm flex items-center space-x-2 ${!selectedClient.hasRateQuoteAccess ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-300'}`}>
                       <DollarSign className="h-4 w-4" />
@@ -459,13 +499,13 @@ export default function ClientUsersManagementSettings({
                       checked={newUser.hasAddressBookAccess || newUser.isClientAdmin}
                       onChange={(e) => setNewUser(prev => ({ ...prev, hasAddressBookAccess: e.target.checked }))}
                       disabled={!selectedClient.hasAddressBookAccess || newUser.isClientAdmin}
-                      className="w-4 h-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500 disabled:opacity-50"
+                      className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 disabled:opacity-50"
                       title={newUser.isClientAdmin ? "Client Admins automatically have Address Book access" : ""}
                     />
                     <label htmlFor="newUserAddressBook" className={`text-sm flex items-center space-x-2 ${(!selectedClient.hasAddressBookAccess && !newUser.isClientAdmin) ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-300'}`}>
                       <BookUser className="h-4 w-4" />
                       <span>Address Book Access</span>
-                      {newUser.isClientAdmin && <span className="text-xs text-teal-600 dark:text-teal-400">(Auto-granted for Client Admins)</span>}
+                      {newUser.isClientAdmin && <span className="text-xs text-purple-600 dark:text-purple-400">(Auto-granted for Client Admins)</span>}
                       {!newUser.isClientAdmin && !selectedClient.hasAddressBookAccess && <span className="text-xs">(Not available for client)</span>}
                     </label>
                   </div>
@@ -482,7 +522,7 @@ export default function ClientUsersManagementSettings({
                 <button
                   type="submit"
                   disabled={isCreating}
-                  className="flex-1 px-4 py-3 bg-teal-600 hover:bg-teal-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200"
+                  className="flex-1 px-4 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200"
                 >
                   {isCreating ? 'Creating...' : 'Create User'}
                 </button>
@@ -735,21 +775,16 @@ export default function ClientUsersManagementSettings({
         </div>
       </div>
 
-      <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          Select Client
-        </label>
-        <select
+      <div className="w-full md:w-96">
+        <Select
+          label="Select Client"
           value={selectedClientId || ''}
-          onChange={(e) => setSelectedClientId(e.target.value)}
-          className="w-full md:w-96 px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-        >
-          {clients.map((client) => (
-            <option key={client.id} value={client.id}>
-              {client.clientName} ({client.clientId})
-            </option>
-          ))}
-        </select>
+          onValueChange={(value) => setSelectedClientId(value)}
+          options={clients.map((client) => ({
+            value: client.id,
+            label: `${client.clientName} (${client.clientId})`
+          }))}
+        />
       </div>
 
       {success && (
@@ -781,7 +816,7 @@ export default function ClientUsersManagementSettings({
             </div>
             <button
               onClick={() => setShowAddUserModal(true)}
-              className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2"
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2"
             >
               <Plus className="h-4 w-4" />
               <span>Add User</span>
@@ -795,7 +830,7 @@ export default function ClientUsersManagementSettings({
               <p className="text-gray-600 dark:text-gray-400 mb-4">Add the first user for this client.</p>
               <button
                 onClick={() => setShowAddUserModal(true)}
-                className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2 mx-auto"
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2 mx-auto"
               >
                 <Plus className="h-4 w-4" />
                 <span>Add First User</span>
@@ -821,7 +856,7 @@ export default function ClientUsersManagementSettings({
                       <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-400">{user.email || '-'}</td>
                       <td className="py-3 px-4">
                         {user.isClientAdmin && (
-                          <span className="px-2 py-1 bg-teal-100 text-teal-800 dark:bg-teal-800 dark:text-teal-200 text-xs font-medium rounded-full flex items-center space-x-1 w-fit">
+                          <span className="px-2 py-1 bg-purple-100 text-purple-800 dark:bg-purple-800 dark:text-purple-200 text-xs font-medium rounded-full flex items-center space-x-1 w-fit">
                             <Shield className="h-3 w-3" />
                             <span>Admin</span>
                           </span>
@@ -857,6 +892,20 @@ export default function ClientUsersManagementSettings({
                       </td>
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end space-x-2">
+                          {user.email && (
+                            <button
+                              onClick={() => handleSendRegistrationEmail(user)}
+                              disabled={sendingEmail === user.id}
+                              className="p-1 text-green-500 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-900/20 rounded transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Send registration email"
+                            >
+                              {sendingEmail === user.id ? (
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600"></div>
+                              ) : (
+                                <Send className="h-4 w-4" />
+                              )}
+                            </button>
+                          )}
                           <button
                             onClick={() => handleEditUser(user)}
                             className="p-1 text-blue-500 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors duration-200"
@@ -882,9 +931,9 @@ export default function ClientUsersManagementSettings({
         </div>
       )}
 
-      <div className="bg-teal-50 dark:bg-teal-900/20 border border-teal-200 dark:border-teal-700 rounded-lg p-4">
-        <h4 className="font-semibold text-teal-800 dark:text-teal-300 mb-2">User Management Information</h4>
-        <ul className="text-sm text-teal-700 dark:text-teal-400 space-y-1">
+      <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700 rounded-lg p-4">
+        <h4 className="font-semibold text-purple-800 dark:text-purple-300 mb-2">User Management Information</h4>
+        <ul className="text-sm text-purple-700 dark:text-purple-400 space-y-1">
           <li>• Each user belongs to one client company and has individual credentials</li>
           <li>• Client Admins can manage users within their organization</li>
           <li>• Users can only be granted access to features enabled at the client level</li>
