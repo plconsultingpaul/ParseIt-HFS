@@ -8,9 +8,10 @@ interface WorkflowDetailProps {
   steps: WorkflowStep[];
   apiConfig: ApiConfig;
   onUpdateSteps: (steps: WorkflowStep[]) => void;
+  extractionTypes?: any[];
 }
 
-export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSteps }: WorkflowDetailProps) {
+export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSteps, extractionTypes }: WorkflowDetailProps) {
   const [localSteps, setLocalSteps] = useState<WorkflowStep[]>(steps);
   const [showStepForm, setShowStepForm] = useState(false);
   const [editingStep, setEditingStep] = useState<WorkflowStep | null>(null);
@@ -298,8 +299,28 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
       await onUpdateSteps(validSteps);
       console.log('Steps saved successfully');
     } catch (error) {
-      console.error('Failed to save steps:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      console.error('❌ Failed to save steps - Full error object:', error);
+
+      // Extract detailed error message
+      let errorMessage = 'Unknown error occurred';
+
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (error && typeof error === 'object') {
+        // Handle Supabase error objects
+        const supabaseError = error as any;
+        if (supabaseError.message) {
+          errorMessage = supabaseError.message;
+        }
+        if (supabaseError.details) {
+          errorMessage += `\nDetails: ${supabaseError.details}`;
+        }
+        if (supabaseError.hint) {
+          errorMessage += `\nHint: ${supabaseError.hint}`;
+        }
+      }
+
+      console.error('Extracted error message:', errorMessage);
 
       // Restore previous steps on error to prevent UI from showing empty state
       console.log('Restoring previous steps due to save error');
@@ -333,6 +354,8 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
     switch (stepType) {
       case 'api_call':
         return 'API Call';
+      case 'api_endpoint':
+        return 'API Endpoint';
       case 'conditional_check':
         return 'Conditional Check';
       case 'data_transform':
@@ -409,6 +432,7 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
             setShowStepForm(false);
             setEditingStep(null);
           }}
+          extractionType={extractionTypes?.find(et => et.workflowId === workflow.id)}
         />
       )}
 
@@ -454,12 +478,11 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
               </div>
               <div className="ml-3">
                 <h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-300">
-                  Workflow Must Be Saved First
+                  Workflow Not Saved
                 </h3>
                 <div className="mt-2 text-sm text-yellow-700 dark:text-yellow-400">
                   <p>
-                    Please save this workflow first using the "Save All" button above before adding or managing workflow steps. 
-                    Steps can only be added to workflows that have been permanently saved to the database.
+                    This workflow has not been saved to the database yet. Please use the "Save All" button above to save it before adding steps.
                   </p>
                 </div>
               </div>
