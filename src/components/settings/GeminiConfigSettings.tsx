@@ -36,7 +36,7 @@ function AddKeyModal({ isOpen, onClose, onSuccess }: AddKeyModalProps) {
     setTestResult(null);
 
     try {
-      const result = await geminiConfigService.testApiKey(apiKey, 'gemini-1.5-flash');
+      const result = await geminiConfigService.testApiKey(apiKey, undefined, true);
       setTestResult(result);
       if (result.success) {
         toast.success(result.message);

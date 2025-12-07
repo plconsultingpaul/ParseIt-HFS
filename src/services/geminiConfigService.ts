@@ -171,12 +171,32 @@ export const geminiConfigService = {
     if (error) throw error;
   },
 
-  async testApiKey(apiKey: string, modelName?: string): Promise<{ success: boolean; message: string; data?: any }> {
+  async testApiKey(apiKey: string, modelName?: string, useListModels: boolean = false): Promise<{ success: boolean; message: string; data?: any }> {
     try {
       if (!apiKey || apiKey.trim() === '') {
         return {
           success: false,
           message: 'API key is required'
+        };
+      }
+
+      if (useListModels) {
+        const models = await this.fetchAvailableModels(apiKey);
+
+        if (models.length === 0) {
+          return {
+            success: false,
+            message: 'API key is valid but no models are available'
+          };
+        }
+
+        return {
+          success: true,
+          message: `Connection successful! Found ${models.length} available model${models.length !== 1 ? 's' : ''}.`,
+          data: {
+            modelCount: models.length,
+            models: models.slice(0, 5)
+          }
         };
       }
 
