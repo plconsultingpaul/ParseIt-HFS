@@ -4,7 +4,8 @@ import { supabase } from '../lib/supabase';
 import { detectExtractionType } from '../lib/geminiDetector';
 import { executeWorkflow } from '../lib/workflow';
 import DocumentScanner from './DocumentScanner';
-import type { ExtractionType, DriverCheckinSettings, ApiConfig } from '../types';
+import type { ExtractionType, DriverCheckinSettings } from '../types';
+import { geminiConfigService } from '../services/geminiConfigService';
 
 type CheckinStep = 'phone' | 'info' | 'confirm' | 'scan' | 'complete';
 
@@ -30,7 +31,7 @@ export default function DriverCheckinPage() {
   const [error, setError] = useState('');
   const [processing, setProcessing] = useState(false);
   const [settings, setSettings] = useState<DriverCheckinSettings | null>(null);
-  const [apiConfig, setApiConfig] = useState<ApiConfig | null>(null);
+  const [geminiApiKey, setGeminiApiKey] = useState<string>('');
   const [extractionTypes, setExtractionTypes] = useState<ExtractionType[]>([]);
   const [forceDarkMode, setForceDarkMode] = useState<boolean | null>(null);
 
@@ -40,7 +41,7 @@ export default function DriverCheckinPage() {
   useEffect(() => {
     loadSettings();
     loadExtractionTypes();
-    loadApiConfig();
+    loadGeminiApiKey();
   }, []);
 
   useEffect(() => {
@@ -92,27 +93,12 @@ export default function DriverCheckinPage() {
     }
   }, [forceDarkMode]);
 
-  const loadApiConfig = async () => {
+  const loadGeminiApiKey = async () => {
     try {
-      const { data, error } = await supabase
-        .from('api_settings')
-        .select('*')
-        .limit(1)
-        .maybeSingle();
-
-      if (error) throw error;
-
-      if (data) {
-        setApiConfig({
-          path: data.path || '',
-          password: data.password || '',
-          googleApiKey: data.google_api_key || '',
-          orderDisplayFields: data.order_display_fields || '',
-          customOrderDisplayFields: data.custom_order_display_fields || []
-        });
-      }
+      const config = await geminiConfigService.getActiveConfiguration();
+      setGeminiApiKey(config?.apiKey || '');
     } catch (err) {
-      console.error('Error loading API config:', err);
+      console.error('Error loading Gemini API key:', err);
     }
   };
 
@@ -379,11 +365,11 @@ export default function DriverCheckinPage() {
           let workflowId = settings?.fallbackWorkflowId;
           let extractionTypeId = null;
 
-          if (apiConfig?.googleApiKey && extractionTypes.length > 0) {
+          if (geminiApiKey && extractionTypes.length > 0) {
             const detectionResult = await detectExtractionType({
               pdfFile: doc.file,
               extractionTypes: extractionTypes,
-              apiKey: apiConfig.googleApiKey
+              apiKey: geminiApiKey
             });
 
             if (detectionResult.detectedTypeId && detectionResult.confidence === 'high') {

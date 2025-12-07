@@ -117,7 +117,7 @@ serve(async (req: Request) => {
     console.log(`Loaded ${extractionTypes.length} extraction types`)
 
     // Get Google Gemini API key for AI detection
-    const apiSettingsResponse = await fetch(`${supabaseUrl}/rest/v1/api_settings?order=updated_at.desc&limit=1`, {
+    const geminiKeysResponse = await fetch(`${supabaseUrl}/rest/v1/gemini_api_keys?is_active=eq.true&select=id,api_key`, {
       headers: {
         'Authorization': `Bearer ${supabaseServiceKey}`,
         'Content-Type': 'application/json',
@@ -126,15 +126,15 @@ serve(async (req: Request) => {
     })
 
     let geminiApiKey = ''
-    if (apiSettingsResponse.ok) {
-      const apiSettings = await apiSettingsResponse.json()
-      if (apiSettings && apiSettings.length > 0) {
-        geminiApiKey = apiSettings[0].google_api_key || ''
+    if (geminiKeysResponse.ok) {
+      const geminiKeys = await geminiKeysResponse.json()
+      if (geminiKeys && geminiKeys.length > 0) {
+        geminiApiKey = geminiKeys[0].api_key || ''
       }
     }
 
     if (!geminiApiKey) {
-      console.warn('No Google Gemini API key found - AI detection will be skipped')
+      console.warn('No active Gemini API key found - AI detection will be skipped. Please configure in Settings → Gemini Configuration.')
     }
 
     let totalFilesFound = 0

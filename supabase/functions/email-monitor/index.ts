@@ -213,18 +213,21 @@ serve(async (req) => {
 
     const apiConfig = apiConfigData || null;
 
-    const { data: settingsConfigData, error: settingsConfigError } = await supabase
-      .from('settings_config')
-      .select('gemini_api_key')
-      .order('updated_at', { ascending: false })
-      .limit(1)
-      .single();
+    const { data: activeKeyData, error: keyError } = await supabase
+      .from('gemini_api_keys')
+      .select('id, api_key')
+      .eq('is_active', true)
+      .maybeSingle();
 
-    if (settingsConfigError) {
-      console.warn('⚠️ Could not fetch settings config:', settingsConfigError.message);
+    if (keyError) {
+      console.error('❌ Error fetching Gemini API key:', keyError.message);
     }
 
-    const geminiApiKey = settingsConfigData?.gemini_api_key || apiConfig?.google_api_key || '';
+    if (!activeKeyData) {
+      console.error('❌ No active Gemini API key found. Please configure in Settings → Gemini Configuration.');
+    }
+
+    const geminiApiKey = activeKeyData?.api_key || '';
 
     let emails = [];
     if (config.provider === 'gmail') {
