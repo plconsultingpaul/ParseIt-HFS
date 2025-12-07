@@ -25,6 +25,37 @@ serve(async (req) => {
   const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   const supabase = createClient(supabaseUrl, supabaseKey);
 
+  // Helper function to fetch active Gemini model
+  const getActiveModelName = async () => {
+    try {
+      const { data: activeKeyData } = await supabase
+        .from("gemini_api_keys")
+        .select("id")
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (activeKeyData) {
+        const { data: activeModelData } = await supabase
+          .from("gemini_models")
+          .select("model_name")
+          .eq("api_key_id", activeKeyData.id)
+          .eq("is_active", true)
+          .maybeSingle();
+
+        if (activeModelData?.model_name) {
+          console.log('✅ Using active Gemini model:', activeModelData.model_name);
+          return activeModelData.model_name;
+        }
+      }
+
+      console.log('ℹ️ No active model configuration found, using default: gemini-2.5-pro');
+      return 'gemini-2.5-pro';
+    } catch (error) {
+      console.error('⚠️ Failed to fetch active model configuration:', error);
+      return 'gemini-2.5-pro';
+    }
+  };
+
   // Helper function to update polling log
   const updatePollingLog = async (updates) => {
     console.log('📝 Updating polling log with:', updates);
@@ -464,8 +495,9 @@ async function processGmailEmails(config, rules, sftpConfig, apiConfig, geminiAp
               .eq('id', extractionLogId);
 
             // --- AI Extraction ---
+            const modelName = await getActiveModelName();
             const genAI = new GoogleGenerativeAI(geminiApiKey);
-            const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
+            const model = genAI.getGenerativeModel({ model: modelName });
 
             const fullInstructions = extractionType.default_instructions;
             const isJsonFormat = extractionType.format_type === 'JSON';
@@ -857,8 +889,9 @@ async function processOffice365Emails(config, rules, sftpConfig, apiConfig, gemi
               .eq('id', extractionLogId);
 
             // --- AI Extraction ---
+            const modelName = await getActiveModelName();
             const genAI = new GoogleGenerativeAI(geminiApiKey);
-            const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
+            const model = genAI.getGenerativeModel({ model: modelName });
 
             const fullInstructions = extractionType.default_instructions;
             const isJsonFormat = extractionType.format_type === 'JSON';

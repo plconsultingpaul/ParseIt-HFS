@@ -74,6 +74,32 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    console.log("Fetching active Gemini model configuration...");
+    const { data: activeKeyData } = await supabase
+      .from("gemini_api_keys")
+      .select("id")
+      .eq("is_active", true)
+      .maybeSingle();
+
+    let modelName = "gemini-2.5-pro";
+    if (activeKeyData) {
+      const { data: activeModelData } = await supabase
+        .from("gemini_models")
+        .select("model_name")
+        .eq("api_key_id", activeKeyData.id)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (activeModelData?.model_name) {
+        modelName = activeModelData.model_name;
+        console.log("Using active Gemini model:", modelName);
+      }
+    }
+
+    if (!activeKeyData || !modelName) {
+      console.log("No active model configuration found, using default:", modelName);
+    }
+
     console.log("Downloading PDF from:", storageUrl);
 
     const pdfResponse = await fetch(storageUrl);
@@ -86,9 +112,9 @@ Deno.serve(async (req: Request) => {
       String.fromCharCode(...new Uint8Array(pdfBuffer))
     );
 
-    console.log("Initializing Gemini AI...");
+    console.log("Initializing Gemini AI with model:", modelName);
     const genAI = new GoogleGenerativeAI(geminiApiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: modelName });
 
     const prompt = buildExtractionPrompt(fields);
 

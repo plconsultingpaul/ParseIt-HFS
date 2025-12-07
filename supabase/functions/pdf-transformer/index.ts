@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { GoogleGenerativeAI } from "npm:@google/generative-ai@0.24.1"
 import { PDFDocument } from "npm:pdf-lib@1.17.1"
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -305,9 +306,39 @@ serve(async (req: Request) => {
       throw new Error('Transformation type not provided')
     }
 
-    console.log('Initializing Gemini AI...');
+    console.log('Fetching active Gemini model configuration...');
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    const { data: activeKeyData } = await supabase
+      .from("gemini_api_keys")
+      .select("id")
+      .eq("is_active", true)
+      .maybeSingle();
+
+    let modelName = "gemini-2.5-pro";
+    if (activeKeyData) {
+      const { data: activeModelData } = await supabase
+        .from("gemini_models")
+        .select("model_name")
+        .eq("api_key_id", activeKeyData.id)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (activeModelData?.model_name) {
+        modelName = activeModelData.model_name;
+        console.log('Using active Gemini model:', modelName);
+      }
+    }
+
+    if (!activeKeyData || !modelName) {
+      console.log('No active model configuration found, using default:', modelName);
+    }
+
+    console.log('Initializing Gemini AI with model:', modelName);
     const genAI = new GoogleGenerativeAI(apiKey)
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' })
+    const model = genAI.getGenerativeModel({ model: modelName })
 
     // Combine instructions
     const fullInstructions = additionalInstructions

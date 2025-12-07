@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -153,12 +154,42 @@ Deno.serve(async (req: Request) => {
     console.log('[EdgeFunction] - Output field mappings:', outputFieldMappings.length);
     console.log('[EdgeFunction] - Workflow-only fields (excluded):', workflowOnlyCount);
 
+    console.log('[EdgeFunction] Fetching active Gemini model configuration...');
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    const { data: activeKeyData } = await supabase
+      .from("gemini_api_keys")
+      .select("id")
+      .eq("is_active", true)
+      .maybeSingle();
+
+    let modelName = "gemini-2.5-pro";
+    if (activeKeyData) {
+      const { data: activeModelData } = await supabase
+        .from("gemini_models")
+        .select("model_name")
+        .eq("api_key_id", activeKeyData.id)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (activeModelData?.model_name) {
+        modelName = activeModelData.model_name;
+        console.log('[EdgeFunction] Using active Gemini model:', modelName);
+      }
+    }
+
+    if (!activeKeyData || !modelName) {
+      console.log('[EdgeFunction] No active model configuration found, using default:', modelName);
+    }
+
     console.log('[EdgeFunction] Initializing Gemini AI...');
     const initStartTime = performance.now();
     const genAI = new GoogleGenerativeAI(requestData.apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+    const model = genAI.getGenerativeModel({ model: modelName });
     const initEndTime = performance.now();
-    console.log(`[EdgeFunction] Gemini initialized in ${((initEndTime - initStartTime) / 1000).toFixed(3)}s`);
+    console.log(`[EdgeFunction] Gemini initialized with model ${modelName} in ${((initEndTime - initStartTime) / 1000).toFixed(3)}s`);
 
     const fieldDescriptions = requestData.fieldMappings
       .filter(m => m.type === 'ai')
