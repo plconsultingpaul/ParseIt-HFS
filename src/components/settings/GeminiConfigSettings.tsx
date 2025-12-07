@@ -508,6 +508,75 @@ function DeleteModelModal({ isOpen, onClose, model, onConfirm }: DeleteModelModa
   );
 }
 
+interface DeleteApiKeyModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  apiKey: GeminiApiKey | null;
+  modelCount: number;
+  onConfirm: () => void;
+}
+
+function DeleteApiKeyModal({ isOpen, onClose, apiKey, modelCount, onConfirm }: DeleteApiKeyModalProps) {
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    await onConfirm();
+    setIsDeleting(false);
+  };
+
+  if (!apiKey) return null;
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Delete API Key">
+      <div className="space-y-4">
+        <div className="flex items-start gap-3 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+          <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-red-900 dark:text-red-100 mb-1">
+              Delete "{apiKey.name}" API Key?
+            </p>
+            <p className="text-sm text-red-800 dark:text-red-200">
+              This will permanently delete this API key and all {modelCount} associated model{modelCount !== 1 ? 's' : ''}.
+              {apiKey.is_active && ' You will need to set another key as active before you can use Gemini features.'}
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">API Key</p>
+            <p className="text-sm font-mono text-gray-900 dark:text-white break-all">{apiKey.api_key}</p>
+          </div>
+
+          <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Associated Models</p>
+            <p className="text-sm text-gray-900 dark:text-white">{modelCount} model{modelCount !== 1 ? 's' : ''} will be deleted</p>
+          </div>
+        </div>
+
+        <div className="flex gap-2 pt-2">
+          <button
+            onClick={onClose}
+            disabled={isDeleting}
+            className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleDelete}
+            disabled={isDeleting}
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+          >
+            {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+            Delete API Key
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 export default function GeminiConfigSettings() {
   const [apiKeys, setApiKeys] = useState<GeminiApiKey[]>([]);
   const [modelsByKey, setModelsByKey] = useState<Record<string, GeminiModel[]>>({});
@@ -517,7 +586,9 @@ export default function GeminiConfigSettings() {
   const [showFetchModelsModal, setShowFetchModelsModal] = useState(false);
   const [showAddModelModal, setShowAddModelModal] = useState(false);
   const [showDeleteModelModal, setShowDeleteModelModal] = useState(false);
+  const [showDeleteApiKeyModal, setShowDeleteApiKeyModal] = useState(false);
   const [selectedKey, setSelectedKey] = useState<GeminiApiKey | null>(null);
+  const [apiKeyToDelete, setApiKeyToDelete] = useState<GeminiApiKey | null>(null);
   const [modelToDelete, setModelToDelete] = useState<GeminiModel | null>(null);
   const [testingKeys, setTestingKeys] = useState<Set<string>>(new Set());
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string }>>({});
@@ -580,14 +651,19 @@ export default function GeminiConfigSettings() {
     }
   };
 
-  const handleDeleteKey = async (keyId: string) => {
-    if (!confirm('Are you sure you want to delete this API key? All associated models will also be deleted.')) {
-      return;
-    }
+  const handleDeleteKey = (key: GeminiApiKey) => {
+    setApiKeyToDelete(key);
+    setShowDeleteApiKeyModal(true);
+  };
+
+  const confirmDeleteApiKey = async () => {
+    if (!apiKeyToDelete) return;
 
     try {
-      await geminiConfigService.deleteApiKey(keyId);
-      toast.success('API key deleted');
+      await geminiConfigService.deleteApiKey(apiKeyToDelete.id);
+      toast.success(`API key "${apiKeyToDelete.name}" deleted successfully`);
+      setShowDeleteApiKeyModal(false);
+      setApiKeyToDelete(null);
       loadData();
     } catch (error: any) {
       toast.error(error.message || 'Failed to delete API key');
@@ -802,7 +878,7 @@ export default function GeminiConfigSettings() {
                         </button>
                       )}
                       <button
-                        onClick={() => handleDeleteKey(key.id)}
+                        onClick={() => handleDeleteKey(key)}
                         className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -969,6 +1045,17 @@ export default function GeminiConfigSettings() {
         }}
         model={modelToDelete}
         onConfirm={confirmDeleteModel}
+      />
+
+      <DeleteApiKeyModal
+        isOpen={showDeleteApiKeyModal}
+        onClose={() => {
+          setShowDeleteApiKeyModal(false);
+          setApiKeyToDelete(null);
+        }}
+        apiKey={apiKeyToDelete}
+        modelCount={apiKeyToDelete ? (modelsByKey[apiKeyToDelete.id] || []).length : 0}
+        onConfirm={confirmDeleteApiKey}
       />
 
       <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
