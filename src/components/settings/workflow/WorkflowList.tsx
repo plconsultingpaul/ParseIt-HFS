@@ -6,7 +6,7 @@ interface WorkflowListProps {
   workflows: ExtractionWorkflow[];
   selectedWorkflowId: string | null;
   onSelectWorkflow: (workflowId: string) => void;
-  onUpdateWorkflow: (workflowId: string, updates: Partial<ExtractionWorkflow>) => void;
+  onUpdateWorkflow: (workflowId: string, updates: Partial<ExtractionWorkflow>) => Promise<void>;
   onDeleteWorkflow: (workflowId: string) => void;
 }
 
@@ -26,13 +26,17 @@ export default function WorkflowList({
     setEditingName(workflow.name);
   };
 
-  const handleSaveEdit = (workflowId: string, e: React.MouseEvent) => {
+  const handleSaveEdit = async (workflowId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (editingName.trim()) {
-      onUpdateWorkflow(workflowId, { name: editingName.trim() });
+      try {
+        await onUpdateWorkflow(workflowId, { name: editingName.trim() });
+        setEditingWorkflowId(null);
+        setEditingName('');
+      } catch (error) {
+        alert('Failed to save workflow name. Please try again.');
+      }
     }
-    setEditingWorkflowId(null);
-    setEditingName('');
   };
 
   const handleCancelEdit = (e: React.MouseEvent) => {
@@ -41,14 +45,18 @@ export default function WorkflowList({
     setEditingName('');
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent, workflowId: string) => {
+  const handleKeyPress = async (e: React.KeyboardEvent, workflowId: string) => {
     if (e.key === 'Enter') {
       e.stopPropagation();
       if (editingName.trim()) {
-        onUpdateWorkflow(workflowId, { name: editingName.trim() });
+        try {
+          await onUpdateWorkflow(workflowId, { name: editingName.trim() });
+          setEditingWorkflowId(null);
+          setEditingName('');
+        } catch (error) {
+          alert('Failed to save workflow name. Please try again.');
+        }
       }
-      setEditingWorkflowId(null);
-      setEditingName('');
     } else if (e.key === 'Escape') {
       e.stopPropagation();
       setEditingWorkflowId(null);
@@ -137,9 +145,13 @@ export default function WorkflowList({
               
               <div className="flex items-center space-x-1 ml-2">
                 <button
-                  onClick={(e) => {
+                  onClick={async (e) => {
                     e.stopPropagation();
-                    onUpdateWorkflow(workflow.id, { isActive: !workflow.isActive });
+                    try {
+                      await onUpdateWorkflow(workflow.id, { isActive: !workflow.isActive });
+                    } catch (error) {
+                      alert('Failed to update workflow status. Please try again.');
+                    }
                   }}
                   className={`p-1 rounded transition-colors duration-200 ${
                     workflow.isActive

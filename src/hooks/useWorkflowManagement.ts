@@ -79,11 +79,28 @@ export function useWorkflowManagement(
     }
   }, [localWorkflows, refreshData]);
 
-  const updateWorkflow = useCallback((workflowId: string, updates: Partial<ExtractionWorkflow>) => {
-    const updatedWorkflows = localWorkflows.map(workflow =>
-      workflow.id === workflowId ? { ...workflow, ...updates } : workflow
-    );
-    setLocalWorkflows(updatedWorkflows);
+  const updateWorkflow = useCallback(async (workflowId: string, updates: Partial<ExtractionWorkflow>) => {
+    try {
+      const dbUpdates: any = {};
+      if (updates.name !== undefined) dbUpdates.name = updates.name;
+      if (updates.description !== undefined) dbUpdates.description = updates.description;
+      if (updates.isActive !== undefined) dbUpdates.is_active = updates.isActive;
+
+      const { error } = await supabase
+        .from('extraction_workflows')
+        .update(dbUpdates)
+        .eq('id', workflowId);
+
+      if (error) throw error;
+
+      const updatedWorkflows = localWorkflows.map(workflow =>
+        workflow.id === workflowId ? { ...workflow, ...updates } : workflow
+      );
+      setLocalWorkflows(updatedWorkflows);
+    } catch (error) {
+      console.error('Failed to update workflow:', error);
+      throw error;
+    }
   }, [localWorkflows]);
 
   const deleteWorkflow = useCallback(async (workflowId: string): Promise<void> => {
