@@ -519,6 +519,8 @@ export default function GeminiConfigSettings() {
   const [showDeleteModelModal, setShowDeleteModelModal] = useState(false);
   const [selectedKey, setSelectedKey] = useState<GeminiApiKey | null>(null);
   const [modelToDelete, setModelToDelete] = useState<GeminiModel | null>(null);
+  const [testingKeys, setTestingKeys] = useState<Set<string>>(new Set());
+  const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string }>>({});
   const toast = useToast();
 
   useEffect(() => {
@@ -616,6 +618,45 @@ export default function GeminiConfigSettings() {
       setModelToDelete(null);
     } catch (error: any) {
       toast.error(error.message || 'Failed to delete model');
+    }
+  };
+
+  const handleTestApiKey = async (key: GeminiApiKey) => {
+    setTestingKeys(prev => new Set([...prev, key.id]));
+    setTestResults(prev => {
+      const updated = { ...prev };
+      delete updated[key.id];
+      return updated;
+    });
+
+    try {
+      const result = await geminiConfigService.testApiKey(key.api_key);
+      setTestResults(prev => ({
+        ...prev,
+        [key.id]: result
+      }));
+
+      if (result.success) {
+        toast.success(result.message);
+      } else {
+        toast.error(result.message);
+      }
+    } catch (error: any) {
+      const errorResult = {
+        success: false,
+        message: error.message || 'Failed to test API key'
+      };
+      setTestResults(prev => ({
+        ...prev,
+        [key.id]: errorResult
+      }));
+      toast.error(errorResult.message);
+    } finally {
+      setTestingKeys(prev => {
+        const updated = new Set(prev);
+        updated.delete(key.id);
+        return updated;
+      });
     }
   };
 
@@ -749,7 +790,19 @@ export default function GeminiConfigSettings() {
 
                   {isExpanded && (
                     <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          onClick={() => handleTestApiKey(key)}
+                          disabled={testingKeys.has(key.id)}
+                          className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+                        >
+                          {testingKeys.has(key.id) ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <RefreshCw className="w-4 h-4" />
+                          )}
+                          {testingKeys.has(key.id) ? 'Testing...' : 'Test Connection'}
+                        </button>
                         <button
                           onClick={() => {
                             setSelectedKey(key);
@@ -771,6 +824,26 @@ export default function GeminiConfigSettings() {
                           Add Model Manually
                         </button>
                       </div>
+
+                      {testResults[key.id] && (
+                        <div className={`p-3 rounded-lg ${testResults[key.id].success ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'}`}>
+                          <div className="flex items-start gap-2">
+                            {testResults[key.id].success ? (
+                              <Check className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
+                            ) : (
+                              <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                            )}
+                            <div>
+                              <p className={`text-sm font-medium ${testResults[key.id].success ? 'text-green-800 dark:text-green-200' : 'text-red-800 dark:text-red-200'}`}>
+                                {testResults[key.id].success ? 'Connection Successful' : 'Connection Failed'}
+                              </p>
+                              <p className={`text-sm ${testResults[key.id].success ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>
+                                {testResults[key.id].message}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
 
                       {models.length === 0 ? (
                         <p className="text-sm text-gray-500 dark:text-gray-400 italic">
