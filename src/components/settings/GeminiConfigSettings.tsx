@@ -36,7 +36,7 @@ function AddKeyModal({ isOpen, onClose, onSuccess }: AddKeyModalProps) {
     setTestResult(null);
 
     try {
-      const result = await geminiConfigService.testApiKey(apiKey);
+      const result = await geminiConfigService.testApiKey(apiKey, 'gemini-1.5-flash');
       setTestResult(result);
       if (result.success) {
         toast.success(result.message);
@@ -630,7 +630,29 @@ export default function GeminiConfigSettings() {
     });
 
     try {
-      const result = await geminiConfigService.testApiKey(key.api_key);
+      const models = modelsByKey[key.id] || [];
+      const activeModel = models.find(m => m.is_active);
+      const modelToTest = activeModel?.model_name || models[0]?.model_name;
+
+      if (!modelToTest) {
+        const errorResult = {
+          success: false,
+          message: 'No models configured for this API key. Please add models first.'
+        };
+        setTestResults(prev => ({
+          ...prev,
+          [key.id]: errorResult
+        }));
+        toast.error(errorResult.message);
+        setTestingKeys(prev => {
+          const updated = new Set(prev);
+          updated.delete(key.id);
+          return updated;
+        });
+        return;
+      }
+
+      const result = await geminiConfigService.testApiKey(key.api_key, modelToTest);
       setTestResults(prev => ({
         ...prev,
         [key.id]: result

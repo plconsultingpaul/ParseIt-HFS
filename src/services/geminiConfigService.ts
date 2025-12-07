@@ -171,7 +171,7 @@ export const geminiConfigService = {
     if (error) throw error;
   },
 
-  async testApiKey(apiKey: string): Promise<{ success: boolean; message: string; data?: any }> {
+  async testApiKey(apiKey: string, modelName?: string): Promise<{ success: boolean; message: string; data?: any }> {
     try {
       if (!apiKey || apiKey.trim() === '') {
         return {
@@ -180,8 +180,9 @@ export const geminiConfigService = {
         };
       }
 
+      const testModel = modelName || 'gemini-1.5-flash';
       const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+      const model = genAI.getGenerativeModel({ model: testModel });
 
       const result = await model.generateContent('Say "Connection successful" if you can read this.');
       const response = await result.response;
@@ -189,9 +190,9 @@ export const geminiConfigService = {
 
       return {
         success: true,
-        message: 'Google Gemini API connection successful!',
+        message: `API key is valid! Successfully tested with ${testModel}.`,
         data: {
-          model: 'gemini-1.5-flash',
+          model: testModel,
           response: text.substring(0, 100)
         }
       };
@@ -200,8 +201,12 @@ export const geminiConfigService = {
 
       if (error.message?.includes('API_KEY_INVALID') || error.message?.includes('API key not valid')) {
         errorMessage = 'Invalid API key. Please check your Google Gemini API key.';
+      } else if (error.message?.includes('API key expired')) {
+        errorMessage = 'API key has expired. Please regenerate your key in Google AI Studio.';
       } else if (error.message?.includes('quota')) {
         errorMessage = 'API quota exceeded. Please check your Google Cloud Console.';
+      } else if (error.message?.includes('not found')) {
+        errorMessage = `Model not found or not accessible with this API key. ${error.message}`;
       } else if (error.message) {
         errorMessage = error.message;
       }
