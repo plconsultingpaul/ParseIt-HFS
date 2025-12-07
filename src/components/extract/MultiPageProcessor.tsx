@@ -19,6 +19,7 @@ interface MultiPageProcessorProps {
   user: User | null;
   workflowSteps: any[];
   onRemovePage: (pageIndex: number) => void;
+  geminiApiKey: string;
 }
 
 export default function MultiPageProcessor({
@@ -30,7 +31,8 @@ export default function MultiPageProcessor({
   apiConfig,
   user,
   workflowSteps,
-  onRemovePage
+  onRemovePage,
+  geminiApiKey
 }: MultiPageProcessorProps) {
   const [isExtractingAll, setIsExtractingAll] = useState(false);
   const [currentProcessingPage, setCurrentProcessingPage] = useState<number | null>(null);
@@ -251,7 +253,7 @@ export default function MultiPageProcessor({
           rowDetectionInstructions: currentExtractionType.csvRowDetectionInstructions,
           delimiter: currentExtractionType.csvDelimiter,
           includeHeaders: currentExtractionType.csvIncludeHeaders,
-          apiKey: apiConfig.googleApiKey || settingsConfig.geminiApiKey
+          apiKey: geminiApiKey
         });
         const extractionEndTime = performance.now();
         console.log(`[MultiPageProcessor] CSV extraction completed in ${((extractionEndTime - extractionStartTime) / 1000).toFixed(2)}s`);
@@ -267,7 +269,7 @@ export default function MultiPageProcessor({
           parseitIdMapping: currentExtractionType.parseitIdMapping,
           traceTypeMapping: currentExtractionType.traceTypeMapping,
           traceTypeValue: currentExtractionType.traceTypeValue,
-          apiKey: apiConfig.googleApiKey || settingsConfig.geminiApiKey,
+          apiKey: geminiApiKey,
           arraySplitConfigs: currentExtractionType.arraySplitConfigs
         });
       }
@@ -591,7 +593,7 @@ export default function MultiPageProcessor({
           rowDetectionInstructions: currentExtractionType.csvRowDetectionInstructions,
           delimiter: currentExtractionType.csvDelimiter,
           includeHeaders: currentExtractionType.csvIncludeHeaders,
-          apiKey: apiConfig.googleApiKey || settingsConfig.geminiApiKey
+          apiKey: geminiApiKey
         });
 
         const { outputData, workflowData } = separateWorkflowOnlyData(
@@ -616,7 +618,7 @@ export default function MultiPageProcessor({
           parseitIdMapping: currentExtractionType.parseitIdMapping,
           traceTypeMapping: currentExtractionType.traceTypeMapping,
           traceTypeValue: currentExtractionType.traceTypeValue,
-          apiKey: apiConfig.googleApiKey || settingsConfig.geminiApiKey,
+          apiKey: geminiApiKey,
           arraySplitConfigs: currentExtractionType.arraySplitConfigs
         });
 
@@ -661,7 +663,7 @@ export default function MultiPageProcessor({
           rowDetectionInstructions: currentExtractionType.csvRowDetectionInstructions,
           delimiter: currentExtractionType.csvDelimiter,
           includeHeaders: currentExtractionType.csvIncludeHeaders,
-          apiKey: apiConfig.googleApiKey || settingsConfig.geminiApiKey
+          apiKey: geminiApiKey
         });
 
         const { outputData, workflowData } = separateWorkflowOnlyData(
@@ -713,7 +715,7 @@ export default function MultiPageProcessor({
           parseitIdMapping: currentExtractionType.parseitIdMapping,
           traceTypeMapping: currentExtractionType.traceTypeMapping,
           traceTypeValue: currentExtractionType.traceTypeValue,
-          apiKey: apiConfig.googleApiKey || settingsConfig.geminiApiKey,
+          apiKey: geminiApiKey,
           arraySplitConfigs: currentExtractionType.arraySplitConfigs
         });
 
@@ -959,7 +961,7 @@ export default function MultiPageProcessor({
           rowDetectionInstructions: currentExtractionType.csvRowDetectionInstructions,
           delimiter: currentExtractionType.csvDelimiter,
           includeHeaders: currentExtractionType.csvIncludeHeaders,
-          apiKey: apiConfig.googleApiKey || settingsConfig.geminiApiKey
+          apiKey: geminiApiKey
         });
 
         // Update all page states with the same extracted data
@@ -1049,7 +1051,7 @@ export default function MultiPageProcessor({
               parseitIdMapping: currentExtractionType.parseitIdMapping,
               traceTypeMapping: currentExtractionType.traceTypeMapping,
               traceTypeValue: currentExtractionType.traceTypeValue,
-              apiKey: apiConfig.googleApiKey || settingsConfig.geminiApiKey,
+              apiKey: geminiApiKey,
               arraySplitConfigs: currentExtractionType.arraySplitConfigs
             });
 

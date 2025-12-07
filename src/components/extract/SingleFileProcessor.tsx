@@ -15,6 +15,7 @@ interface SingleFileProcessorProps {
   apiConfig: ApiConfig;
   user: User | null;
   workflowSteps: WorkflowStep[];
+  geminiApiKey: string;
 }
 
 export default function SingleFileProcessor({
@@ -25,7 +26,8 @@ export default function SingleFileProcessor({
   settingsConfig,
   apiConfig,
   user,
-  workflowSteps
+  workflowSteps,
+  geminiApiKey
 }: SingleFileProcessorProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [extractedData, setExtractedData] = useState('');
@@ -149,7 +151,7 @@ export default function SingleFileProcessor({
         formatType: currentExtractionType.formatType,
         fieldMappings: currentExtractionType.fieldMappings,
         parseitIdMapping: currentExtractionType.parseitIdMapping,
-        apiKey: apiConfig.googleApiKey || settingsConfig.geminiApiKey,
+        apiKey: geminiApiKey,
         arraySplitConfigs: currentExtractionType.arraySplitConfigs
       });
 
@@ -191,7 +193,7 @@ export default function SingleFileProcessor({
           parseitIdMapping: currentExtractionType.parseitIdMapping,
           traceTypeMapping: currentExtractionType.traceTypeMapping,
           traceTypeValue: currentExtractionType.traceTypeValue,
-          apiKey: apiConfig.googleApiKey || settingsConfig.geminiApiKey,
+          apiKey: geminiApiKey,
           arraySplitConfigs: currentExtractionType.arraySplitConfigs
         });
         setExtractedData(dataToSend);

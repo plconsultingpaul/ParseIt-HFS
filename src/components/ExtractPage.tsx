@@ -9,6 +9,7 @@ import MultiPageTransformer from './transform/MultiPageTransformer';
 import { useSupabaseData } from '../hooks/useSupabaseData';
 import type { DetectionResult } from '../types';
 import Select from './common/Select';
+import { geminiConfigService } from '../services/geminiConfigService';
 
 interface ExtractPageProps {
   extractionTypes: ExtractionType[];
@@ -39,9 +40,19 @@ export default function ExtractPage({
   const [detectionResult, setDetectionResult] = useState<DetectionResult | null>(null);
   const [processingMode, setProcessingMode] = useState<'extraction' | 'transformation'>('extraction');
   const [selectedTransformationType, setSelectedTransformationType] = useState<string>('');
+  const [geminiApiKey, setGeminiApiKey] = useState<string>('');
 
   const currentExtractionType = extractionTypes.find(type => type.id === selectedExtractionType);
   const currentTransformationType = transformationTypes.find(type => type.id === selectedTransformationType);
+
+  // Load Gemini API key on component mount
+  React.useEffect(() => {
+    const loadGeminiApiKey = async () => {
+      const config = await geminiConfigService.getActiveConfiguration();
+      setGeminiApiKey(config?.apiKey || '');
+    };
+    loadGeminiApiKey();
+  }, []);
 
   // Filter extraction types based on user permissions
   React.useEffect(() => {
@@ -270,7 +281,7 @@ export default function ExtractPage({
                 ) : (
                   <AutoDetectPdfUploadSection
                     extractionTypes={extractionTypes}
-                    apiKey={apiConfig.googleApiKey || settingsConfig.geminiApiKey}
+                    apiKey={geminiApiKey}
                     onDetectionComplete={handleAutoDetectionComplete}
                   />
                 )}
@@ -356,6 +367,7 @@ export default function ExtractPage({
           user={user}
           workflowSteps={workflowSteps}
           onRemovePage={handleRemovePage}
+          geminiApiKey={geminiApiKey}
         />
       )}
 

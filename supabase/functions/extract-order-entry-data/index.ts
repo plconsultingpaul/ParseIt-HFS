@@ -47,25 +47,18 @@ Deno.serve(async (req: Request) => {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log("Fetching Gemini API key from database...");
+    console.log("Fetching active Gemini configuration...");
 
-    const { data: apiConfigData, error: apiConfigError } = await supabase
-      .from("api_settings")
-      .select("google_api_key")
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .single();
+    const { data: activeKeyData } = await supabase
+      .from("gemini_api_keys")
+      .select("id, api_key")
+      .eq("is_active", true)
+      .maybeSingle();
 
-    if (apiConfigError) {
-      console.warn("Could not fetch API config:", apiConfigError.message);
-    }
-
-    const geminiApiKey = apiConfigData?.google_api_key || "";
-
-    if (!geminiApiKey) {
+    if (!activeKeyData || !activeKeyData.api_key) {
       return new Response(
         JSON.stringify({
-          error: "Gemini API key not configured. Please add your Google Gemini API key in Settings → API Settings → Google Gemini API"
+          error: "Gemini API key not configured. Please add your Google Gemini API key in Settings → Gemini Configuration"
         }),
         {
           status: 500,
@@ -74,29 +67,21 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    console.log("Fetching active Gemini model configuration...");
-    const { data: activeKeyData } = await supabase
-      .from("gemini_api_keys")
-      .select("id")
+    const geminiApiKey = activeKeyData.api_key;
+    console.log("Active Gemini API key found");
+
+    let modelName = "gemini-2.0-flash-exp";
+    const { data: activeModelData } = await supabase
+      .from("gemini_models")
+      .select("model_name")
+      .eq("api_key_id", activeKeyData.id)
       .eq("is_active", true)
       .maybeSingle();
 
-    let modelName = "gemini-2.5-pro";
-    if (activeKeyData) {
-      const { data: activeModelData } = await supabase
-        .from("gemini_models")
-        .select("model_name")
-        .eq("api_key_id", activeKeyData.id)
-        .eq("is_active", true)
-        .maybeSingle();
-
-      if (activeModelData?.model_name) {
-        modelName = activeModelData.model_name;
-        console.log("Using active Gemini model:", modelName);
-      }
-    }
-
-    if (!activeKeyData || !modelName) {
+    if (activeModelData?.model_name) {
+      modelName = activeModelData.model_name;
+      console.log("Using active Gemini model:", modelName);
+    } else {
       console.log("No active model configuration found, using default:", modelName);
     }
 
