@@ -82,6 +82,8 @@ export default function ApiEndpointConfigSection({ config, onChange, allSteps = 
   const buttonRefs = useRef<Record<string, React.RefObject<HTMLButtonElement>>>({});
   const isRestoringRef = useRef(false);
   const isInitialMountRef = useRef(true);
+  const isEditingResponseMappingsRef = useRef(false);
+  const editingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const endpointOptions = useMemo(() => {
     return availableEndpoints.map(endpoint => ({
@@ -156,15 +158,18 @@ export default function ApiEndpointConfigSection({ config, onChange, allSteps = 
       }
 
       // Restore response data mappings - support both old and new formats
-      if (config.responseDataMappings && Array.isArray(config.responseDataMappings)) {
-        setResponseDataMappings(config.responseDataMappings);
-      } else if (config.responsePath || config.updateJsonPath) {
-        setResponseDataMappings([{
-          responsePath: config.responsePath || '',
-          updatePath: config.updateJsonPath || ''
-        }]);
-      } else {
-        setResponseDataMappings([{ responsePath: '', updatePath: '' }]);
+      // Skip restoration if user is actively editing to prevent clearing their input
+      if (!isEditingResponseMappingsRef.current) {
+        if (config.responseDataMappings && Array.isArray(config.responseDataMappings)) {
+          setResponseDataMappings(config.responseDataMappings);
+        } else if (config.responsePath || config.updateJsonPath) {
+          setResponseDataMappings([{
+            responsePath: config.responsePath || '',
+            updatePath: config.updateJsonPath || ''
+          }]);
+        } else {
+          setResponseDataMappings([{ responsePath: '', updatePath: '' }]);
+        }
       }
 
       // Restore escape single quotes setting
@@ -375,6 +380,23 @@ export default function ApiEndpointConfigSection({ config, onChange, allSteps = 
     const updated = [...responseDataMappings];
     updated[index][field] = value;
     setResponseDataMappings(updated);
+  };
+
+  const handleResponseMappingFocus = () => {
+    isEditingResponseMappingsRef.current = true;
+    if (editingTimeoutRef.current) {
+      clearTimeout(editingTimeoutRef.current);
+      editingTimeoutRef.current = null;
+    }
+  };
+
+  const handleResponseMappingBlur = () => {
+    if (editingTimeoutRef.current) {
+      clearTimeout(editingTimeoutRef.current);
+    }
+    editingTimeoutRef.current = setTimeout(() => {
+      isEditingResponseMappingsRef.current = false;
+    }, 300);
   };
 
   const handleClearAll = () => {
@@ -1176,6 +1198,8 @@ export default function ApiEndpointConfigSection({ config, onChange, allSteps = 
                   type="text"
                   value={mapping.responsePath}
                   onChange={(e) => updateResponseMapping(index, 'responsePath', e.target.value)}
+                  onFocus={handleResponseMappingFocus}
+                  onBlur={handleResponseMappingBlur}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 font-mono text-sm dark:bg-gray-600 dark:text-gray-100"
                   placeholder="Response path (e.g., data.result or items[0].value)"
                 />
@@ -1188,6 +1212,8 @@ export default function ApiEndpointConfigSection({ config, onChange, allSteps = 
                   type="text"
                   value={mapping.updatePath}
                   onChange={(e) => updateResponseMapping(index, 'updatePath', e.target.value)}
+                  onFocus={handleResponseMappingFocus}
+                  onBlur={handleResponseMappingBlur}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 font-mono text-sm dark:bg-gray-600 dark:text-gray-100"
                   placeholder="Update path (e.g., orders.0.customerId)"
                 />
