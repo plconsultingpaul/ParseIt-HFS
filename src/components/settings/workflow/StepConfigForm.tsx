@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Plus, Trash2 } from 'lucide-react';
+import { X, Plus, Trash2, Braces } from 'lucide-react';
 import Select from '../../common/Select';
 import ApiEndpointConfigSection from './ApiEndpointConfigSection';
+import VariableDropdown from './VariableDropdown';
 
 interface StepConfigFormProps {
   step: any;
@@ -73,6 +74,8 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
   const [uploadType, setUploadType] = useState('csv');
   const [escapeSingleQuotesInBody, setEscapeSingleQuotesInBody] = useState(false);
   const [apiEndpointConfig, setApiEndpointConfig] = useState<any>({});
+  const [openVariableDropdown, setOpenVariableDropdown] = useState<string | null>(null);
+  const buttonRefs = useRef<Record<string, React.RefObject<HTMLButtonElement>>>({});
 
   useEffect(() => {
     console.log('StepConfigForm useEffect - step data:', step);
@@ -214,6 +217,64 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
     const updated = [...responseDataMappings];
     updated[index][field] = value;
     setResponseDataMappings(updated);
+  };
+
+  const getAvailableVariables = (): Array<{ name: string; stepName: string; source: 'extraction' | 'workflow'; dataType?: string }> => {
+    const variables: Array<{ name: string; stepName: string; source: 'extraction' | 'workflow'; dataType?: string }> = [];
+
+    if (extractionType && extractionType.fieldMappings) {
+      extractionType.fieldMappings.forEach((mapping: any) => {
+        if (mapping.fieldName) {
+          variables.push({
+            name: mapping.fieldName,
+            stepName: 'PDF Extraction',
+            source: 'extraction',
+            dataType: mapping.dataType || 'string'
+          });
+        }
+      });
+    }
+
+    if (allSteps && step) {
+      const currentStepOrder = step.stepOrder || step.step_order || 999;
+      const previousSteps = allSteps.filter(s => {
+        const sOrder = s.stepOrder || s.step_order || 0;
+        return sOrder < currentStepOrder && s.id !== step.id;
+      });
+
+      previousSteps.forEach(s => {
+        const stepName = s.stepName || s.step_name || 'Unknown Step';
+        const config = s.configJson || s.config_json;
+
+        if (config && config.responseDataMappings && Array.isArray(config.responseDataMappings)) {
+          config.responseDataMappings.forEach((mapping: any) => {
+            if (mapping.updatePath) {
+              variables.push({
+                name: mapping.updatePath,
+                stepName: stepName,
+                source: 'workflow'
+              });
+            }
+          });
+        }
+      });
+    }
+
+    return variables;
+  };
+
+  const getButtonRef = (key: string): React.RefObject<HTMLButtonElement> => {
+    if (!buttonRefs.current[key]) {
+      buttonRefs.current[key] = React.createRef<HTMLButtonElement>();
+    }
+    return buttonRefs.current[key];
+  };
+
+  const handleInsertConditionalVariable = (variableName: string) => {
+    const currentValue = conditionalField || '';
+    const newValue = currentValue ? `${currentValue}{{${variableName}}}` : `{{${variableName}}}`;
+    setConditionalField(newValue);
+    setOpenVariableDropdown(null);
   };
 
   const handleSave = () => {
@@ -761,12 +822,30 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     JSON Path to Check
                   </label>
-                  <input
-                    type="text"
-                    value={conditionalField}
-                    onChange={(e) => setConditionalField(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
-                    placeholder="orders.0.status"
+                  <div className="flex space-x-2">
+                    <input
+                      type="text"
+                      value={conditionalField}
+                      onChange={(e) => setConditionalField(e.target.value)}
+                      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                      placeholder="orders.0.status"
+                    />
+                    <button
+                      ref={getButtonRef('conditional-field')}
+                      type="button"
+                      onClick={() => setOpenVariableDropdown(openVariableDropdown === 'conditional-field' ? null : 'conditional-field')}
+                      className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                      title="Insert variable"
+                    >
+                      <Braces className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <VariableDropdown
+                    isOpen={openVariableDropdown === 'conditional-field'}
+                    onClose={() => setOpenVariableDropdown(null)}
+                    triggerRef={getButtonRef('conditional-field')}
+                    variables={getAvailableVariables()}
+                    onSelect={handleInsertConditionalVariable}
                   />
                 </div>
                 
