@@ -16,6 +16,7 @@ interface PageTransformerCardProps {
   workflowSteps: WorkflowStep[];
   isTransformingAll: boolean;
   pageGroupConfig?: PageGroupConfig;
+  geminiApiKey: string;
   onProcessStart: (pageIndex: number) => void;
   onProcessComplete: (pageIndex: number, result: any) => void;
   hidePreview?: boolean;
@@ -33,6 +34,7 @@ export default function PageTransformerCard({
   workflowSteps,
   isTransformingAll,
   pageGroupConfig,
+  geminiApiKey,
   onProcessStart,
   onProcessComplete,
   hidePreview = false
@@ -177,7 +179,7 @@ export default function PageTransformerCard({
           pdfBase64,
           transformationType: effectiveTransformationType,
           additionalInstructions,
-          apiKey: apiConfig.googleApiKey || settingsConfig.geminiApiKey
+          apiKey: geminiApiKey
         })
       });
 
@@ -263,7 +265,7 @@ export default function PageTransformerCard({
             pdfBase64,
             transformationType: effectiveTransformationType,
             additionalInstructions,
-            apiKey: apiConfig.googleApiKey || settingsConfig.geminiApiKey
+            apiKey: geminiApiKey
           })
         });
 

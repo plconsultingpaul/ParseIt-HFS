@@ -5,6 +5,7 @@ import { useAuth } from '../hooks/useAuth';
 import AutoDetectPdfUploadSection from './extract/AutoDetectPdfUploadSection';
 import MultiPageTransformer from './transform/MultiPageTransformer';
 import type { DetectionResult } from '../types';
+import { geminiConfigService } from '../services/geminiConfigService';
 
 interface VendorUploadPageProps {
   transformationTypes: TransformationType[];
@@ -14,10 +15,10 @@ interface VendorUploadPageProps {
   workflowSteps: WorkflowStep[];
 }
 
-export default function VendorUploadPage({ 
-  transformationTypes = [], 
-  sftpConfig, 
-  settingsConfig, 
+export default function VendorUploadPage({
+  transformationTypes = [],
+  sftpConfig,
+  settingsConfig,
   apiConfig,
   workflowSteps
 }: VendorUploadPageProps) {
@@ -28,6 +29,15 @@ export default function VendorUploadPage({
   const [fallbackTransformationType, setFallbackTransformationType] = useState<TransformationType | null>(
     transformationTypes?.[0] || null
   );
+  const [geminiApiKey, setGeminiApiKey] = useState<string>('');
+
+  React.useEffect(() => {
+    const loadGeminiApiKey = async () => {
+      const config = await geminiConfigService.getActiveConfiguration();
+      setGeminiApiKey(config?.apiKey || '');
+    };
+    loadGeminiApiKey();
+  }, []);
 
   const handleAutoDetectionComplete = (
     file: File, 
@@ -58,7 +68,7 @@ export default function VendorUploadPage({
           <div className="mb-8">
             <AutoDetectPdfUploadSection
               extractionTypes={transformationTypes}
-              apiKey={apiConfig.googleApiKey || settingsConfig.geminiApiKey}
+              apiKey={geminiApiKey}
               onDetectionComplete={handleAutoDetectionComplete}
             />
           </div>
@@ -77,7 +87,7 @@ export default function VendorUploadPage({
           fallbackTransformationType={fallbackTransformationType}
           allTransformationTypes={transformationTypes}
           uploadMode="auto"
-          geminiApiKey={apiConfig.googleApiKey || settingsConfig.geminiApiKey}
+          geminiApiKey={geminiApiKey}
           additionalInstructions=""
           sftpConfig={sftpConfig}
           settingsConfig={settingsConfig}

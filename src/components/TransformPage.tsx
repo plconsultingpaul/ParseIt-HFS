@@ -7,6 +7,7 @@ import AutoDetectPdfUploadSection from './extract/AutoDetectPdfUploadSection';
 import MultiPageTransformer from './transform/MultiPageTransformer';
 import type { DetectionResult } from '../types';
 import Select from './common/Select';
+import { geminiConfigService } from '../services/geminiConfigService';
 
 interface TransformPageProps {
   transformationTypes: TransformationType[];
@@ -38,6 +39,16 @@ export default function TransformPage({
   const [usedPageGroupConfigs, setUsedPageGroupConfigs] = useState<PageGroupConfig[] | undefined>(undefined);
   const [pageRangeInfo, setPageRangeInfo] = useState<{ totalPages: number; usedPages: number[]; unusedPages: number[] } | undefined>(undefined);
   const [originalPdfFile, setOriginalPdfFile] = useState<File | null>(null);
+  const [geminiApiKey, setGeminiApiKey] = useState<string>('');
+
+  // Load Gemini API key on component mount
+  React.useEffect(() => {
+    const loadGeminiApiKey = async () => {
+      const config = await geminiConfigService.getActiveConfiguration();
+      setGeminiApiKey(config?.apiKey || '');
+    };
+    loadGeminiApiKey();
+  }, []);
 
   // Filter transformation types based on user permissions
   React.useEffect(() => {
@@ -266,7 +277,7 @@ export default function TransformPage({
                 ) : (
                   <AutoDetectPdfUploadSection
                     extractionTypes={allowedTransformationTypes}
-                    apiKey={apiConfig.googleApiKey || settingsConfig.geminiApiKey}
+                    apiKey={geminiApiKey}
                     onDetectionComplete={handleAutoDetectionComplete}
                   />
                 )}
@@ -308,7 +319,7 @@ export default function TransformPage({
           fallbackTransformationType={currentTransformationType}
           allTransformationTypes={allowedTransformationTypes}
           uploadMode={uploadMode}
-          geminiApiKey={apiConfig.googleApiKey || settingsConfig.geminiApiKey}
+          geminiApiKey={geminiApiKey}
           additionalInstructions={additionalInstructions}
           sftpConfig={sftpConfig}
           settingsConfig={settingsConfig}

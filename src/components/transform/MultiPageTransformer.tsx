@@ -339,7 +339,7 @@ export default function MultiPageTransformer({
 
 
           console.log(`INFO [handleTransformAll]: Calling pdf-transformer Edge Function - ${sessionId}`);
-          const apiKey = apiConfig.googleApiKey || settingsConfig.geminiApiKey;
+          const apiKey = geminiApiKey;
           console.log(`TRACE [handleTransformAll]: API key present: ${!!apiKey} - ${sessionId}`);
 
           const requestBody = {
@@ -1203,6 +1203,7 @@ export default function MultiPageTransformer({
                     workflowSteps={workflowSteps}
                     isTransformingAll={isTransformingAll}
                     pageGroupConfig={undefined}
+                    geminiApiKey={geminiApiKey}
                     onProcessStart={handleProcessStart}
                     onProcessComplete={handleProcessComplete}
                     hidePreview={user?.role === 'vendor'}
