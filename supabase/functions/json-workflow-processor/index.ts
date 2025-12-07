@@ -1415,6 +1415,111 @@ Deno.serve(async (req)=>{
           } else {
             throw new Error(`Unsupported upload mode: ${uploadMode}`);
           }
+        } else if (step.step_type === 'conditional_check') {
+          console.log('🔍 === EXECUTING CONDITIONAL CHECK STEP ===');
+          const config = step.config_json || {};
+          console.log('🔧 Conditional check config:', JSON.stringify(config, null, 2));
+
+          const fieldPath = config.fieldPath || config.checkField || '';
+          const operator = config.operator || 'exists';
+          const expectedValue = config.expectedValue;
+          const storeResultAs = config.storeResultAs || `condition_${step.step_order}_result`;
+
+          console.log('🔍 Checking field:', fieldPath);
+          console.log('🔍 Operator:', operator);
+          console.log('🔍 Expected value:', expectedValue);
+
+          const actualValue = getValueByPath(contextData, fieldPath);
+          console.log('🔍 Actual value from context:', actualValue);
+          console.log('🔍 Actual value type:', typeof actualValue);
+
+          let conditionMet = false;
+
+          switch (operator) {
+            case 'exists':
+              conditionMet = actualValue !== null && actualValue !== undefined && actualValue !== '';
+              console.log(`🔍 Condition (exists): ${conditionMet}`);
+              break;
+
+            case 'not_exists':
+            case 'notExists':
+              conditionMet = actualValue === null || actualValue === undefined || actualValue === '';
+              console.log(`🔍 Condition (not_exists): ${conditionMet}`);
+              break;
+
+            case 'equals':
+            case 'eq':
+              conditionMet = String(actualValue) === String(expectedValue);
+              console.log(`🔍 Condition (equals): "${actualValue}" === "${expectedValue}" = ${conditionMet}`);
+              break;
+
+            case 'not_equals':
+            case 'notEquals':
+            case 'ne':
+              conditionMet = String(actualValue) !== String(expectedValue);
+              console.log(`🔍 Condition (not_equals): "${actualValue}" !== "${expectedValue}" = ${conditionMet}`);
+              break;
+
+            case 'contains':
+              conditionMet = String(actualValue).includes(String(expectedValue));
+              console.log(`🔍 Condition (contains): "${actualValue}".includes("${expectedValue}") = ${conditionMet}`);
+              break;
+
+            case 'not_contains':
+            case 'notContains':
+              conditionMet = !String(actualValue).includes(String(expectedValue));
+              console.log(`🔍 Condition (not_contains): !("${actualValue}".includes("${expectedValue}")) = ${conditionMet}`);
+              break;
+
+            case 'greater_than':
+            case 'gt':
+              const gtActual = parseFloat(actualValue);
+              const gtExpected = parseFloat(expectedValue);
+              conditionMet = !isNaN(gtActual) && !isNaN(gtExpected) && gtActual > gtExpected;
+              console.log(`🔍 Condition (greater_than): ${gtActual} > ${gtExpected} = ${conditionMet}`);
+              break;
+
+            case 'less_than':
+            case 'lt':
+              const ltActual = parseFloat(actualValue);
+              const ltExpected = parseFloat(expectedValue);
+              conditionMet = !isNaN(ltActual) && !isNaN(ltExpected) && ltActual < ltExpected;
+              console.log(`🔍 Condition (less_than): ${ltActual} < ${ltExpected} = ${conditionMet}`);
+              break;
+
+            case 'greater_than_or_equal':
+            case 'gte':
+              const gteActual = parseFloat(actualValue);
+              const gteExpected = parseFloat(expectedValue);
+              conditionMet = !isNaN(gteActual) && !isNaN(gteExpected) && gteActual >= gteExpected;
+              console.log(`🔍 Condition (greater_than_or_equal): ${gteActual} >= ${gteExpected} = ${conditionMet}`);
+              break;
+
+            case 'less_than_or_equal':
+            case 'lte':
+              const lteActual = parseFloat(actualValue);
+              const lteExpected = parseFloat(expectedValue);
+              conditionMet = !isNaN(lteActual) && !isNaN(lteExpected) && lteActual <= lteExpected;
+              console.log(`🔍 Condition (less_than_or_equal): ${lteActual} <= ${lteExpected} = ${conditionMet}`);
+              break;
+
+            default:
+              console.warn(`⚠️ Unknown operator: ${operator}, defaulting to 'exists'`);
+              conditionMet = actualValue !== null && actualValue !== undefined && actualValue !== '';
+          }
+
+          contextData[storeResultAs] = conditionMet;
+          console.log(`✅ Conditional check result stored as "${storeResultAs}": ${conditionMet}`);
+
+          stepOutputData = {
+            conditionMet,
+            fieldPath,
+            operator,
+            actualValue,
+            expectedValue,
+            storeResultAs
+          };
+
         } else {
           console.warn(`⚠️ Unknown step type: ${step.step_type}`);
           throw new Error(`Unknown step type: ${step.step_type}`);
