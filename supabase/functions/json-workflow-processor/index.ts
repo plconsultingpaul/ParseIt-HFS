@@ -820,17 +820,40 @@ Deno.serve(async (req)=>{
               if (extractedValue !== undefined && extractedValue !== null) {
                 console.log(`✅ Extracted value: ${JSON.stringify(extractedValue)}`);
                 console.log(`🔄 Updating contextData.${updatePath} with extracted value`);
-                // Support nested paths like "billNumber" or "metadata.billNumber"
                 const pathParts = updatePath.split('.');
-                let current = contextData;
+                let current: any = contextData;
                 for (let i = 0; i < pathParts.length - 1; i++) {
                   const part = pathParts[i];
-                  if (!current[part]) {
-                    current[part] = {};
+                  const arrayMatch = part.match(/^(.+)\[(\d+)\]$/);
+                  if (arrayMatch) {
+                    const arrayName = arrayMatch[1];
+                    const arrayIndex = parseInt(arrayMatch[2], 10);
+                    if (!current[arrayName]) {
+                      current[arrayName] = [];
+                    }
+                    if (!current[arrayName][arrayIndex]) {
+                      current[arrayName][arrayIndex] = {};
+                    }
+                    current = current[arrayName][arrayIndex];
+                  } else {
+                    if (!current[part]) {
+                      current[part] = {};
+                    }
+                    current = current[part];
                   }
-                  current = current[part];
                 }
-                current[pathParts[pathParts.length - 1]] = extractedValue;
+                const finalPart = pathParts[pathParts.length - 1];
+                const finalArrayMatch = finalPart.match(/^(.+)\[(\d+)\]$/);
+                if (finalArrayMatch) {
+                  const arrayName = finalArrayMatch[1];
+                  const arrayIndex = parseInt(finalArrayMatch[2], 10);
+                  if (!current[arrayName]) {
+                    current[arrayName] = [];
+                  }
+                  current[arrayName][arrayIndex] = extractedValue;
+                } else {
+                  current[finalPart] = extractedValue;
+                }
                 console.log(`✅ Updated contextData.${updatePath} = ${JSON.stringify(extractedValue)}`);
               } else {
                 console.warn(`⚠️ Path "${responsePath}" not found in API response`);
