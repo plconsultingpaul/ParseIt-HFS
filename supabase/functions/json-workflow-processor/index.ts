@@ -1952,6 +1952,18 @@ Deno.serve(async (req)=>{
               console.log(`🔍 Condition (not_exists): ${conditionMet}`);
               break;
 
+            case 'is_null':
+            case 'isNull':
+              conditionMet = actualValue === null || actualValue === undefined;
+              console.log(`🔍 Condition (is_null): ${conditionMet}`);
+              break;
+
+            case 'is_not_null':
+            case 'isNotNull':
+              conditionMet = actualValue !== null && actualValue !== undefined;
+              console.log(`🔍 Condition (is_not_null): ${conditionMet}`);
+              break;
+
             case 'equals':
             case 'eq':
               conditionMet = String(actualValue) === String(expectedValue);
