@@ -1925,7 +1925,8 @@ Deno.serve(async (req)=>{
           const config = step.config_json || {};
           console.log('🔧 Conditional check config:', JSON.stringify(config, null, 2));
 
-          const fieldPath = config.fieldPath || config.checkField || '';
+          const rawFieldPath = config.fieldPath || config.checkField || '';
+          const fieldPath = rawFieldPath.replace(/^\{\{|\}\}$/g, '');
           const operator = config.operator || 'exists';
           const expectedValue = config.expectedValue;
           const storeResultAs = config.storeResultAs || `condition_${step.step_order}_result`;
