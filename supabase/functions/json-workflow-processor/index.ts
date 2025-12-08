@@ -2171,6 +2171,26 @@ Deno.serve(async (req)=>{
           await createStepLog(supabaseUrl, supabaseServiceKey, workflowExecutionLogId, requestData.workflowId, step, 'completed', stepStartTime, stepEndTime, stepDurationMs, null, stepInputData, stepOutputData);
         }
         console.log(`✅ DEBUG - Completed iteration i=${i} for step ${step.step_order}. Moving to next iteration.`);
+
+        if (step.step_type === 'conditional_check') {
+          const conditionResult = stepOutputData?.conditionMet;
+          const nextStepId = conditionResult
+            ? step.next_step_on_success_id
+            : step.next_step_on_failure_id;
+
+          if (nextStepId) {
+            console.log(`🔀 Conditional branch: conditionMet=${conditionResult}, jumping to step ID: ${nextStepId}`);
+            const targetIndex = steps.findIndex(s => s.id === nextStepId);
+            if (targetIndex !== -1) {
+              console.log(`🔀 Found target step at index ${targetIndex} (step ${steps[targetIndex].step_order}: ${steps[targetIndex].step_name})`);
+              i = targetIndex - 1;
+            } else {
+              console.warn(`⚠️ Target step ID ${nextStepId} not found in workflow steps, continuing sequentially`);
+            }
+          } else {
+            console.log(`🔀 No branch target set for conditionMet=${conditionResult}, continuing sequentially`);
+          }
+        }
       } catch (stepError) {
         console.error(`❌ Step ${step.step_order} failed:`, stepError);
         const stepEndTime = new Date().toISOString();
