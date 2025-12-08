@@ -1666,7 +1666,8 @@ Deno.serve(async (req: Request) => {
           const config = step.config_json || {}
           console.log('🔧 Conditional check config:', JSON.stringify(config, null, 2))
 
-          const fieldPath = config.fieldPath || config.checkField || ''
+          const rawFieldPath = config.fieldPath || config.checkField || ''
+          const fieldPath = rawFieldPath.replace(/^\{\{|\}\}$/g, '')
           const operator = config.operator || 'exists'
           const expectedValue = config.expectedValue
           const storeResultAs = config.storeResultAs || `condition_${step.step_order}_result`
@@ -1685,6 +1686,18 @@ Deno.serve(async (req: Request) => {
             case 'exists':
               conditionMet = actualValue !== null && actualValue !== undefined && actualValue !== ''
               console.log(`🔍 Condition (exists): ${conditionMet}`)
+              break
+
+            case 'is_null':
+            case 'isNull':
+              conditionMet = actualValue === null || actualValue === undefined
+              console.log(`🔍 Condition (is_null): ${conditionMet}`)
+              break
+
+            case 'is_not_null':
+            case 'isNotNull':
+              conditionMet = actualValue !== null && actualValue !== undefined
+              console.log(`🔍 Condition (is_not_null): ${conditionMet}`)
               break
 
             case 'not_exists':
@@ -1798,6 +1811,21 @@ Deno.serve(async (req: Request) => {
             { config: step.config_json },
             stepOutputData
           )
+        }
+
+        if (step.step_type === 'conditional_check') {
+          const conditionResult = stepOutputData?.conditionMet
+          const nextStepId = conditionResult
+            ? step.next_step_on_success_id
+            : step.next_step_on_failure_id
+
+          if (nextStepId) {
+            const targetIndex = steps.findIndex(s => s.id === nextStepId)
+            if (targetIndex !== -1) {
+              console.log(`🔀 Conditional branching: jumping to step index ${targetIndex}`)
+              i = targetIndex - 1
+            }
+          }
         }
 
       } catch (stepError) {

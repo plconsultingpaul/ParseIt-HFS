@@ -1764,7 +1764,8 @@ Deno.serve(async (req)=>{
           } else {
             console.log('⚠️ contextData.orders is not an array or is undefined');
           }
-          const fieldPath = config.fieldPath || config.jsonPath || config.checkField || '';
+          const rawFieldPath = config.fieldPath || config.jsonPath || config.checkField || '';
+          const fieldPath = rawFieldPath.replace(/^\{\{|\}\}$/g, '');
           const operator = config.operator || config.conditionType || 'exists';
           const expectedValue = config.expectedValue;
           const storeResultAs = config.storeResultAs || `condition_${step.step_order}_result`;
