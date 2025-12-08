@@ -1239,16 +1239,19 @@ Deno.serve(async (req)=>{
               if (extractedValue !== undefined && extractedValue !== null) {
                 console.log(`✅ Extracted value: ${JSON.stringify(extractedValue)}`);
                 console.log(`🔄 Updating contextData.${updatePath}`);
-                const pathParts = updatePath.split('.');
+                const pathParts = updatePath.split(/[.\[\]]/).filter(Boolean);
                 let current = contextData;
                 for (let i = 0; i < pathParts.length - 1; i++) {
                   const part = pathParts[i];
-                  if (!current[part]) {
-                    current[part] = {};
+                  const nextPart = pathParts[i + 1];
+                  const isNextPartArrayIndex = /^\d+$/.test(nextPart);
+                  if (current[part] === undefined || current[part] === null) {
+                    current[part] = isNextPartArrayIndex ? [] : {};
                   }
                   current = current[part];
                 }
-                current[pathParts[pathParts.length - 1]] = extractedValue;
+                const lastPart = pathParts[pathParts.length - 1];
+                current[lastPart] = extractedValue;
                 console.log(`✅ Updated contextData.${updatePath} = ${JSON.stringify(extractedValue)}`);
               } else {
                 console.warn(`⚠️ Path "${responsePath}" not found in API response`);
