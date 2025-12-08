@@ -1060,7 +1060,7 @@ Deno.serve(async (req)=>{
 
               const isODataParam = odataParams.some(p => p.toLowerCase() === paramName.toLowerCase());
               if (isODataParam) {
-                const encodedValue = paramValue.replace(/ /g, '%20');
+                const encodedValue = paramValue.replace(/ /g, '%20').replace(/\(/g, '%28').replace(/\)/g, '%29');
                 odataParamParts.push(`${paramName}=${encodedValue}`);
                 console.log(`📋 OData param "${paramName}" using minimal encoding:`, encodedValue);
               } else {
