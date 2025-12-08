@@ -1048,8 +1048,11 @@ Deno.serve(async (req)=>{
                 const variableName = doubleBrace || dollarBrace;
                 const value = getValueByPath(contextData, variableName);
                 if (value !== undefined && value !== null) {
-                  console.log(`🔄 Replaced query param variable ${match} with: ${value}`);
-                  return String(value);
+                  // URL encode special characters (including parentheses) to prevent OData parsing issues
+                  // This is critical for values containing (), [], {}, and other special chars
+                  const encodedValue = encodeURIComponent(String(value));
+                  console.log(`🔄 Replaced query param variable ${match} with: ${value} (encoded: ${encodedValue})`);
+                  return encodedValue;
                 }
                 console.warn(`⚠️ Variable ${match} not found in context, leaving unchanged`);
                 return match;
