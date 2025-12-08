@@ -1035,8 +1035,10 @@ Deno.serve(async (req)=>{
           console.log('🔗 API path after path variable replacement:', apiPath);
 
           // Build query string from enabled parameters
-          const queryParams = new URLSearchParams();
           const queryParameterConfig = config.queryParameterConfig || {};
+          const odataParams = ['$filter', '$select', '$orderby', '$orderBy', '$expand', '$top', '$skip', '$count', '$search'];
+          const regularParams: string[] = [];
+          const odataParamParts: string[] = [];
 
           for (const [paramName, paramConfig] of Object.entries(queryParameterConfig)) {
             if (paramConfig.enabled && paramConfig.value) {
@@ -1056,11 +1058,19 @@ Deno.serve(async (req)=>{
               });
               console.log(`📋 Final param value for "${paramName}":`, paramValue);
 
-              queryParams.append(paramName, paramValue);
+              const isODataParam = odataParams.some(p => p.toLowerCase() === paramName.toLowerCase());
+              if (isODataParam) {
+                const encodedValue = paramValue.replace(/ /g, '%20');
+                odataParamParts.push(`${paramName}=${encodedValue}`);
+                console.log(`📋 OData param "${paramName}" using minimal encoding:`, encodedValue);
+              } else {
+                regularParams.push(`${encodeURIComponent(paramName)}=${encodeURIComponent(paramValue)}`);
+              }
             }
           }
 
-          const queryString = queryParams.toString();
+          const allParams = [...regularParams, ...odataParamParts];
+          const queryString = allParams.join('&');
           const fullUrl = `${baseUrl}${apiPath}${queryString ? '?' + queryString : ''}`;
           console.log('🔗 Full API Endpoint URL:', fullUrl);
           console.log('📤 Making', httpMethod, 'request to API endpoint');
