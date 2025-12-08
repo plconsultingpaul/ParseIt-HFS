@@ -618,11 +618,11 @@ Deno.serve(async (req)=>{
           for (const replacement of replacements){
             let rawValue = String(replacement.value || '');
 
-            // Apply single quote escaping for OData if enabled
-            if (config.escapeSingleQuotesInBody && rawValue.includes("'")) {
+            // Apply OData escaping if enabled (single quotes and consecutive parentheses)
+            if (config.escapeSingleQuotesInBody && (rawValue.includes("'") || rawValue.includes(")("))) {
               const beforeEscape = rawValue;
               rawValue = escapeSingleQuotesForOData(rawValue);
-              console.log(`🔄 Escaped single quotes in URL: "${beforeEscape}" → "${rawValue}"`);
+              console.log(`🔄 Escaped for OData in URL: "${beforeEscape}" → "${rawValue}"`);
             }
 
             const encodedValue = encodeURIComponent(rawValue);
@@ -684,11 +684,11 @@ Deno.serve(async (req)=>{
           }
           for (const replacement of bodyReplacements){
             let rawValue = String(replacement.value || '');
-            // Apply single quote escaping for OData if enabled
-            if (config.escapeSingleQuotesInBody && rawValue.includes("'")) {
+            // Apply OData escaping if enabled (single quotes and consecutive parentheses)
+            if (config.escapeSingleQuotesInBody && (rawValue.includes("'") || rawValue.includes(")("))) {
               const beforeEscape = rawValue;
               rawValue = escapeSingleQuotesForOData(rawValue);
-              console.log(`🔄 Escaped single quotes: "${beforeEscape}" → "${rawValue}"`);
+              console.log(`🔄 Escaped for OData: "${beforeEscape}" → "${rawValue}"`);
             }
             const escapedValue = rawValue.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
             requestBody = requestBody.replace(new RegExp(replacement.placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), escapedValue);

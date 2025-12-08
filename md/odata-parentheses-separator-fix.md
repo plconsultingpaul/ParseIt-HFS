@@ -6,63 +6,56 @@
 ## Problem
 API requests with OData `$filter` parameters containing consecutive parentheses `)(` in values (e.g., `AMR-BIG ISLAND (HAWAII)(10100)`) were being blocked by Azure Application Gateway WAF with 403 errors.
 
-URL encoding the parentheses did not resolve the issue - WAF still detected the pattern.
+The `escapeSingleQuotesForOData` function already had logic to replace `)(` with `)-(`, but it was never being called because the condition only checked for single quotes in the extracted value.
 
 ## Root Cause
-Azure WAF interprets the `)(` pattern in OData filter values as a potential function injection attack, regardless of URL encoding.
+The condition to call `escapeSingleQuotesForOData` only triggered when the extracted value contained a single quote:
 
-## Solution
-When "Escape Single Quotes for OData Filters" is enabled, also replace `)(` with `)-(` in the extracted values before building the URL.
-
-This breaks the consecutive parentheses pattern that triggers WAF detection.
-
-## Change
-**File:** `supabase/functions/json-workflow-processor/index.ts`
-
-**Function:** `escapeSingleQuotesForOData` (lines 102-109)
-
-Before:
 ```javascript
-function escapeSingleQuotesForOData(value) {
-  if (typeof value !== 'string') {
-    return value;
-  }
-  // Replace single quote with double single quote for OData filter compatibility
-  return value.replace(/'/g, "''");
-}
+if (config.escapeSingleQuotesInBody && rawValue.includes("'"))
 ```
 
-After:
+The extracted data value `AMR-BIG ISLAND (HAWAII)(10100)` does not contain single quotes (the quotes are in the template, not the data), so the function was never invoked.
+
+## Solution
+Updated the condition to also check for the `)(` pattern:
+
 ```javascript
-function escapeSingleQuotesForOData(value) {
-  if (typeof value !== 'string') {
-    return value;
-  }
-  // Replace single quote with double single quote for OData filter compatibility
-  // Also replace )( with )-( to avoid WAF pattern detection
-  return value.replace(/'/g, "''").replace(/\)\(/g, ')-(');
-}
+if (config.escapeSingleQuotesInBody && (rawValue.includes("'") || rawValue.includes(")(")))
+```
+
+## Changes
+**File:** `supabase/functions/json-workflow-processor/index.ts`
+
+**Location 1 - URL replacements (line 622):**
+```javascript
+// Before
+if (config.escapeSingleQuotesInBody && rawValue.includes("'")) {
+
+// After
+if (config.escapeSingleQuotesInBody && (rawValue.includes("'") || rawValue.includes(")("))) {
+```
+
+**Location 2 - Body replacements (line 688):**
+```javascript
+// Before
+if (config.escapeSingleQuotesInBody && rawValue.includes("'")) {
+
+// After
+if (config.escapeSingleQuotesInBody && (rawValue.includes("'") || rawValue.includes(")("))) {
 ```
 
 ## Expected Result
-Value transformation:
+When "Escape Single Quotes for OData Filters" is enabled:
+
 ```
-AMR-BIG ISLAND (HAWAII)(10100)
-```
-Becomes:
-```
-AMR-BIG ISLAND (HAWAII)-(10100)
+AMR-BIG ISLAND (HAWAII)(10100)  ->  AMR-BIG ISLAND (HAWAII)-(10100)
 ```
 
-URL will be:
+URL will become:
 ```
 $filter=name%20eq%20'AMR-BIG%20ISLAND%20(HAWAII)-(10100)'
 ```
 
 ## Activation
-This fix is applied when the "Escape Single Quotes for OData Filters" checkbox is enabled in the workflow step configuration.
-
-## Other Edge Functions to Update
-If this fix works, apply the same change to:
-- `csv-workflow-processor`
-- `transform-workflow-processor`
+This fix applies when the "Escape Single Quotes for OData Filters" checkbox is enabled in the workflow step configuration.
