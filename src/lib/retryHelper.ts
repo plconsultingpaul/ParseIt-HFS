@@ -18,13 +18,12 @@ const DEFAULT_OPTIONS: Required<RetryOptions> = {
 };
 
 /**
- * Determines if an error is retryable (network/timeout errors)
+ * Determines if an error is retryable (network/timeout/overload errors)
  */
-function isRetryableError(error: unknown): boolean {
+export function isRetryableError(error: unknown): boolean {
   if (error instanceof Error) {
     const message = error.message.toLowerCase();
 
-    // Check for common network and timeout errors
     return (
       message.includes('failed to fetch') ||
       message.includes('network error') ||
@@ -32,6 +31,9 @@ function isRetryableError(error: unknown): boolean {
       message.includes('503') ||
       message.includes('502') ||
       message.includes('504') ||
+      message.includes('500') ||
+      message.includes('overloaded') ||
+      message.includes('temporarily') ||
       message.includes('econnreset') ||
       message.includes('enotfound') ||
       message.includes('econnrefused')
