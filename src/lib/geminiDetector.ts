@@ -1,7 +1,12 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import * as pdfjsLib from 'pdfjs-dist';
 import type { ExtractionType, VendorExtractionRule } from '../types';
 import { withRetry } from './retryHelper';
 import { geminiConfigService } from '../services/geminiConfigService';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
+
+const MIN_TEXT_LENGTH_THRESHOLD = 50;
 
 async function getActiveModelName(): Promise<string> {
   try {
@@ -13,6 +18,54 @@ async function getActiveModelName(): Promise<string> {
     console.warn('Failed to fetch active Gemini model, using default:', error);
   }
   return 'gemini-2.5-pro';
+}
+
+async function extractTextFromPdf(pdfFile: File): Promise<string> {
+  try {
+    const arrayBuffer = await pdfFile.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const textParts: string[] = [];
+
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items
+        .map((item: unknown) => {
+          const textItem = item as { str?: string };
+          return textItem.str || '';
+        })
+        .join(' ');
+      textParts.push(pageText);
+    }
+
+    return textParts.join('\n\n');
+  } catch (error) {
+    console.warn('PDF.js text extraction failed:', error);
+    return '';
+  }
+}
+
+async function renderPdfPageToBase64Image(pdfFile: File): Promise<string> {
+  const arrayBuffer = await pdfFile.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const page = await pdf.getPage(1);
+
+  const scale = 2.0;
+  const viewport = page.getViewport({ scale });
+
+  const canvas = document.createElement('canvas');
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+
+  const context = canvas.getContext('2d');
+  if (!context) {
+    throw new Error('Failed to get canvas context');
+  }
+
+  await page.render({ canvasContext: context, viewport }).promise;
+
+  const dataUrl = canvas.toDataURL('image/png');
+  return dataUrl.split(',')[1];
 }
 
 export interface DetectionRequest {
@@ -49,12 +102,11 @@ export async function detectExtractionType({
     const activeModelName = await getActiveModelName();
     const model = genAI.getGenerativeModel({ model: activeModelName });
 
-    // Convert PDF to base64
-    const pdfBase64 = await fileToBase64(pdfFile);
+    const extractedText = await extractTextFromPdf(pdfFile);
+    const useTextBasedDetection = extractedText.trim().length >= MIN_TEXT_LENGTH_THRESHOLD;
 
     let typeInstructions = '';
-    
-    // If vendor rules are provided, prioritize them
+
     if (vendorRules && vendorRules.length > 0) {
       const vendorRuleInstructions = vendorRules
         .filter(rule => rule.isEnabled && rule.autoDetectInstructions && rule.autoDetectInstructions.trim())
@@ -66,13 +118,12 @@ PROCESSING_MODE: ${rule.processingMode}
 DETECTION_CRITERIA: ${rule.autoDetectInstructions}
 ---`)
         .join('\n');
-      
+
       if (vendorRuleInstructions.trim()) {
         typeInstructions = `VENDOR-SPECIFIC RULES (PRIORITY):\n${vendorRuleInstructions}\n\n`;
       }
     }
-    
-    // Add general extraction types as fallback
+
     const generalTypeInstructions = extractionTypes
       .filter(type => type.autoDetectInstructions && type.autoDetectInstructions.trim())
       .map(type => `
@@ -82,7 +133,7 @@ DETECTION CRITERIA: ${type.autoDetectInstructions}
 FORMAT: ${type.formatType}
 ---`)
       .join('\n');
-    
+
     if (generalTypeInstructions.trim()) {
       typeInstructions += `GENERAL EXTRACTION TYPES (FALLBACK):\n${generalTypeInstructions}`;
     }
@@ -91,18 +142,20 @@ FORMAT: ${type.formatType}
       throw new Error('No extraction types or vendor rules have auto-detection instructions configured.');
     }
 
-    const prompt = `
-You are a document classification AI. Your task is to analyze the provided PDF document and determine which extraction type should be used based on the document's content and structure.
+    const textBasedPrompt = `
+You are a document classification AI. Your task is to analyze the provided document text and determine which extraction type should be used based on the content.
+
+EXTRACTED DOCUMENT TEXT:
+${extractedText}
 
 AVAILABLE DETECTION RULES:
 ${typeInstructions}
 
 CLASSIFICATION INSTRUCTIONS:
 1. PRIORITY ORDER: Check vendor-specific rules first (if any), then general extraction types
-2. Carefully analyze the PDF document's content, layout, structure, and any visible text
-3. Compare the document characteristics against each rule's detection criteria
-4. Look for key indicators like document titles, form layouts, company names, specific fields, or document patterns
-5. Consider the document's purpose and the type of data it contains
+2. Analyze the document text content for key indicators
+3. Compare against each rule's detection criteria
+4. Look for document titles, company names, specific fields, or document patterns
 
 RESPONSE FORMAT:
 You must respond with ONLY a JSON object in this exact format:
@@ -116,30 +169,61 @@ You must respond with ONLY a JSON object in this exact format:
 IMPORTANT RULES:
 - If you find a clear match with a vendor rule, use the exact VENDOR_RULE_ID and set "isVendorRule" to true
 - If you find a match with a general extraction type, use the exact TYPE_ID and set "isVendorRule" to false
-- If you're uncertain between multiple options, choose the one with the highest confidence and set confidence to "medium" or "low"
 - If no rule clearly matches the document, set "detectedId" to null and "isVendorRule" to false
-- Always provide a brief reasoning for your decision
-- Confidence levels:
-  * "high": Very confident this is the correct type (90%+ certainty)
-  * "medium": Reasonably confident (70-89% certainty)
-  * "low": Some indicators match but not entirely certain (50-69% certainty)
+- Confidence levels: "high" (90%+), "medium" (70-89%), "low" (50-69%)
 - Return ONLY the JSON object, no additional text or formatting
-
-Please analyze the document and classify it now.
 `;
 
-    const result = await withRetry(
-      () => model.generateContent([
-        {
-          inlineData: {
-            mimeType: 'application/pdf',
-            data: pdfBase64
-          }
-        },
-        prompt
-      ]),
-      'Gemini API detection'
-    );
+    const imageBasedPrompt = `
+You are a document classification AI. Your task is to analyze the provided document image and determine which extraction type should be used based on visual content and structure.
+
+AVAILABLE DETECTION RULES:
+${typeInstructions}
+
+CLASSIFICATION INSTRUCTIONS:
+1. PRIORITY ORDER: Check vendor-specific rules first (if any), then general extraction types
+2. Analyze the document's visual layout, structure, and any visible text
+3. Compare against each rule's detection criteria
+4. Look for document titles, form layouts, company names, logos, or document patterns
+
+RESPONSE FORMAT:
+You must respond with ONLY a JSON object in this exact format:
+{
+  "detectedId": "VENDOR_RULE_ID_OR_TYPE_ID_HERE_OR_NULL",
+  "isVendorRule": true_or_false,
+  "confidence": "high|medium|low",
+  "reasoning": "Brief explanation of why this type was selected or why no match was found"
+}
+
+IMPORTANT RULES:
+- If you find a clear match with a vendor rule, use the exact VENDOR_RULE_ID and set "isVendorRule" to true
+- If you find a match with a general extraction type, use the exact TYPE_ID and set "isVendorRule" to false
+- If no rule clearly matches the document, set "detectedId" to null and "isVendorRule" to false
+- Confidence levels: "high" (90%+), "medium" (70-89%), "low" (50-69%)
+- Return ONLY the JSON object, no additional text or formatting
+`;
+
+    let result;
+    if (useTextBasedDetection) {
+      result = await withRetry(
+        () => model.generateContent(textBasedPrompt),
+        'Gemini API text-based detection'
+      );
+    } else {
+      const imageBase64 = await renderPdfPageToBase64Image(pdfFile);
+      result = await withRetry(
+        () => model.generateContent([
+          {
+            inlineData: {
+              mimeType: 'image/png',
+              data: imageBase64
+            }
+          },
+          imageBasedPrompt
+        ]),
+        'Gemini API image-based detection'
+      );
+    }
 
     const response = await result.response;
     let responseText = response.text().trim();
