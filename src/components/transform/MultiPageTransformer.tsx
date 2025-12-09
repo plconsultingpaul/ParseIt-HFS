@@ -9,6 +9,7 @@ import { supabase } from '../../lib/supabase';
 import { splitPdfWithManualGroups } from '../../lib/pdfUtils';
 
 import { PDFDocument } from 'pdf-lib';
+import { withRetry } from '../../lib/retryHelper';
 
 interface MultiPageTransformerProps {
   pdfPages: File[];
@@ -360,31 +361,39 @@ export default function MultiPageTransformer({
           console.log(`TRACE [handleTransformAll]: Request body size estimate: ${JSON.stringify(requestBody).length} chars - ${sessionId}`);
 
           const fetchStartTime = Date.now();
-          const transformResponse = await fetch(`${supabaseUrl}/functions/v1/pdf-transformer`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${supabaseAnonKey}`,
+          const transformResponse = await withRetry(
+            async () => {
+              const response = await fetch(`${supabaseUrl}/functions/v1/pdf-transformer`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${supabaseAnonKey}`,
+                },
+                body: JSON.stringify(requestBody)
+              });
+
+              if (!response.ok) {
+                let errorMessage = `Transformation failed with status ${response.status}`;
+                try {
+                  const errorData = await response.json();
+                  console.error(`ERROR [handleTransformAll]: Error response data: ${JSON.stringify(errorData)} - ${sessionId}`);
+                  errorMessage = errorData.details || errorData.error || errorMessage;
+                } catch {
+                  console.error(`ERROR [handleTransformAll]: Could not parse error response - ${sessionId}`);
+                }
+                throw new Error(errorMessage);
+              }
+
+              return response;
             },
-            body: JSON.stringify(requestBody)
-          });
+            `PDF Transformation (page ${pageIndex + 1})`,
+            { maxAttempts: 3, initialDelayMs: 3000, maxDelayMs: 10000 }
+          );
 
           console.log(`INFO [handleTransformAll]: Transform response received in ${Date.now() - fetchStartTime}ms - ${sessionId}`);
           console.log(`TRACE [handleTransformAll]: Response status: ${transformResponse.status} - ${sessionId}`);
           console.log(`TRACE [handleTransformAll]: Response ok: ${transformResponse.ok} - ${sessionId}`);
           console.log(`TRACE [handleTransformAll]: Response status text: ${transformResponse.statusText} - ${sessionId}`);
-
-          if (!transformResponse.ok) {
-            console.error(`ERROR [handleTransformAll]: Transform request failed with status ${transformResponse.status} - ${sessionId}`);
-            try {
-              const errorData = await transformResponse.json();
-              console.error(`ERROR [handleTransformAll]: Error response data: ${JSON.stringify(errorData)} - ${sessionId}`);
-              throw new Error(errorData.details || errorData.error || 'Transformation failed');
-            } catch (parseError) {
-              console.error(`ERROR [handleTransformAll]: Could not parse error response - ${sessionId}`);
-              throw new Error(`Transformation failed with status ${transformResponse.status}`);
-            }
-          }
 
           console.log(`TRACE [handleTransformAll]: Parsing transform response JSON - ${sessionId}`);
           const parseStartTime = Date.now();
