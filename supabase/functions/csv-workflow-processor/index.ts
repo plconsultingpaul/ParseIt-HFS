@@ -898,6 +898,10 @@ Deno.serve(async (req: Request) => {
                     rawValue = rawValue.replace(/\)\(/g, ')-(');
                     console.log(`🔧 Escaped )( to )-( in $filter param value:`, rawValue);
                   }
+                  if (isODataFilterParam && rawValue.includes("'")) {
+                    rawValue = rawValue.replace(/'/g, "''");
+                    console.log(`🔧 Escaped single quotes in $filter param value:`, rawValue);
+                  }
                   console.log(`🔄 Replaced query param variable ${match} with:`, rawValue);
                   return rawValue;
                 }
