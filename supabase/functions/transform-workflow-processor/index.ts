@@ -661,7 +661,7 @@ Deno.serve(async (req)=>{
             const placeholder = `{{${key}}}`;
             if (url.includes(placeholder) && !key.includes('.')) {
               const replacementValue = String(value || '');
-              const encodedValue = replacementValue;
+              const encodedValue = encodeURIComponent(replacementValue);
               url = url.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), encodedValue);
               console.log(`🔄 Replaced simple ${placeholder} with: ${replacementValue}`);
             }
