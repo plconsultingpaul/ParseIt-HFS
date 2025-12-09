@@ -1,7 +1,34 @@
 import { PDFDocument } from 'pdf-lib';
+import * as pdfjsLib from 'pdfjs-dist';
 import { extractTextFromPdfPages } from './pdfTextExtractor';
-import { detectPatternWithAI } from './aiSmartDetection';
+import { detectPatternWithAI, detectPatternWithAIImage, isTextSufficientForDetection } from './aiSmartDetection';
+import { withRetry } from './retryHelper';
 import type { PageGroupConfig, ManualGroupEdit } from '../types';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
+
+async function renderPdfPageToBase64(pdfFile: File, pageNumber: number): Promise<string> {
+  const arrayBuffer = await pdfFile.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const page = await pdf.getPage(pageNumber);
+
+  const scale = 2.0;
+  const viewport = page.getViewport({ scale });
+
+  const canvas = document.createElement('canvas');
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+
+  const context = canvas.getContext('2d');
+  if (!context) {
+    throw new Error('Failed to get canvas context');
+  }
+
+  await page.render({ canvasContext: context, viewport }).promise;
+
+  const dataUrl = canvas.toDataURL('image/png');
+  return dataUrl.split(',')[1];
+}
 
 export interface PdfSplittingOptions {
   pagesPerGroup?: number;
@@ -252,19 +279,40 @@ export async function splitPdfWithPageGroups(
         const useAI = groupConfig.useAiDetection && apiKey;
 
         if (useAI) {
-          // AI-powered detection
           console.log('🤖 Using AI-powered pattern detection');
           const confidenceThreshold = groupConfig.detectionConfidenceThreshold || 0.7;
 
           for (let pageIdx = currentPage; pageIdx < totalPages; pageIdx++) {
             const pageText = pageTexts[pageIdx];
+            const hasEnoughText = isTextSufficientForDetection(pageText);
+
             try {
-              const aiResult = await detectPatternWithAI({
-                pageText,
-                pattern: groupConfig.smartDetectionPattern,
-                confidenceThreshold,
-                apiKey: apiKey!
-              });
+              let aiResult;
+
+              if (hasEnoughText) {
+                console.log(`Page ${pageIdx + 1}: Using text-based detection (${pageText.length} chars)`);
+                aiResult = await withRetry(
+                  () => detectPatternWithAI({
+                    pageText,
+                    pattern: groupConfig.smartDetectionPattern,
+                    confidenceThreshold,
+                    apiKey: apiKey!
+                  }),
+                  `AI text detection for page ${pageIdx + 1}`
+                );
+              } else {
+                console.log(`Page ${pageIdx + 1}: Text insufficient (${pageText.length} chars), using image-based detection`);
+                const imageBase64 = await renderPdfPageToBase64(originalPdfFile, pageIdx + 1);
+                aiResult = await withRetry(
+                  () => detectPatternWithAIImage({
+                    imageBase64,
+                    pattern: groupConfig.smartDetectionPattern,
+                    confidenceThreshold,
+                    apiKey: apiKey!
+                  }),
+                  `AI image detection for page ${pageIdx + 1}`
+                );
+              }
 
               console.log(`Page ${pageIdx + 1} AI detection: match=${aiResult.match}, confidence=${aiResult.confidence.toFixed(2)}`);
               console.log(`  Reasoning: ${aiResult.reasoning}`);
@@ -278,7 +326,6 @@ export async function splitPdfWithPageGroups(
               }
             } catch (aiError) {
               console.error(`AI detection failed for page ${pageIdx + 1}:`, aiError);
-              // Fall back to simple text search on error
               const patternLower = groupConfig.smartDetectionPattern.toLowerCase();
               if (pageText.toLowerCase().includes(patternLower)) {
                 console.log(`⚠️ Fallback: Found pattern on page ${pageIdx + 1} using simple text search`);
