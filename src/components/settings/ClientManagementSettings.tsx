@@ -1,16 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Edit, Building2, CheckCircle, XCircle, FileText, DollarSign, BookUser } from 'lucide-react';
-import type { User, Client } from '../../types';
+import { createPortal } from 'react-dom';
+import { Plus, Trash2, Edit, Building2, CheckCircle, XCircle, FileText, DollarSign, BookUser, MapPin, Receipt, Search, Users } from 'lucide-react';
+import type { User, Client, TrackTraceTemplate, OrderEntryTemplate } from '../../types';
 import { supabase } from '../../lib/supabase';
+import Select from '../common/Select';
 
 interface ClientManagementSettingsProps {
   currentUser: User;
   getAllUsers: () => Promise<User[]>;
+  onManageUsers?: (clientId: string) => void;
 }
 
 export default function ClientManagementSettings({
   currentUser,
-  getAllUsers
+  getAllUsers,
+  onManageUsers
 }: ClientManagementSettingsProps) {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,7 +29,9 @@ export default function ClientManagementSettings({
     isActive: true,
     hasOrderEntryAccess: false,
     hasRateQuoteAccess: false,
-    hasAddressBookAccess: false
+    hasAddressBookAccess: false,
+    hasTrackTraceAccess: false,
+    hasInvoiceAccess: false
   });
   const [editClient, setEditClient] = useState({
     clientName: '',
@@ -33,18 +39,89 @@ export default function ClientManagementSettings({
     isActive: true,
     hasOrderEntryAccess: false,
     hasRateQuoteAccess: false,
-    hasAddressBookAccess: false
+    hasAddressBookAccess: false,
+    hasTrackTraceAccess: false,
+    hasInvoiceAccess: false,
+    trackTraceTemplateId: '' as string | undefined,
+    orderEntryTemplateId: '' as string | undefined
   });
+  const [templates, setTemplates] = useState<TrackTraceTemplate[]>([]);
+  const [orderEntryTemplates, setOrderEntryTemplates] = useState<OrderEntryTemplate[]>([]);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [clientUserCounts, setClientUserCounts] = useState<Record<string, number>>({});
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     loadClients();
+    loadTemplates();
+    loadOrderEntryTemplates();
   }, []);
+
+  const loadTemplates = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('track_trace_templates')
+        .select('*')
+        .eq('is_active', true)
+        .order('name');
+
+      if (error) throw error;
+
+      const templatesData: TrackTraceTemplate[] = (data || []).map(t => ({
+        id: t.id,
+        name: t.name,
+        description: t.description,
+        apiSourceType: t.api_source_type,
+        secondaryApiId: t.secondary_api_id,
+        apiSpecId: t.api_spec_id,
+        apiSpecEndpointId: t.api_spec_endpoint_id,
+        apiPath: t.api_path,
+        httpMethod: t.http_method,
+        limitOptions: t.limit_options || [10, 25, 50, 100],
+        orderByOptions: t.order_by_options || [],
+        defaultLimit: t.default_limit,
+        defaultOrderBy: t.default_order_by,
+        defaultOrderDirection: t.default_order_direction,
+        isActive: t.is_active,
+        createdAt: t.created_at,
+        updatedAt: t.updated_at
+      }));
+
+      setTemplates(templatesData);
+    } catch (error) {
+      console.error('Failed to load templates:', error);
+    }
+  };
+
+  const loadOrderEntryTemplates = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('order_entry_templates')
+        .select('*')
+        .eq('is_active', true)
+        .order('name');
+
+      if (error) throw error;
+
+      const templatesData: OrderEntryTemplate[] = (data || []).map(t => ({
+        id: t.id,
+        name: t.name,
+        description: t.description,
+        workflowId: t.workflow_id,
+        isActive: t.is_active,
+        createdAt: t.created_at,
+        updatedAt: t.updated_at
+      }));
+
+      setOrderEntryTemplates(templatesData);
+    } catch (error) {
+      console.error('Failed to load order entry templates:', error);
+    }
+  };
 
   const loadClients = async () => {
     setLoading(true);
@@ -64,6 +141,10 @@ export default function ClientManagementSettings({
         hasOrderEntryAccess: client.has_order_entry_access,
         hasRateQuoteAccess: client.has_rate_quote_access,
         hasAddressBookAccess: client.has_address_book_access || false,
+        hasTrackTraceAccess: client.has_track_trace_access || false,
+        hasInvoiceAccess: client.has_invoice_access || false,
+        trackTraceTemplateId: client.track_trace_template_id,
+        orderEntryTemplateId: client.order_entry_template_id,
         createdAt: client.created_at,
         updatedAt: client.updated_at
       }));
@@ -103,7 +184,9 @@ export default function ClientManagementSettings({
           is_active: newClient.isActive,
           has_order_entry_access: newClient.hasOrderEntryAccess,
           has_rate_quote_access: newClient.hasRateQuoteAccess,
-          has_address_book_access: newClient.hasAddressBookAccess
+          has_address_book_access: newClient.hasAddressBookAccess,
+          has_track_trace_access: newClient.hasTrackTraceAccess,
+          has_invoice_access: newClient.hasInvoiceAccess
         }])
         .select();
 
@@ -124,7 +207,9 @@ export default function ClientManagementSettings({
         isActive: true,
         hasOrderEntryAccess: false,
         hasRateQuoteAccess: false,
-        hasAddressBookAccess: false
+        hasAddressBookAccess: false,
+        hasTrackTraceAccess: false,
+        hasInvoiceAccess: false
       });
       await loadClients();
       setTimeout(() => setSuccess(''), 3000);
@@ -144,7 +229,11 @@ export default function ClientManagementSettings({
       isActive: client.isActive,
       hasOrderEntryAccess: client.hasOrderEntryAccess,
       hasRateQuoteAccess: client.hasRateQuoteAccess,
-      hasAddressBookAccess: client.hasAddressBookAccess
+      hasAddressBookAccess: client.hasAddressBookAccess,
+      hasTrackTraceAccess: client.hasTrackTraceAccess,
+      hasInvoiceAccess: client.hasInvoiceAccess,
+      trackTraceTemplateId: client.trackTraceTemplateId,
+      orderEntryTemplateId: client.orderEntryTemplateId
     });
     setShowEditClientModal(true);
     setError('');
@@ -172,6 +261,10 @@ export default function ClientManagementSettings({
           has_order_entry_access: editClient.hasOrderEntryAccess,
           has_rate_quote_access: editClient.hasRateQuoteAccess,
           has_address_book_access: editClient.hasAddressBookAccess,
+          has_track_trace_access: editClient.hasTrackTraceAccess,
+          has_invoice_access: editClient.hasInvoiceAccess,
+          track_trace_template_id: editClient.hasTrackTraceAccess && editClient.trackTraceTemplateId ? editClient.trackTraceTemplateId : null,
+          order_entry_template_id: editClient.hasOrderEntryAccess && editClient.orderEntryTemplateId ? editClient.orderEntryTemplateId : null,
           updated_at: new Date().toISOString()
         })
         .eq('id', clientToEdit.id);
@@ -242,7 +335,7 @@ export default function ClientManagementSettings({
 
   return (
     <div className="space-y-6">
-      {showAddClientModal && (
+      {showAddClientModal && createPortal(
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 pt-20">
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
             <div className="text-center mb-6">
@@ -300,13 +393,41 @@ export default function ClientManagementSettings({
                   <div className="flex items-center space-x-2">
                     <input
                       type="checkbox"
+                      id="newClientTrackTrace"
+                      checked={newClient.hasTrackTraceAccess}
+                      onChange={(e) => setNewClient(prev => ({ ...prev, hasTrackTraceAccess: e.target.checked }))}
+                      className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500"
+                    />
+                    <label htmlFor="newClientTrackTrace" className="text-sm text-gray-700 dark:text-gray-300 flex items-center space-x-2">
+                      <MapPin className="h-4 w-4 text-green-600" />
+                      <span>Track & Trace Access</span>
+                    </label>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="newClientInvoice"
+                      checked={newClient.hasInvoiceAccess}
+                      onChange={(e) => setNewClient(prev => ({ ...prev, hasInvoiceAccess: e.target.checked }))}
+                      className="w-4 h-4 text-cyan-600 border-gray-300 rounded focus:ring-cyan-500"
+                    />
+                    <label htmlFor="newClientInvoice" className="text-sm text-gray-700 dark:text-gray-300 flex items-center space-x-2">
+                      <Receipt className="h-4 w-4 text-cyan-600" />
+                      <span>Invoice Access</span>
+                    </label>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
                       id="newClientOrderEntry"
                       checked={newClient.hasOrderEntryAccess}
                       onChange={(e) => setNewClient(prev => ({ ...prev, hasOrderEntryAccess: e.target.checked }))}
-                      className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                     />
                     <label htmlFor="newClientOrderEntry" className="text-sm text-gray-700 dark:text-gray-300 flex items-center space-x-2">
-                      <FileText className="h-4 w-4 text-purple-600" />
+                      <FileText className="h-4 w-4 text-blue-600" />
                       <span>Order Entry Access</span>
                     </label>
                   </div>
@@ -317,10 +438,10 @@ export default function ClientManagementSettings({
                       id="newClientRateQuote"
                       checked={newClient.hasRateQuoteAccess}
                       onChange={(e) => setNewClient(prev => ({ ...prev, hasRateQuoteAccess: e.target.checked }))}
-                      className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                      className="w-4 h-4 text-amber-600 border-gray-300 rounded focus:ring-amber-500"
                     />
                     <label htmlFor="newClientRateQuote" className="text-sm text-gray-700 dark:text-gray-300 flex items-center space-x-2">
-                      <DollarSign className="h-4 w-4 text-purple-600" />
+                      <DollarSign className="h-4 w-4 text-amber-600" />
                       <span>Rate Quote Access</span>
                     </label>
                   </div>
@@ -331,10 +452,10 @@ export default function ClientManagementSettings({
                       id="newClientAddressBook"
                       checked={newClient.hasAddressBookAccess}
                       onChange={(e) => setNewClient(prev => ({ ...prev, hasAddressBookAccess: e.target.checked }))}
-                      className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                      className="w-4 h-4 text-rose-600 border-gray-300 rounded focus:ring-rose-500"
                     />
                     <label htmlFor="newClientAddressBook" className="text-sm text-gray-700 dark:text-gray-300 flex items-center space-x-2">
-                      <BookUser className="h-4 w-4 text-purple-600" />
+                      <BookUser className="h-4 w-4 text-rose-600" />
                       <span>Address Book Access</span>
                     </label>
                   </div>
@@ -364,7 +485,9 @@ export default function ClientManagementSettings({
                       isActive: true,
                       hasOrderEntryAccess: false,
                       hasRateQuoteAccess: false,
-                      hasAddressBookAccess: false
+                      hasAddressBookAccess: false,
+                      hasTrackTraceAccess: false,
+                      hasInvoiceAccess: false
                     });
                     setError('');
                   }}
@@ -375,10 +498,11 @@ export default function ClientManagementSettings({
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {showEditClientModal && clientToEdit && (
+      {showEditClientModal && clientToEdit && createPortal(
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 pt-20">
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
             <div className="text-center mb-6">
@@ -434,9 +558,59 @@ export default function ClientManagementSettings({
                   <div className="flex items-center space-x-2">
                     <input
                       type="checkbox"
+                      id="editClientTrackTrace"
+                      checked={editClient.hasTrackTraceAccess}
+                      onChange={(e) => setEditClient(prev => ({ ...prev, hasTrackTraceAccess: e.target.checked, trackTraceTemplateId: e.target.checked ? prev.trackTraceTemplateId : undefined }))}
+                      className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500"
+                    />
+                    <label htmlFor="editClientTrackTrace" className="text-sm text-gray-700 dark:text-gray-300 flex items-center space-x-2">
+                      <MapPin className="h-4 w-4 text-green-600" />
+                      <span>Track & Trace Access</span>
+                    </label>
+                  </div>
+
+                  {editClient.hasTrackTraceAccess && (
+                    <div className="ml-6 mt-2">
+                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                        Track & Trace Template
+                      </label>
+                      <Select
+                        value={editClient.trackTraceTemplateId || '__none__'}
+                        onValueChange={(value) => setEditClient(prev => ({ ...prev, trackTraceTemplateId: value === '__none__' ? undefined : value }))}
+                        options={[
+                          { value: '__none__', label: 'No template selected' },
+                          ...templates.map(t => ({ value: t.id, label: t.name }))
+                        ]}
+                        searchable
+                      />
+                      {templates.length === 0 && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          No templates available. Create templates in Settings.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="editClientInvoice"
+                      checked={editClient.hasInvoiceAccess}
+                      onChange={(e) => setEditClient(prev => ({ ...prev, hasInvoiceAccess: e.target.checked }))}
+                      className="w-4 h-4 text-cyan-600 border-gray-300 rounded focus:ring-cyan-500"
+                    />
+                    <label htmlFor="editClientInvoice" className="text-sm text-gray-700 dark:text-gray-300 flex items-center space-x-2">
+                      <Receipt className="h-4 w-4 text-cyan-600" />
+                      <span>Invoice Access</span>
+                    </label>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
                       id="editClientOrderEntry"
                       checked={editClient.hasOrderEntryAccess}
-                      onChange={(e) => setEditClient(prev => ({ ...prev, hasOrderEntryAccess: e.target.checked }))}
+                      onChange={(e) => setEditClient(prev => ({ ...prev, hasOrderEntryAccess: e.target.checked, orderEntryTemplateId: e.target.checked ? prev.orderEntryTemplateId : undefined }))}
                       className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                     />
                     <label htmlFor="editClientOrderEntry" className="text-sm text-gray-700 dark:text-gray-300 flex items-center space-x-2">
@@ -445,16 +619,38 @@ export default function ClientManagementSettings({
                     </label>
                   </div>
 
+                  {editClient.hasOrderEntryAccess && (
+                    <div className="ml-6 mt-2">
+                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                        Order Entry Template
+                      </label>
+                      <Select
+                        value={editClient.orderEntryTemplateId || '__none__'}
+                        onValueChange={(value) => setEditClient(prev => ({ ...prev, orderEntryTemplateId: value === '__none__' ? undefined : value }))}
+                        options={[
+                          { value: '__none__', label: 'No template selected' },
+                          ...orderEntryTemplates.map(t => ({ value: t.id, label: t.name }))
+                        ]}
+                        searchable
+                      />
+                      {orderEntryTemplates.length === 0 && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          No templates available. Create templates in Client Setup {'>'} Order Entry.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   <div className="flex items-center space-x-2">
                     <input
                       type="checkbox"
                       id="editClientRateQuote"
                       checked={editClient.hasRateQuoteAccess}
                       onChange={(e) => setEditClient(prev => ({ ...prev, hasRateQuoteAccess: e.target.checked }))}
-                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      className="w-4 h-4 text-amber-600 border-gray-300 rounded focus:ring-amber-500"
                     />
                     <label htmlFor="editClientRateQuote" className="text-sm text-gray-700 dark:text-gray-300 flex items-center space-x-2">
-                      <DollarSign className="h-4 w-4 text-blue-600" />
+                      <DollarSign className="h-4 w-4 text-amber-600" />
                       <span>Rate Quote Access</span>
                     </label>
                   </div>
@@ -465,10 +661,10 @@ export default function ClientManagementSettings({
                       id="editClientAddressBook"
                       checked={editClient.hasAddressBookAccess}
                       onChange={(e) => setEditClient(prev => ({ ...prev, hasAddressBookAccess: e.target.checked }))}
-                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      className="w-4 h-4 text-rose-600 border-gray-300 rounded focus:ring-rose-500"
                     />
                     <label htmlFor="editClientAddressBook" className="text-sm text-gray-700 dark:text-gray-300 flex items-center space-x-2">
-                      <BookUser className="h-4 w-4 text-blue-600" />
+                      <BookUser className="h-4 w-4 text-rose-600" />
                       <span>Address Book Access</span>
                     </label>
                   </div>
@@ -502,10 +698,11 @@ export default function ClientManagementSettings({
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {showDeleteClientModal && clientToDelete && (
+      {showDeleteClientModal && clientToDelete && createPortal(
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 pt-20">
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
             <div className="text-center mb-6">
@@ -550,7 +747,8 @@ export default function ClientManagementSettings({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       <div className="flex items-center justify-between">
@@ -558,13 +756,25 @@ export default function ClientManagementSettings({
           <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">Client Management</h3>
           <p className="text-gray-600 dark:text-gray-400 mt-1">Manage client companies and their feature access permissions</p>
         </div>
-        <button
-          onClick={() => setShowAddClientModal(true)}
-          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
-        >
-          <Plus className="h-4 w-4" />
-          <span>Add Client</span>
-        </button>
+        <div className="flex items-center space-x-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search clients..."
+              className="pl-9 pr-4 py-2 w-64 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+            />
+          </div>
+          <button
+            onClick={() => setShowAddClientModal(true)}
+            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Add Client</span>
+          </button>
+        </div>
       </div>
 
       {success && (
@@ -587,116 +797,136 @@ export default function ClientManagementSettings({
         </div>
       )}
 
-      {clients.length === 0 ? (
-        <div className="text-center py-12 bg-gray-50 dark:bg-gray-700 rounded-xl">
-          <Building2 className="h-12 w-12 text-gray-400 dark:text-gray-500 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No Clients Yet</h3>
-          <p className="text-gray-600 dark:text-gray-400 mb-4">Get started by creating your first client company.</p>
-          <button
-            onClick={() => setShowAddClientModal(true)}
-            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2 mx-auto"
-          >
-            <Plus className="h-4 w-4" />
-            <span>Add First Client</span>
-          </button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {clients.map((client) => (
-            <div
-              key={client.id}
-              className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 hover:shadow-lg transition-shadow duration-200"
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center space-x-3">
-                  <div className="bg-purple-100 dark:bg-purple-900/50 p-2 rounded-lg">
-                    <Building2 className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-gray-900 dark:text-gray-100">{client.clientName}</h4>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">ID: {client.clientId}</p>
-                  </div>
-                </div>
-                <div className="flex items-center space-x-1">
-                  <button
-                    onClick={() => handleEditClient(client)}
-                    className="p-1 text-blue-500 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors duration-200"
-                    title="Edit client"
-                  >
-                    <Edit className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDeleteClient(client)}
-                    className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors duration-200"
-                    title="Delete client"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
+      {(() => {
+        const filteredClients = clients.filter(client =>
+          client.clientName.toLowerCase().includes(searchQuery.toLowerCase())
+        );
 
-              <div className="space-y-3">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600 dark:text-gray-400">Status</span>
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    client.isActive
-                      ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200'
-                      : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-                  }`}>
-                    {client.isActive ? 'Active' : 'Inactive'}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600 dark:text-gray-400">Users</span>
-                  <span className="font-medium text-gray-900 dark:text-gray-100">
-                    {clientUserCounts[client.id] || 0}
-                  </span>
-                </div>
-
-                <div className="border-t border-gray-200 dark:border-gray-700 pt-3">
-                  <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">Feature Access</p>
-                  <div className="flex flex-wrap gap-2">
-                    {client.hasOrderEntryAccess ? (
-                      <span className="flex items-center space-x-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 text-xs rounded-full">
-                        <CheckCircle className="h-3 w-3" />
-                        <span>Order Entry</span>
-                      </span>
-                    ) : (
-                      <span className="flex items-center space-x-1 px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs rounded-full">
-                        <XCircle className="h-3 w-3" />
-                        <span>Order Entry</span>
-                      </span>
-                    )}
-                    {client.hasRateQuoteAccess ? (
-                      <span className="flex items-center space-x-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 text-xs rounded-full">
-                        <CheckCircle className="h-3 w-3" />
-                        <span>Rate Quote</span>
-                      </span>
-                    ) : (
-                      <span className="flex items-center space-x-1 px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs rounded-full">
-                        <XCircle className="h-3 w-3" />
-                        <span>Rate Quote</span>
-                      </span>
-                    )}
-                    {client.hasAddressBookAccess ? (
-                      <span className="flex items-center space-x-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 text-xs rounded-full">
-                        <CheckCircle className="h-3 w-3" />
-                        <span>Address Book</span>
-                      </span>
-                    ) : (
-                      <span className="flex items-center space-x-1 px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs rounded-full">
-                        <XCircle className="h-3 w-3" />
-                        <span>Address Book</span>
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
+        if (clients.length === 0) {
+          return (
+            <div className="text-center py-12 bg-gray-50 dark:bg-gray-700 rounded-xl">
+              <Building2 className="h-12 w-12 text-gray-400 dark:text-gray-500 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No Clients Yet</h3>
+              <p className="text-gray-600 dark:text-gray-400 mb-4">Get started by creating your first client company.</p>
+              <button
+                onClick={() => setShowAddClientModal(true)}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2 mx-auto"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Add First Client</span>
+              </button>
             </div>
-          ))}
-        </div>
-      )}
+          );
+        }
+
+        if (filteredClients.length === 0) {
+          return (
+            <div className="text-center py-12 bg-gray-50 dark:bg-gray-700 rounded-xl">
+              <Search className="h-12 w-12 text-gray-400 dark:text-gray-500 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No Clients Found</h3>
+              <p className="text-gray-600 dark:text-gray-400">No clients match "{searchQuery}"</p>
+            </div>
+          );
+        }
+
+        return (
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+            <div className="divide-y divide-gray-200 dark:divide-gray-700">
+              {filteredClients.map((client) => (
+                <div
+                  key={client.id}
+                  className="flex items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-200"
+                >
+                  <div className="flex items-center space-x-3 min-w-[200px]">
+                    <div className="bg-gray-100 dark:bg-gray-700 p-2 rounded-lg">
+                      <Building2 className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 dark:text-gray-100">{client.clientName}</h4>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">ID: {client.clientId}</p>
+                    </div>
+                  </div>
+
+                  <div className="ml-4">
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      client.isActive
+                        ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200'
+                        : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                    }`}>
+                      {client.isActive ? 'Active' : 'Inactive'}
+                    </span>
+                  </div>
+
+                  <div className="ml-4 flex items-center space-x-1 text-sm text-gray-600 dark:text-gray-400">
+                    <span>Users</span>
+                    <span className="font-semibold text-gray-900 dark:text-gray-100">{clientUserCounts[client.id] || 0}</span>
+                  </div>
+
+                  <div className="ml-6 flex items-center space-x-1">
+                    <span className="text-xs text-gray-500 dark:text-gray-400 mr-2">Feature Access</span>
+                    {client.hasTrackTraceAccess && (
+                      <span className="flex items-center space-x-1 px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 text-xs rounded-full">
+                        <CheckCircle className="h-3 w-3" />
+                        <span>Track & Trace</span>
+                      </span>
+                    )}
+                    {client.hasInvoiceAccess && (
+                      <span className="flex items-center space-x-1 px-2 py-1 bg-cyan-100 dark:bg-cyan-900/30 text-cyan-800 dark:text-cyan-300 text-xs rounded-full">
+                        <CheckCircle className="h-3 w-3" />
+                        <span>Invoice</span>
+                      </span>
+                    )}
+                    {client.hasOrderEntryAccess && (
+                      <span className="flex items-center space-x-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 text-xs rounded-full">
+                        <CheckCircle className="h-3 w-3" />
+                        <span>Order Entry</span>
+                      </span>
+                    )}
+                    {client.hasRateQuoteAccess && (
+                      <span className="flex items-center space-x-1 px-2 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 text-xs rounded-full">
+                        <CheckCircle className="h-3 w-3" />
+                        <span>Rate Quote</span>
+                      </span>
+                    )}
+                    {client.hasAddressBookAccess && (
+                      <span className="flex items-center space-x-1 px-2 py-1 bg-rose-100 dark:bg-rose-900/30 text-rose-800 dark:text-rose-300 text-xs rounded-full">
+                        <CheckCircle className="h-3 w-3" />
+                        <span>Address Book</span>
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="ml-auto flex items-center space-x-1">
+                    {onManageUsers && (
+                      <button
+                        onClick={() => onManageUsers(client.id)}
+                        className="p-1.5 text-purple-500 hover:text-purple-700 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded transition-colors duration-200"
+                        title="Manage users"
+                      >
+                        <Users className="h-4 w-4" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleEditClient(client)}
+                      className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors duration-200"
+                      title="Edit client"
+                    >
+                      <Edit className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteClient(client)}
+                      className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors duration-200"
+                      title="Delete client"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700 rounded-lg p-4">
         <h4 className="font-semibold text-purple-800 dark:text-purple-300 mb-2">Client Management Information</h4>
