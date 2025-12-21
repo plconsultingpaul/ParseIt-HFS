@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { Save, Mail, TestTube, Play, Pause, Cloud, Globe, Send, Filter } from 'lucide-react';
-import type { EmailMonitoringConfig, EmailProcessingRule, ExtractionType, TransformationType } from '../../types';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Save, Mail, TestTube, Play, Pause, Cloud, Globe, Send, Filter, Clock, Calendar, CheckCircle, XCircle, AlertCircle, Settings, RefreshCw } from 'lucide-react';
+import type { EmailMonitoringConfig, EmailProcessingRule, ExtractionType, TransformationType, CronStatus, CronSettings, PostProcessAction } from '../../types';
 import EmailRulesSettings from './EmailRulesSettings';
+import { supabase } from '../../lib/supabase';
 
 interface EmailMonitoringSettingsProps {
   emailConfig: EmailMonitoringConfig;
@@ -28,8 +29,12 @@ export default function EmailMonitoringSettings({
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string; emailCount?: number } | null>(null);
   const [isTesting, setIsTesting] = useState(false);
+  const [sendCredResult, setSendCredResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [isTestingSend, setIsTestingSend] = useState(false);
   const [gmailTestResult, setGmailTestResult] = useState<{ success: boolean; message: string; emailCount?: number } | null>(null);
   const [isTestingGmail, setIsTestingGmail] = useState(false);
+  const [runMonitoringResult, setRunMonitoringResult] = useState<{ success: boolean; message: string; emailsChecked?: number; emailsProcessed?: number } | null>(null);
+  const [isRunningMonitoring, setIsRunningMonitoring] = useState(false);
   const [showSendTestModal, setShowSendTestModal] = useState(false);
   const [testEmailData, setTestEmailData] = useState({
     testToEmail: '',
@@ -38,6 +43,119 @@ export default function EmailMonitoringSettings({
   });
   const [sendTestResult, setSendTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [isSendingTest, setIsSendingTest] = useState(false);
+  const [cronStatus, setCronStatus] = useState<CronStatus | null>(null);
+  const [cronSettings, setCronSettings] = useState<CronSettings | null>(null);
+  const [isLoadingCron, setIsLoadingCron] = useState(false);
+  const [cronActionResult, setCronActionResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [showCronConfig, setShowCronConfig] = useState(false);
+  const [cronConfigData, setCronConfigData] = useState({ supabaseUrl: '', supabaseAnonKey: '' });
+
+  const fetchCronStatus = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.rpc('get_email_cron_status');
+      if (error) throw error;
+      setCronStatus({
+        configured: data.configured,
+        cronSettingsConfigured: data.cron_settings_configured,
+        supabaseUrlSet: data.supabase_url_set,
+        supabaseAnonKeySet: data.supabase_anon_key_set,
+        enabled: data.enabled,
+        jobExists: data.job_exists,
+        jobId: data.job_id,
+        schedule: data.schedule,
+        pollingInterval: data.polling_interval,
+        lastCronRun: data.last_cron_run,
+        nextCronRun: data.next_cron_run,
+        lastRunStatus: data.last_run_status,
+        lastRunTime: data.last_run_time,
+        lastRunEnd: data.last_run_end,
+        lastRunReturnMessage: data.last_run_return_message,
+        error: data.error
+      });
+    } catch (error) {
+      console.error('Failed to fetch cron status:', error);
+    }
+  }, []);
+
+  const fetchCronSettings = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.rpc('get_cron_settings');
+      if (error) throw error;
+      setCronSettings({
+        configured: data.configured,
+        supabaseUrl: data.supabase_url || '',
+        supabaseAnonKeyMasked: data.supabase_anon_key_masked || ''
+      });
+      if (data.supabase_url) {
+        setCronConfigData(prev => ({ ...prev, supabaseUrl: data.supabase_url }));
+      }
+    } catch (error) {
+      console.error('Failed to fetch cron settings:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCronStatus();
+    fetchCronSettings();
+  }, [fetchCronStatus, fetchCronSettings]);
+
+  const handleSaveCronSettings = async () => {
+    setIsLoadingCron(true);
+    setCronActionResult(null);
+    try {
+      const { error } = await supabase.rpc('save_cron_settings', {
+        p_supabase_url: cronConfigData.supabaseUrl,
+        p_supabase_anon_key: cronConfigData.supabaseAnonKey
+      });
+      if (error) throw error;
+      setCronActionResult({ success: true, message: 'Cron settings saved successfully!' });
+      setShowCronConfig(false);
+      await fetchCronSettings();
+      await fetchCronStatus();
+    } catch (error: any) {
+      setCronActionResult({ success: false, message: error.message || 'Failed to save cron settings' });
+    } finally {
+      setIsLoadingCron(false);
+    }
+  };
+
+  const handleScheduleCron = async () => {
+    setIsLoadingCron(true);
+    setCronActionResult(null);
+    try {
+      const { data, error } = await supabase.rpc('schedule_email_monitoring');
+      if (error) throw error;
+      if (data.success) {
+        setCronActionResult({ success: true, message: `Scheduled! Job ID: ${data.job_id}, Schedule: ${data.schedule}` });
+      } else {
+        setCronActionResult({ success: false, message: data.error });
+      }
+      await fetchCronStatus();
+    } catch (error: any) {
+      setCronActionResult({ success: false, message: error.message || 'Failed to schedule cron job' });
+    } finally {
+      setIsLoadingCron(false);
+    }
+  };
+
+  const handleUnscheduleCron = async () => {
+    setIsLoadingCron(true);
+    setCronActionResult(null);
+    try {
+      const { data, error } = await supabase.rpc('unschedule_email_monitoring');
+      if (error) throw error;
+      if (data.success) {
+        setCronActionResult({ success: true, message: 'Scheduled monitoring disabled successfully!' });
+      } else {
+        setCronActionResult({ success: false, message: data.error });
+      }
+      await fetchCronStatus();
+    } catch (error: any) {
+      setCronActionResult({ success: false, message: error.message || 'Failed to unschedule cron job' });
+    } finally {
+      setIsLoadingCron(false);
+    }
+  };
 
   // Sync local state when emailConfig prop updates (e.g., when loaded from database)
   useEffect(() => {
@@ -81,14 +199,14 @@ export default function EmailMonitoringSettings({
     }
   };
 
-  const handleTestOffice365 = async () => {
-    setIsTesting(true);
-    setTestResult(null);
-    
+  const handleTestSendCredentials = async () => {
+    setIsTestingSend(true);
+    setSendCredResult(null);
+
     try {
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      
+
       const response = await fetch(`${supabaseUrl}/functions/v1/test-office365`, {
         method: 'POST',
         headers: {
@@ -96,16 +214,71 @@ export default function EmailMonitoringSettings({
           'Authorization': `Bearer ${supabaseAnonKey}`,
         },
         body: JSON.stringify({
-          provider: 'office365',
+          mode: 'send',
+          provider: localConfig.provider,
           tenantId: localConfig.tenantId,
           clientId: localConfig.clientId,
           clientSecret: localConfig.clientSecret,
+          defaultSendFromEmail: localConfig.defaultSendFromEmail,
+          gmailClientId: localConfig.gmailClientId,
+          gmailClientSecret: localConfig.gmailClientSecret,
+          gmailRefreshToken: localConfig.gmailRefreshToken
+        })
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        setSendCredResult({
+          success: true,
+          message: result.message || 'Send credentials verified successfully'
+        });
+      } else {
+        setSendCredResult({
+          success: false,
+          message: result.details || result.error || 'Send credential test failed'
+        });
+      }
+    } catch (error) {
+      setSendCredResult({
+        success: false,
+        message: 'Send credential test failed. Please check your settings.'
+      });
+    } finally {
+      setIsTestingSend(false);
+    }
+  };
+
+  const handleTestOffice365 = async () => {
+    setIsTesting(true);
+    setTestResult(null);
+
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+      const monitoringTenantId = localConfig.monitoringTenantId || localConfig.tenantId;
+      const monitoringClientId = localConfig.monitoringClientId || localConfig.clientId;
+      const monitoringClientSecret = localConfig.monitoringClientSecret || localConfig.clientSecret;
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/test-office365`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseAnonKey}`,
+        },
+        body: JSON.stringify({
+          mode: 'monitoring',
+          provider: 'office365',
+          tenantId: monitoringTenantId,
+          clientId: monitoringClientId,
+          clientSecret: monitoringClientSecret,
           monitoredEmail: localConfig.monitoredEmail
         })
       });
 
       const result = await response.json();
-      
+
       if (response.ok) {
         setTestResult({
           success: true,
@@ -121,7 +294,7 @@ export default function EmailMonitoringSettings({
     } catch (error) {
       setTestResult({
         success: false,
-        message: 'Office 365 connection test failed. Please check your settings.'
+        message: 'Monitoring connection test failed. Please check your settings.'
       });
     } finally {
       setIsTesting(false);
@@ -176,6 +349,9 @@ export default function EmailMonitoringSettings({
   };
 
   const handleRunMonitoring = async () => {
+    setIsRunningMonitoring(true);
+    setRunMonitoringResult(null);
+
     try {
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -191,12 +367,25 @@ export default function EmailMonitoringSettings({
       const result = await response.json();
 
       if (response.ok) {
-        alert(`Email monitoring completed successfully!\n\nEmails checked: ${result.emailsChecked || 0}\nEmails processed: ${result.emailsProcessed || 0}\n\nCheck the "Polling Logs" tab to see detailed activity.`);
+        setRunMonitoringResult({
+          success: true,
+          message: 'Email monitoring completed successfully',
+          emailsChecked: result.emailsChecked || 0,
+          emailsProcessed: result.emailsProcessed || 0
+        });
       } else {
-        alert(`Email monitoring failed: ${result.details || result.error}`);
+        setRunMonitoringResult({
+          success: false,
+          message: result.details || result.error || 'Email monitoring failed'
+        });
       }
     } catch (error) {
-      alert('Failed to run email monitoring. Please try again.');
+      setRunMonitoringResult({
+        success: false,
+        message: 'Failed to run email monitoring. Please try again.'
+      });
+    } finally {
+      setIsRunningMonitoring(false);
     }
   };
 
@@ -310,6 +499,14 @@ export default function EmailMonitoringSettings({
           <p className="text-gray-600 dark:text-gray-400 mt-1">Configure email monitoring for automatic PDF processing</p>
         </div>
         <div className="flex items-center space-x-3">
+          <button
+            onClick={handleTestSendCredentials}
+            disabled={isTestingSend}
+            className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
+          >
+            <TestTube className="h-4 w-4" />
+            <span>{isTestingSend ? 'Testing...' : 'Test Send'}</span>
+          </button>
           {localConfig.provider === 'office365' && (
             <button
               onClick={handleTestOffice365}
@@ -317,7 +514,7 @@ export default function EmailMonitoringSettings({
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
             >
               <TestTube className="h-4 w-4" />
-              <span>{isTesting ? 'Testing...' : 'Test Office 365'}</span>
+              <span>{isTesting ? 'Testing...' : 'Test Monitoring'}</span>
             </button>
           )}
           {localConfig.provider === 'gmail' && (
@@ -327,7 +524,7 @@ export default function EmailMonitoringSettings({
               className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
             >
               <TestTube className="h-4 w-4" />
-              <span>{isTestingGmail ? 'Testing...' : 'Test Gmail'}</span>
+              <span>{isTestingGmail ? 'Testing...' : 'Test Monitoring'}</span>
             </button>
           )}
           <button
@@ -339,10 +536,11 @@ export default function EmailMonitoringSettings({
           </button>
           <button
             onClick={handleRunMonitoring}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
+            disabled={isRunningMonitoring}
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
           >
-            <Play className="h-4 w-4" />
-            <span>Run Now</span>
+            <Play className={`h-4 w-4 ${isRunningMonitoring ? 'animate-pulse' : ''}`} />
+            <span>{isRunningMonitoring ? 'Running...' : 'Run Now'}</span>
           </button>
           <button
             onClick={handleSave}
@@ -365,10 +563,34 @@ export default function EmailMonitoringSettings({
         </div>
       )}
 
+      {sendCredResult && (
+        <div className={`border rounded-lg p-4 ${
+          sendCredResult.success
+            ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700'
+            : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700'
+        }`}>
+          <div className="flex items-center space-x-2">
+            <div className={`w-4 h-4 rounded-full ${
+              sendCredResult.success ? 'bg-green-500' : 'bg-red-500'
+            }`}></div>
+            <span className={`font-semibold ${
+              sendCredResult.success ? 'text-green-800' : 'text-red-800'
+            } dark:${sendCredResult.success ? 'text-green-300' : 'text-red-300'}`}>
+              {sendCredResult.success ? 'Send Credentials Test Passed' : 'Send Credentials Test Failed'}
+            </span>
+          </div>
+          <p className={`text-sm mt-1 ${
+            sendCredResult.success ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'
+          }`}>
+            {sendCredResult.message}
+          </p>
+        </div>
+      )}
+
       {testResult && (
         <div className={`border rounded-lg p-4 ${
-          testResult.success 
-            ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700' 
+          testResult.success
+            ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700'
             : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700'
         }`}>
           <div className="flex items-center space-x-2">
@@ -378,7 +600,7 @@ export default function EmailMonitoringSettings({
             <span className={`font-semibold ${
               testResult.success ? 'text-green-800' : 'text-red-800'
             } dark:${testResult.success ? 'text-green-300' : 'text-red-300'}`}>
-              {testResult.success ? 'Connection Test Passed' : 'Connection Test Failed'}
+              {testResult.success ? 'Monitoring Test Passed' : 'Monitoring Test Failed'}
             </span>
           </div>
           <p className={`text-sm mt-1 ${
@@ -394,8 +616,8 @@ export default function EmailMonitoringSettings({
 
       {gmailTestResult && (
         <div className={`border rounded-lg p-4 ${
-          gmailTestResult.success 
-            ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700' 
+          gmailTestResult.success
+            ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700'
             : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700'
         }`}>
           <div className="flex items-center space-x-2">
@@ -416,6 +638,57 @@ export default function EmailMonitoringSettings({
               <span className="block mt-1">Recent emails found: {gmailTestResult.emailCount}</span>
             )}
           </p>
+        </div>
+      )}
+
+      {runMonitoringResult && (
+        <div className={`border rounded-lg p-4 ${
+          runMonitoringResult.success
+            ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700'
+            : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700'
+        }`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              {runMonitoringResult.success ? (
+                <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
+              ) : (
+                <XCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
+              )}
+              <span className={`font-semibold ${
+                runMonitoringResult.success ? 'text-green-800 dark:text-green-300' : 'text-red-800 dark:text-red-300'
+              }`}>
+                {runMonitoringResult.success ? 'Monitoring Run Complete' : 'Monitoring Run Failed'}
+              </span>
+            </div>
+            <button
+              onClick={() => setRunMonitoringResult(null)}
+              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            >
+              <span className="text-xl">&times;</span>
+            </button>
+          </div>
+          <p className={`text-sm mt-2 ${
+            runMonitoringResult.success ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'
+          }`}>
+            {runMonitoringResult.message}
+          </p>
+          {runMonitoringResult.success && (
+            <div className="mt-3 grid grid-cols-2 gap-4">
+              <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-green-200 dark:border-green-700">
+                <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Emails Checked</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{runMonitoringResult.emailsChecked}</p>
+              </div>
+              <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-green-200 dark:border-green-700">
+                <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Emails Processed</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{runMonitoringResult.emailsProcessed}</p>
+              </div>
+            </div>
+          )}
+          {runMonitoringResult.success && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">
+              Check the "Polling Logs" tab to see detailed activity.
+            </p>
+          )}
         </div>
       )}
 
@@ -586,15 +859,18 @@ export default function EmailMonitoringSettings({
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Monitored Email
+                  Default Send From Email
                 </label>
                 <input
                   type="email"
-                  value={localConfig.monitoredEmail}
-                  onChange={(e) => updateConfig('monitoredEmail', e.target.value)}
+                  value={localConfig.defaultSendFromEmail || ''}
+                  onChange={(e) => updateConfig('defaultSendFromEmail', e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
-                  placeholder="email@company.com"
+                  placeholder="sender@company.com"
                 />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Email address to use when sending outbound emails
+                </p>
               </div>
             </>
           ) : (
@@ -613,51 +889,323 @@ export default function EmailMonitoringSettings({
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Monitored Label/Folder
+                  Default Send From Email
                 </label>
                 <input
-                  type="text"
-                  value={localConfig.gmailMonitoredLabel || 'INBOX'}
-                  onChange={(e) => updateConfig('gmailMonitoredLabel', e.target.value)}
+                  type="email"
+                  value={localConfig.defaultSendFromEmail || ''}
+                  onChange={(e) => updateConfig('defaultSendFromEmail', e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
-                  placeholder="INBOX or custom label name"
+                  placeholder="sender@company.com"
                 />
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Gmail label to monitor (e.g., "INBOX", "Parse-It", "Invoices")
+                  Email address to use when sending outbound emails
                 </p>
               </div>
             </>
           )}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Default Send From Email
-            </label>
-            <input
-              type="email"
-              value={localConfig.defaultSendFromEmail || ''}
-              onChange={(e) => updateConfig('defaultSendFromEmail', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
-              placeholder="sender@company.com"
-            />
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Email address to use when sending outbound emails
+        {/* Separate Monitoring Credentials Section */}
+        <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 mb-4 bg-gray-50 dark:bg-gray-700/50">
+          <div className="mb-4">
+            <h5 className="font-medium text-gray-900 dark:text-gray-100">Separate Monitoring Credentials (Optional)</h5>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Use different credentials for reading emails. If left empty, the send credentials above will be used.
             </p>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Polling Interval (minutes)
-            </label>
-            <input
-              type="number"
-              value={localConfig.pollingInterval}
-              onChange={(e) => updateConfig('pollingInterval', parseInt(e.target.value) || 5)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
-              min="1"
-              max="60"
-            />
+
+          {localConfig.provider === 'office365' ? (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Monitoring Tenant ID
+                  </label>
+                  <input
+                    type="text"
+                    value={localConfig.monitoringTenantId || ''}
+                    onChange={(e) => updateConfig('monitoringTenantId', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
+                    placeholder="Leave empty to use send credentials"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Monitoring Client ID
+                  </label>
+                  <input
+                    type="text"
+                    value={localConfig.monitoringClientId || ''}
+                    onChange={(e) => updateConfig('monitoringClientId', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
+                    placeholder="Leave empty to use send credentials"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Monitoring Client Secret
+                  </label>
+                  <input
+                    type="password"
+                    value={localConfig.monitoringClientSecret || ''}
+                    onChange={(e) => updateConfig('monitoringClientSecret', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
+                    placeholder="Leave empty to use send credentials"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Monitored Email
+                  </label>
+                  <input
+                    type="email"
+                    value={localConfig.monitoredEmail}
+                    onChange={(e) => updateConfig('monitoredEmail', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
+                    placeholder="email@company.com"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Polling Interval (minutes)
+                  </label>
+                  <input
+                    type="number"
+                    value={localConfig.pollingInterval}
+                    onChange={(e) => updateConfig('pollingInterval', parseInt(e.target.value) || 5)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
+                    min="1"
+                    max="60"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-gray-100 dark:bg-gray-600 rounded-lg">
+                <div>
+                  <h6 className="text-sm font-medium text-gray-900 dark:text-gray-100">Check All Messages</h6>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Ignore last check time and check all unread messages. Duplicates are automatically skipped.</p>
+                </div>
+                <button
+                  onClick={() => updateConfig('checkAllMessages', !localConfig.checkAllMessages)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    localConfig.checkAllMessages ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-500'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      localConfig.checkAllMessages ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Monitoring Client ID
+                  </label>
+                  <input
+                    type="text"
+                    value={localConfig.gmailMonitoringClientId || ''}
+                    onChange={(e) => updateConfig('gmailMonitoringClientId', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
+                    placeholder="Leave empty to use send credentials"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Monitoring Client Secret
+                  </label>
+                  <input
+                    type="password"
+                    value={localConfig.gmailMonitoringClientSecret || ''}
+                    onChange={(e) => updateConfig('gmailMonitoringClientSecret', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
+                    placeholder="Leave empty to use send credentials"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Monitoring Refresh Token
+                  </label>
+                  <input
+                    type="password"
+                    value={localConfig.gmailMonitoringRefreshToken || ''}
+                    onChange={(e) => updateConfig('gmailMonitoringRefreshToken', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
+                    placeholder="Leave empty to use send credentials"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Monitored Label/Folder
+                  </label>
+                  <input
+                    type="text"
+                    value={localConfig.gmailMonitoredLabel || 'INBOX'}
+                    onChange={(e) => updateConfig('gmailMonitoredLabel', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
+                    placeholder="INBOX or custom label name"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Gmail label to monitor (e.g., "INBOX", "Parse-It", "Invoices")
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Polling Interval (minutes)
+                  </label>
+                  <input
+                    type="number"
+                    value={localConfig.pollingInterval}
+                    onChange={(e) => updateConfig('pollingInterval', parseInt(e.target.value) || 5)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
+                    min="1"
+                    max="60"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-gray-100 dark:bg-gray-600 rounded-lg">
+                <div>
+                  <h6 className="text-sm font-medium text-gray-900 dark:text-gray-100">Check All Messages</h6>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Ignore last check time and check all unread messages. Duplicates are automatically skipped.</p>
+                </div>
+                <button
+                  onClick={() => updateConfig('checkAllMessages', !localConfig.checkAllMessages)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    localConfig.checkAllMessages ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-500'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      localConfig.checkAllMessages ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Post-Processing Settings Section - Success */}
+        <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 mb-4 bg-gray-50 dark:bg-gray-700/50">
+          <div className="mb-4">
+            <h5 className="font-medium text-gray-900 dark:text-gray-100">After Processing Action (Success)</h5>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Configure what happens to emails after they are successfully processed. Only unread emails are monitored.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Post-Processing Action
+              </label>
+              <select
+                value={localConfig.postProcessAction || 'mark_read'}
+                onChange={(e) => updateConfig('postProcessAction', e.target.value as PostProcessAction)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
+              >
+                <option value="mark_read">Mark as Read (default)</option>
+                <option value="move">Move to Folder</option>
+                <option value="archive">Archive</option>
+                <option value="delete">Delete (move to trash)</option>
+                <option value="none">Do Nothing</option>
+              </select>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                {localConfig.postProcessAction === 'mark_read' || !localConfig.postProcessAction
+                  ? 'Marks the email as read to prevent reprocessing'
+                  : localConfig.postProcessAction === 'move'
+                  ? 'Moves the email to the specified folder and marks as read'
+                  : localConfig.postProcessAction === 'archive'
+                  ? 'Archives the email (removes from inbox) and marks as read'
+                  : localConfig.postProcessAction === 'delete'
+                  ? 'Moves the email to trash'
+                  : 'No action taken - email remains unread (not recommended)'}
+              </p>
+            </div>
+
+            {localConfig.postProcessAction === 'move' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Target Folder
+                </label>
+                <input
+                  type="text"
+                  value={localConfig.processedFolderPath || 'Processed'}
+                  onChange={(e) => updateConfig('processedFolderPath', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
+                  placeholder="Processed"
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Folder name to move processed emails to. Will be created if it doesn't exist.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Post-Processing Settings Section - Failure */}
+        <div className="border border-red-200 dark:border-red-600 rounded-lg p-4 mb-4 bg-red-50 dark:bg-red-900/10">
+          <div className="mb-4">
+            <h5 className="font-medium text-gray-900 dark:text-gray-100">After Processing Action (Failure)</h5>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Configure what happens to emails when processing fails. Helps manage failed emails for troubleshooting.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Post-Processing Action on Failure
+              </label>
+              <select
+                value={localConfig.postProcessActionOnFailure || 'none'}
+                onChange={(e) => updateConfig('postProcessActionOnFailure', e.target.value as PostProcessAction)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
+              >
+                <option value="none">Do Nothing (default)</option>
+                <option value="mark_read">Mark as Read</option>
+                <option value="move">Move to Folder</option>
+                <option value="archive">Archive</option>
+                <option value="delete">Delete (move to trash)</option>
+              </select>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                {localConfig.postProcessActionOnFailure === 'none' || !localConfig.postProcessActionOnFailure
+                  ? 'Failed emails remain unread in inbox for manual review'
+                  : localConfig.postProcessActionOnFailure === 'mark_read'
+                  ? 'Marks the email as read to prevent cluttering inbox'
+                  : localConfig.postProcessActionOnFailure === 'move'
+                  ? 'Moves the email to a failure folder for review'
+                  : localConfig.postProcessActionOnFailure === 'archive'
+                  ? 'Archives the email (removes from inbox)'
+                  : 'Moves the email to trash'}
+              </p>
+            </div>
+
+            {localConfig.postProcessActionOnFailure === 'move' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Failure Folder
+                </label>
+                <input
+                  type="text"
+                  value={localConfig.failureFolderPath || 'Failed'}
+                  onChange={(e) => updateConfig('failureFolderPath', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
+                  placeholder="Failed"
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Folder name to move failed emails to. Will be created if it doesn't exist.
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -672,38 +1220,224 @@ export default function EmailMonitoringSettings({
         </div>
       </div>
 
-      {/* Setup Instructions */}
-      {localConfig.provider === 'office365' ? (
-        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
-          <h4 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">Office 365 Setup Instructions</h4>
-          <ol className="text-sm text-blue-700 dark:text-blue-400 space-y-1 list-decimal list-inside">
-            <li>Register an application in Azure AD</li>
-            <li>Grant Mail.Read and Mail.Send permissions for the target mailbox</li>
-            <li>Create a client secret</li>
-            <li>Copy the Tenant ID, Client ID, and Client Secret here</li>
-            <li>Configure the Default Send From Email address</li>
-            <li>Test the connection before enabling monitoring</li>
-          </ol>
-        </div>
-      ) : (
-        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg p-4">
-          <h4 className="font-semibold text-green-800 dark:text-green-300 mb-2">Gmail Setup Instructions</h4>
-          <ol className="text-sm text-green-700 dark:text-green-400 space-y-1 list-decimal list-inside">
-            <li>Create a project in <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer" className="underline hover:text-green-900">Google Cloud Console</a></li>
-            <li>Enable the Gmail API for your project</li>
-            <li>Configure OAuth consent screen with gmail.readonly and gmail.send scopes</li>
-            <li>Create OAuth 2.0 credentials (Desktop or Web application)</li>
-            <li>Use <a href="https://developers.google.com/oauthplayground/" target="_blank" rel="noopener noreferrer" className="underline hover:text-green-900">OAuth 2.0 Playground</a> to get refresh token</li>
-            <li>Configure the Default Send From Email address</li>
-            <li>Enter your credentials here and test the connection</li>
-          </ol>
-          <div className="mt-3 p-3 bg-green-100 dark:bg-green-800/50 rounded-lg">
-            <p className="text-xs text-green-800 dark:text-green-300">
-              <strong>Required OAuth Scopes:</strong> <code className="bg-green-200 dark:bg-green-700 px-1 rounded">https://www.googleapis.com/auth/gmail.readonly</code> and <code className="bg-green-200 dark:bg-green-700 px-1 rounded">https://www.googleapis.com/auth/gmail.send</code>
-            </p>
+      {/* Scheduled Monitoring Section */}
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 shadow-sm">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center space-x-3">
+            <div className="bg-blue-100 dark:bg-blue-900/50 p-2 rounded-lg">
+              <Clock className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <h4 className="font-semibold text-gray-900 dark:text-gray-100">Scheduled Monitoring</h4>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Automatically poll emails on a timer using pg_cron</p>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={fetchCronStatus}
+              disabled={isLoadingCron}
+              className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              title="Refresh status"
+            >
+              <RefreshCw className={`h-4 w-4 ${isLoadingCron ? 'animate-spin' : ''}`} />
+            </button>
+            {cronStatus?.enabled ? (
+              <span className="flex items-center space-x-1 text-green-600 dark:text-green-400">
+                <CheckCircle className="h-4 w-4" />
+                <span className="text-sm font-medium">Active</span>
+              </span>
+            ) : (
+              <span className="flex items-center space-x-1 text-gray-500 dark:text-gray-400">
+                <XCircle className="h-4 w-4" />
+                <span className="text-sm font-medium">Inactive</span>
+              </span>
+            )}
           </div>
         </div>
-      )}
+
+        {cronActionResult && (
+          <div className={`mb-4 border rounded-lg p-3 ${
+            cronActionResult.success
+              ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700'
+              : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700'
+          }`}>
+            <div className="flex items-center space-x-2">
+              {cronActionResult.success ? (
+                <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+              ) : (
+                <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+              )}
+              <span className={`text-sm ${cronActionResult.success ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>
+                {cronActionResult.message}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Cron Settings Configuration */}
+        {!cronSettings?.configured && (
+          <div className="mb-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg p-4">
+            <div className="flex items-start space-x-2">
+              <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Configuration Required</p>
+                <p className="text-sm text-amber-700 dark:text-amber-400 mt-1">
+                  To enable scheduled monitoring, you need to configure the Supabase connection settings.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-4">
+          {/* Cron Settings */}
+          <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-700/50">
+            <div className="flex items-center justify-between mb-3">
+              <h5 className="font-medium text-gray-900 dark:text-gray-100">Connection Settings</h5>
+              <button
+                onClick={() => setShowCronConfig(!showCronConfig)}
+                className="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center space-x-1"
+              >
+                <Settings className="h-4 w-4" />
+                <span>{showCronConfig ? 'Hide' : 'Configure'}</span>
+              </button>
+            </div>
+
+            {!showCronConfig && cronSettings && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-gray-500 dark:text-gray-400">Supabase URL:</span>
+                  <span className="ml-2 text-gray-900 dark:text-gray-100">
+                    {cronSettings.supabaseUrl || '(not set)'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-500 dark:text-gray-400">Anon Key:</span>
+                  <span className="ml-2 text-gray-900 dark:text-gray-100">
+                    {cronSettings.supabaseAnonKeyMasked || '(not set)'}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {showCronConfig && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Supabase URL
+                  </label>
+                  <input
+                    type="text"
+                    value={cronConfigData.supabaseUrl}
+                    onChange={(e) => setCronConfigData(prev => ({ ...prev, supabaseUrl: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="https://your-project.supabase.co"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Your Supabase project URL (found in project settings)
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Supabase Anon Key
+                  </label>
+                  <input
+                    type="password"
+                    value={cronConfigData.supabaseAnonKey}
+                    onChange={(e) => setCronConfigData(prev => ({ ...prev, supabaseAnonKey: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="eyJ..."
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Your Supabase anon/public key (found in project API settings)
+                  </p>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleSaveCronSettings}
+                    disabled={isLoadingCron || !cronConfigData.supabaseUrl || !cronConfigData.supabaseAnonKey}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200"
+                  >
+                    {isLoadingCron ? 'Saving...' : 'Save Settings'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Schedule Status */}
+          {cronStatus && (
+            <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-700/50">
+              <h5 className="font-medium text-gray-900 dark:text-gray-100 mb-3">Schedule Status</h5>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
+                <div className="flex items-center space-x-2">
+                  <Calendar className="h-4 w-4 text-gray-400" />
+                  <span className="text-gray-500 dark:text-gray-400">Schedule:</span>
+                  <span className="text-gray-900 dark:text-gray-100 font-mono">
+                    {cronStatus.schedule || `Every ${localConfig.pollingInterval} min`}
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Clock className="h-4 w-4 text-gray-400" />
+                  <span className="text-gray-500 dark:text-gray-400">Last Run:</span>
+                  <span className="text-gray-900 dark:text-gray-100">
+                    {cronStatus.lastCronRun ? new Date(cronStatus.lastCronRun).toLocaleString() : 'Never'}
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Clock className="h-4 w-4 text-gray-400" />
+                  <span className="text-gray-500 dark:text-gray-400">Next Run:</span>
+                  <span className="text-gray-900 dark:text-gray-100">
+                    {cronStatus.nextCronRun ? new Date(cronStatus.nextCronRun).toLocaleString() : 'Not scheduled'}
+                  </span>
+                </div>
+                {cronStatus.lastRunStatus && (
+                  <div className="flex items-center space-x-2">
+                    {cronStatus.lastRunStatus === 'succeeded' ? (
+                      <CheckCircle className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <XCircle className="h-4 w-4 text-red-500" />
+                    )}
+                    <span className="text-gray-500 dark:text-gray-400">Last Status:</span>
+                    <span className={`font-medium ${cronStatus.lastRunStatus === 'succeeded' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                      {cronStatus.lastRunStatus}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-600">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Polling interval is set to <strong>{localConfig.pollingInterval} minutes</strong>.
+              Change it above and save before enabling.
+            </p>
+            <div className="flex items-center space-x-3">
+              {cronStatus?.enabled ? (
+                <button
+                  onClick={handleUnscheduleCron}
+                  disabled={isLoadingCron}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
+                >
+                  <Pause className="h-4 w-4" />
+                  <span>{isLoadingCron ? 'Stopping...' : 'Stop Scheduled Monitoring'}</span>
+                </button>
+              ) : (
+                <button
+                  onClick={handleScheduleCron}
+                  disabled={isLoadingCron || !cronSettings?.configured}
+                  className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
+                >
+                  <Play className="h-4 w-4" />
+                  <span>{isLoadingCron ? 'Starting...' : 'Start Scheduled Monitoring'}</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Send Test Email Modal */}
       {showSendTestModal && (
