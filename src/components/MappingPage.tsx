@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { Upload, Copy, X, ZoomIn, ZoomOut, RotateCcw, Download, Square, Trash2, Plus } from 'lucide-react';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
@@ -204,7 +205,7 @@ export default function MappingPage({ onClose }: MappingPageProps) {
 
   const currentPageBoxes = selectionBoxes.filter(box => box.pageNumber === pageNumber);
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-7xl w-full max-h-[95vh] mx-4 shadow-2xl overflow-hidden">
         {/* Header */}
@@ -570,6 +571,7 @@ export default function MappingPage({ onClose }: MappingPageProps) {
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
