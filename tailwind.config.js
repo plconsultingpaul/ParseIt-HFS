@@ -64,7 +64,8 @@ export default {
   			}
   		},
   		animation: {
-  			'theme-transition': 'theme-transition 0.3s ease-in-out'
+  			'theme-transition': 'theme-transition 0.3s ease-in-out',
+  			'gradient': 'gradient 8s linear infinite'
   		},
   		keyframes: {
   			'theme-transition': {
@@ -74,6 +75,11 @@ export default {
   				'100%': {
   					opacity: '1'
   				}
+  			},
+  			'gradient': {
+  				'0%': { backgroundPosition: '0% 50%' },
+  				'50%': { backgroundPosition: '100% 50%' },
+  				'100%': { backgroundPosition: '0% 50%' }
   			}
   		},
   		borderRadius: {
