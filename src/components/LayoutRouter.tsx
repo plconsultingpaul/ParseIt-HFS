@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Settings, FileText, LogOut, User, HelpCircle, Menu, BarChart3, RefreshCw, Database, Building, Package, ClipboardCheck, Building2, DollarSign, Users as UsersIcon, BookUser, ClipboardList, Brain } from 'lucide-react';
+import { Settings, FileText, LogOut, User, HelpCircle, Menu, BarChart3, RefreshCw, Database, Building, Package, ClipboardCheck, Building2, DollarSign, Users as UsersIcon, BookUser, ClipboardList, Brain, MapPin, Receipt } from 'lucide-react';
 import type { User as UserType } from '../types';
 import type { CompanyBranding } from '../types';
 import DarkModeToggle from './DarkModeToggle';
@@ -69,6 +69,22 @@ export default function LayoutRouter({ children, user, companyBranding, onLogout
       label: 'Address Book',
       icon: BookUser,
       path: '/address-book',
+      requiresPermission: true,
+      roles: ['client']
+    },
+    {
+      id: 'track-trace',
+      label: 'Track & Trace',
+      icon: MapPin,
+      path: '/track-trace',
+      requiresPermission: true,
+      roles: ['client']
+    },
+    {
+      id: 'invoices',
+      label: 'Invoices',
+      icon: Receipt,
+      path: '/invoices',
       requiresPermission: true,
       roles: ['client']
     },
@@ -207,6 +223,14 @@ export default function LayoutRouter({ children, user, companyBranding, onLogout
         return false;
       }
 
+      if (item.id === 'track-trace' && (!user.hasTrackTraceAccess || user.role !== 'client')) {
+        return false;
+      }
+
+      if (item.id === 'invoices' && (!user.hasInvoiceAccess || user.role !== 'client')) {
+        return false;
+      }
+
       if (item.id === 'client-users' && (!user.isClientAdmin || user.role !== 'client')) {
         return false;
       }
@@ -229,6 +253,8 @@ export default function LayoutRouter({ children, user, companyBranding, onLogout
     if (path.startsWith('/order-entry/submissions')) return 'Order Submissions';
     if (path === '/rate-quote') return 'Rate Quote';
     if (path === '/address-book') return 'Address Book';
+    if (path === '/track-trace') return 'Track & Trace';
+    if (path === '/invoices') return 'Invoices';
     if (path === '/client-users') return 'User Management';
     return 'Parse-It';
   };
@@ -247,6 +273,8 @@ export default function LayoutRouter({ children, user, companyBranding, onLogout
     if (path.startsWith('/order-entry/submissions')) return 'View and manage order submissions';
     if (path === '/rate-quote') return 'Request and manage pricing quotes';
     if (path === '/address-book') return 'Manage customer shipping and receiving addresses';
+    if (path === '/track-trace') return 'Track and monitor your shipments in real-time';
+    if (path === '/invoices') return 'View and manage your invoices';
     if (path === '/client-users') return 'Manage users in your organization';
     return 'PDF Data Extraction';
   };
