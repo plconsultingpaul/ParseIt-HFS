@@ -282,7 +282,11 @@ export async function fetchCompanyBranding(): Promise<CompanyBranding> {
         companyName: branding.company_name || '',
         logoUrl: branding.logo_url || '',
         logoStoragePath: branding.logo_storage_path || '',
-        showCompanyName: branding.show_company_name || false
+        showCompanyName: branding.show_company_name || false,
+        clientLoginLogoUrl: branding.client_login_logo_url || '',
+        clientLoginLogoSize: branding.client_login_logo_size || 80,
+        clientLoginCompanyName: branding.client_login_company_name || '',
+        loginLogoSize: branding.login_logo_size || 80
       };
     }
 
@@ -291,7 +295,11 @@ export async function fetchCompanyBranding(): Promise<CompanyBranding> {
       companyName: '',
       logoUrl: '',
       logoStoragePath: '',
-      showCompanyName: false
+      showCompanyName: false,
+      clientLoginLogoUrl: '',
+      clientLoginLogoSize: 80,
+      clientLoginCompanyName: '',
+      loginLogoSize: 80
     };
   } catch (error) {
     console.error('Error fetching company branding:', error);
@@ -311,6 +319,10 @@ export async function updateCompanyBranding(branding: CompanyBranding): Promise<
       logo_url: branding.logoUrl,
       logo_storage_path: branding.logoStoragePath || null,
       show_company_name: branding.showCompanyName,
+      client_login_logo_url: branding.clientLoginLogoUrl || null,
+      client_login_logo_size: branding.clientLoginLogoSize || 80,
+      client_login_company_name: branding.clientLoginCompanyName || null,
+      login_logo_size: branding.loginLogoSize || 80,
       updated_at: new Date().toISOString()
     };
 
