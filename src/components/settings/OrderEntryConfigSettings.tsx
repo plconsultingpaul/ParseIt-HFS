@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Plus, Trash2, Edit2, Settings, GripVertical, Eye, AlertCircle, Download, HelpCircle, Brain, ChevronDown, ChevronRight, Check, Loader2, ChevronsDown, ChevronsRight } from 'lucide-react';
-import type { OrderEntryFieldGroup, OrderEntryField, OrderEntryFieldLayout, User } from '../../types';
+import { Plus, Trash2, Edit2, Settings, GripVertical, Eye, AlertCircle, Download, HelpCircle, Brain, ChevronDown, ChevronRight, Check, Loader2, ChevronsDown, ChevronsRight, FileText, Wrench, Power, Save } from 'lucide-react';
+import type { OrderEntryFieldGroup, OrderEntryField, OrderEntryFieldLayout, User, Workflow } from '../../types';
 import { supabase } from '../../lib/supabase';
 import LayoutDesigner from './LayoutDesigner';
 import JsonSchemaManager from './JsonSchemaManager';
@@ -14,18 +14,39 @@ import ToastContainer from '../common/ToastContainer';
 import { FormSkeleton } from '../common/Skeleton';
 import { NoFieldsEmptyState } from '../common/EmptyState';
 import Select from '../common/Select';
+import OrderEntryTemplatesSettings from './OrderEntryTemplatesSettings';
 
 interface OrderEntryConfigSettingsProps {
   currentUser: User;
-  workflows: any[];
+  workflows: Workflow[];
 }
 
-export default function OrderEntryConfigSettings({ currentUser }: OrderEntryConfigSettingsProps) {
+type OrderEntrySubTab = 'templates' | 'configuration';
+
+export default function OrderEntryConfigSettings({ currentUser, workflows }: OrderEntryConfigSettingsProps) {
+  const [activeSubTab, setActiveSubTab] = useState<OrderEntrySubTab>('templates');
   const [loading, setLoading] = useState(true);
   const [fieldGroups, setFieldGroups] = useState<OrderEntryFieldGroup[]>([]);
   const [fields, setFields] = useState<OrderEntryField[]>([]);
   const [fieldLayouts, setFieldLayouts] = useState<OrderEntryFieldLayout[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [globalConfigLoading, setGlobalConfigLoading] = useState(false);
+  const [globalConfig, setGlobalConfig] = useState<{
+    id?: string;
+    isEnabled: boolean;
+    apiEndpoint: string;
+    apiMethod: string;
+    apiAuthType: string;
+    apiAuthToken: string;
+    workflowId: string | null;
+  }>({
+    isEnabled: false,
+    apiEndpoint: '',
+    apiMethod: 'POST',
+    apiAuthType: 'none',
+    apiAuthToken: '',
+    workflowId: null
+  });
 
   const [editingGroup, setEditingGroup] = useState<OrderEntryFieldGroup | null>(null);
   const [editingField, setEditingField] = useState<OrderEntryField | null>(null);
@@ -35,6 +56,11 @@ export default function OrderEntryConfigSettings({ currentUser }: OrderEntryConf
   const [showShortcutsModal, setShowShortcutsModal] = useState(false);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [collapsedSections, setCollapsedSections] = useState({
+    fieldGroups: true,
+    formLayout: true,
+    jsonSchema: true
+  });
   const [layoutSaveStatus, setLayoutSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [pendingLayoutSave, setPendingLayoutSave] = useState(false);
   const layoutSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -44,7 +70,79 @@ export default function OrderEntryConfigSettings({ currentUser }: OrderEntryConf
 
   useEffect(() => {
     loadData(true);
+    loadGlobalConfig();
   }, []);
+
+  const loadGlobalConfig = async () => {
+    try {
+      setGlobalConfigLoading(true);
+      const { data, error } = await supabase
+        .from('order_entry_config')
+        .select('*')
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data) {
+        setGlobalConfig({
+          id: data.id,
+          isEnabled: data.is_enabled || false,
+          apiEndpoint: data.api_endpoint || '',
+          apiMethod: data.api_method || 'POST',
+          apiAuthType: data.api_auth_type || 'none',
+          apiAuthToken: data.api_auth_token || '',
+          workflowId: data.workflow_id || null
+        });
+      }
+    } catch (err: any) {
+      console.error('Failed to load global config:', err);
+      toast.error('Failed to load global configuration');
+    } finally {
+      setGlobalConfigLoading(false);
+    }
+  };
+
+  const saveGlobalConfig = async () => {
+    try {
+      setGlobalConfigLoading(true);
+      const configData = {
+        is_enabled: globalConfig.isEnabled,
+        api_endpoint: globalConfig.apiEndpoint,
+        api_method: globalConfig.apiMethod,
+        api_auth_type: globalConfig.apiAuthType,
+        api_auth_token: globalConfig.apiAuthToken,
+        workflow_id: globalConfig.workflowId,
+        updated_at: new Date().toISOString()
+      };
+
+      if (globalConfig.id) {
+        const { error } = await supabase
+          .from('order_entry_config')
+          .update(configData)
+          .eq('id', globalConfig.id);
+
+        if (error) throw error;
+      } else {
+        const { data, error } = await supabase
+          .from('order_entry_config')
+          .insert([{ ...configData, created_at: new Date().toISOString() }])
+          .select()
+          .single();
+
+        if (error) throw error;
+        if (data) {
+          setGlobalConfig(prev => ({ ...prev, id: data.id }));
+        }
+      }
+
+      toast.success('Global configuration saved successfully');
+    } catch (err: any) {
+      console.error('Failed to save global config:', err);
+      toast.error('Failed to save global configuration');
+    } finally {
+      setGlobalConfigLoading(false);
+    }
+  };
 
   const handleExportConfig = () => {
     try {
@@ -293,6 +391,10 @@ export default function OrderEntryConfigSettings({ currentUser }: OrderEntryConf
     setCollapsedGroups(new Set());
   };
 
+  const toggleSectionCollapse = (section: keyof typeof collapsedSections) => {
+    setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }));
+  };
+
   const handlePreviewForm = async () => {
     if (fields.length === 0) return;
 
@@ -505,7 +607,7 @@ export default function OrderEntryConfigSettings({ currentUser }: OrderEntryConf
     }, 800);
   }, [fieldLayouts]);
 
-  if (loading) {
+  if (loading && activeSubTab === 'configuration') {
     return (
       <div className="space-y-6">
         <FormSkeleton fields={8} />
@@ -513,8 +615,211 @@ export default function OrderEntryConfigSettings({ currentUser }: OrderEntryConf
     );
   }
 
+  const subTabs = [
+    { id: 'templates' as OrderEntrySubTab, label: 'Templates', icon: FileText, description: 'Manage order entry templates for clients' },
+    { id: 'configuration' as OrderEntrySubTab, label: 'Global Configuration', icon: Wrench, description: 'Default form configuration (not for clients)' }
+  ];
+
+  if (activeSubTab === 'templates') {
+    return (
+      <div className="space-y-6">
+        <div className="flex space-x-1 bg-gray-100 dark:bg-gray-700 p-1 rounded-lg">
+          {subTabs.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveSubTab(tab.id)}
+                className={`flex-1 flex items-center justify-center space-x-2 px-4 py-2 rounded-md transition-all duration-200 ${
+                  activeSubTab === tab.id
+                    ? 'bg-white dark:bg-gray-600 text-blue-700 dark:text-blue-300 shadow-sm font-medium'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600'
+                }`}
+              >
+                <Icon className={`h-4 w-4 ${
+                  activeSubTab === tab.id ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'
+                }`} />
+                <span className="text-sm font-medium">{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                <Power className="h-5 w-5" />
+                Global Order Entry Settings
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                Enable or disable order entry system-wide. This affects all users and templates.
+              </p>
+            </div>
+            <button
+              onClick={saveGlobalConfig}
+              disabled={globalConfigLoading}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {globalConfigLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4" />
+                  Save Changes
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="space-y-6">
+            <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border-2 border-gray-200 dark:border-gray-600">
+              <div className="flex items-center gap-4">
+                <div className={`p-3 rounded-lg ${globalConfig.isEnabled ? 'bg-green-100 dark:bg-green-900/30' : 'bg-red-100 dark:bg-red-900/30'}`}>
+                  <Power className={`h-6 w-6 ${globalConfig.isEnabled ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} />
+                </div>
+                <div>
+                  <h4 className="text-md font-semibold text-gray-900 dark:text-gray-100">
+                    Order Entry System Status
+                  </h4>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    {globalConfig.isEnabled
+                      ? 'Order entry is currently enabled for all users with access'
+                      : 'Order entry is currently disabled - users will see "Form Unavailable"'}
+                  </p>
+                </div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={globalConfig.isEnabled}
+                  onChange={(e) => setGlobalConfig({ ...globalConfig, isEnabled: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-14 h-7 bg-gray-300 dark:bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:start-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-green-600"></div>
+                <span className="ms-3 text-sm font-medium text-gray-900 dark:text-gray-100">
+                  {globalConfig.isEnabled ? 'Enabled' : 'Disabled'}
+                </span>
+              </label>
+            </div>
+
+            <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
+              <h4 className="text-md font-semibold text-gray-900 dark:text-gray-100 mb-4">API Configuration</h4>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Workflow
+                  </label>
+                  <Select
+                    value={globalConfig.workflowId || 'none'}
+                    onValueChange={(value) => setGlobalConfig({ ...globalConfig, workflowId: value === 'none' ? null : value })}
+                    options={[
+                      { value: 'none', label: 'No workflow' },
+                      ...workflows.map(w => ({ value: w.id, label: w.name }))
+                    ]}
+                    placeholder="Select a workflow (optional)"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Optional: Process submissions through a workflow before sending to API
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    API Endpoint
+                  </label>
+                  <input
+                    type="text"
+                    value={globalConfig.apiEndpoint}
+                    onChange={(e) => setGlobalConfig({ ...globalConfig, apiEndpoint: e.target.value })}
+                    placeholder="https://api.example.com/orders"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Method
+                    </label>
+                    <Select
+                      value={globalConfig.apiMethod}
+                      onValueChange={(value) => setGlobalConfig({ ...globalConfig, apiMethod: value })}
+                      options={[
+                        { value: 'POST', label: 'POST' },
+                        { value: 'PUT', label: 'PUT' },
+                        { value: 'PATCH', label: 'PATCH' }
+                      ]}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Auth Type
+                    </label>
+                    <Select
+                      value={globalConfig.apiAuthType}
+                      onValueChange={(value) => setGlobalConfig({ ...globalConfig, apiAuthType: value })}
+                      options={[
+                        { value: 'none', label: 'None' },
+                        { value: 'bearer', label: 'Bearer Token' },
+                        { value: 'apikey', label: 'API Key' }
+                      ]}
+                    />
+                  </div>
+                </div>
+
+                {globalConfig.apiAuthType !== 'none' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      {globalConfig.apiAuthType === 'bearer' ? 'Bearer Token' : 'API Key'}
+                    </label>
+                    <input
+                      type="password"
+                      value={globalConfig.apiAuthToken}
+                      onChange={(e) => setGlobalConfig({ ...globalConfig, apiAuthToken: e.target.value })}
+                      placeholder="Enter token or key"
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <OrderEntryTemplatesSettings workflows={workflows} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
+      <div className="flex space-x-1 bg-gray-100 dark:bg-gray-700 p-1 rounded-lg">
+        {subTabs.map((tab) => {
+          const Icon = tab.icon;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveSubTab(tab.id)}
+              className={`flex-1 flex items-center justify-center space-x-2 px-4 py-2 rounded-md transition-all duration-200 ${
+                activeSubTab === tab.id
+                  ? 'bg-white dark:bg-gray-600 text-blue-700 dark:text-blue-300 shadow-sm font-medium'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600'
+              }`}
+            >
+              <Icon className={`h-4 w-4 ${
+                activeSubTab === tab.id ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'
+              }`} />
+              <span className="text-sm font-medium">{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-start">
           <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 mr-3 flex-shrink-0 mt-0.5" />
@@ -566,14 +871,30 @@ export default function OrderEntryConfigSettings({ currentUser }: OrderEntryConf
         </div>
 
         <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h4 className="text-md font-semibold text-gray-900 dark:text-gray-100">Field Groups</h4>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                Organize your form fields into logical groups
-              </p>
+          <button
+            onClick={() => toggleSectionCollapse('fieldGroups')}
+            className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors mb-4"
+          >
+            <div className="flex items-center space-x-3">
+              {collapsedSections.fieldGroups ? (
+                <ChevronRight className="h-5 w-5 text-gray-500" />
+              ) : (
+                <ChevronDown className="h-5 w-5 text-gray-500" />
+              )}
+              <div className="text-left">
+                <h4 className="text-md font-semibold text-gray-900 dark:text-gray-100">Field Groups</h4>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Organize your form fields into logical groups
+                </p>
+              </div>
             </div>
-            <div className="flex items-center space-x-2">
+            <span className="text-xs px-2 py-1 bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 rounded-full">
+              {fieldGroups.length} {fieldGroups.length === 1 ? 'group' : 'groups'}
+            </span>
+          </button>
+
+          {!collapsedSections.fieldGroups && (
+            <div className="flex items-center justify-end space-x-2 mb-4">
               <button
                 onClick={collapseAllGroups}
                 className="flex items-center px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
@@ -598,9 +919,10 @@ export default function OrderEntryConfigSettings({ currentUser }: OrderEntryConf
                 Add Group
               </button>
             </div>
-          </div>
+          )}
         </div>
 
+        {!collapsedSections.fieldGroups && (
         <div className="space-y-4">
           {fields.length === 0 && (
             <NoFieldsEmptyState onCreate={() => {
@@ -748,16 +1070,27 @@ export default function OrderEntryConfigSettings({ currentUser }: OrderEntryConf
             </div>
           )}
         </div>
+        )}
       </div>
 
       {fields.length > 0 && (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Form Layout</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                Changes are automatically saved
-              </p>
+          <button
+            onClick={() => toggleSectionCollapse('formLayout')}
+            className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+          >
+            <div className="flex items-center space-x-3">
+              {collapsedSections.formLayout ? (
+                <ChevronRight className="h-5 w-5 text-gray-500" />
+              ) : (
+                <ChevronDown className="h-5 w-5 text-gray-500" />
+              )}
+              <div className="text-left">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Form Layout</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Changes are automatically saved
+                </p>
+              </div>
             </div>
             <div className="flex items-center space-x-2">
               {layoutSaveStatus === 'saving' && (
@@ -779,18 +1112,44 @@ export default function OrderEntryConfigSettings({ currentUser }: OrderEntryConf
                 </div>
               )}
             </div>
-          </div>
-          <LayoutDesigner
-            fields={fields}
-            fieldGroups={fieldGroups}
-            layouts={fieldLayouts}
-            onLayoutChange={handleLayoutChange}
-          />
+          </button>
+          {!collapsedSections.formLayout && (
+            <div className="mt-4">
+              <LayoutDesigner
+                fields={fields}
+                fieldGroups={fieldGroups}
+                layouts={fieldLayouts}
+                onLayoutChange={handleLayoutChange}
+              />
+            </div>
+          )}
         </div>
       )}
 
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-        <JsonSchemaManager />
+        <button
+          onClick={() => toggleSectionCollapse('jsonSchema')}
+          className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+        >
+          <div className="flex items-center space-x-3">
+            {collapsedSections.jsonSchema ? (
+              <ChevronRight className="h-5 w-5 text-gray-500" />
+            ) : (
+              <ChevronDown className="h-5 w-5 text-gray-500" />
+            )}
+            <div className="text-left">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">JSON Schema Management</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Upload and manage API response schemas
+              </p>
+            </div>
+          </div>
+        </button>
+        {!collapsedSections.jsonSchema && (
+          <div className="mt-4">
+            <JsonSchemaManager />
+          </div>
+        )}
       </div>
 
       {showGroupModal && editingGroup && (
