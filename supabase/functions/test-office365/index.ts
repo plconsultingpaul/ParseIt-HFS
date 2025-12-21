@@ -1,19 +1,151 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 }
 
 interface TestRequest {
-  tenantId: string
-  clientId: string
-  clientSecret: string
-  monitoredEmail: string
+  mode?: 'send' | 'monitoring'
+  provider?: 'office365' | 'gmail'
+  tenantId?: string
+  clientId?: string
+  clientSecret?: string
+  monitoredEmail?: string
+  defaultSendFromEmail?: string
+  gmailClientId?: string
+  gmailClientSecret?: string
+  gmailRefreshToken?: string
 }
 
-serve(async (req: Request) => {
+async function testOffice365Send(tenantId: string, clientId: string, clientSecret: string, sendFromEmail?: string) {
+  const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`
+
+  const tokenParams = new URLSearchParams({
+    client_id: clientId,
+    client_secret: clientSecret,
+    scope: 'https://graph.microsoft.com/.default',
+    grant_type: 'client_credentials'
+  })
+
+  const tokenResponse = await fetch(tokenUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: tokenParams.toString()
+  })
+
+  if (!tokenResponse.ok) {
+    const tokenError = await tokenResponse.json()
+    throw new Error(`Authentication failed: ${tokenError.error_description || tokenError.error}`)
+  }
+
+  const tokenData = await tokenResponse.json()
+  const accessToken = tokenData.access_token
+
+  if (sendFromEmail) {
+    const userUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(sendFromEmail)}`
+    const userResponse = await fetch(userUrl, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      }
+    })
+
+    if (!userResponse.ok) {
+      throw new Error(`Cannot access mailbox for ${sendFromEmail}. Ensure the app has Mail.Send permission.`)
+    }
+  }
+
+  return {
+    success: true,
+    message: sendFromEmail
+      ? `Send credentials verified. Can send as ${sendFromEmail}`
+      : 'Send credentials verified successfully'
+  }
+}
+
+async function testGmailSend(clientId: string, clientSecret: string, refreshToken: string) {
+  const tokenUrl = 'https://oauth2.googleapis.com/token'
+
+  const tokenParams = new URLSearchParams({
+    client_id: clientId,
+    client_secret: clientSecret,
+    refresh_token: refreshToken,
+    grant_type: 'refresh_token'
+  })
+
+  const tokenResponse = await fetch(tokenUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: tokenParams.toString()
+  })
+
+  if (!tokenResponse.ok) {
+    const tokenError = await tokenResponse.json()
+    throw new Error(`Gmail authentication failed: ${tokenError.error_description || tokenError.error}`)
+  }
+
+  return {
+    success: true,
+    message: 'Gmail send credentials verified successfully'
+  }
+}
+
+async function testOffice365Monitoring(tenantId: string, clientId: string, clientSecret: string, monitoredEmail?: string) {
+  const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`
+
+  const tokenParams = new URLSearchParams({
+    client_id: clientId,
+    client_secret: clientSecret,
+    scope: 'https://graph.microsoft.com/.default',
+    grant_type: 'client_credentials'
+  })
+
+  const tokenResponse = await fetch(tokenUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: tokenParams.toString()
+  })
+
+  if (!tokenResponse.ok) {
+    const tokenError = await tokenResponse.json()
+    throw new Error(`Authentication failed: ${tokenError.error_description || tokenError.error}`)
+  }
+
+  const tokenData = await tokenResponse.json()
+  const accessToken = tokenData.access_token
+
+  let emailCount = 0
+
+  if (monitoredEmail && monitoredEmail.trim()) {
+    const messagesUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(monitoredEmail)}/mailFolders/Inbox/messages?$top=5&$filter=hasAttachments eq true and isRead eq false&$select=id,subject,from,receivedDateTime,hasAttachments`
+
+    const messagesResponse = await fetch(messagesUrl, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      }
+    })
+
+    if (!messagesResponse.ok) {
+      const msgError = await messagesResponse.json()
+      throw new Error(`Cannot read mailbox ${monitoredEmail}: ${msgError.error?.message || 'Unknown error'}`)
+    }
+
+    const messagesData = await messagesResponse.json()
+    emailCount = messagesData.value ? messagesData.value.length : 0
+  }
+
+  return {
+    success: true,
+    message: "Monitoring connection successful",
+    emailCount: emailCount,
+    monitoredEmail: monitoredEmail || 'Current user'
+  }
+}
+
+Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, {
       status: 200,
@@ -22,121 +154,53 @@ serve(async (req: Request) => {
   }
 
   try {
-    const { tenantId, clientId, clientSecret, monitoredEmail }: TestRequest = await req.json()
+    const body: TestRequest = await req.json()
+    const mode = body.mode || 'monitoring'
+    const provider = body.provider || 'office365'
 
-    // Validate required fields
-    if (!tenantId || !clientId || !clientSecret) {
-      return new Response(
-        JSON.stringify({ error: "Missing required fields" }),
-        {
-          status: 400,
+    if (mode === 'send') {
+      if (provider === 'gmail') {
+        if (!body.gmailClientId || !body.gmailClientSecret || !body.gmailRefreshToken) {
+          return new Response(
+            JSON.stringify({ error: "Missing Gmail credentials" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          )
+        }
+        const result = await testGmailSend(body.gmailClientId, body.gmailClientSecret, body.gmailRefreshToken)
+        return new Response(JSON.stringify(result), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
+        })
+      } else {
+        if (!body.tenantId || !body.clientId || !body.clientSecret) {
+          return new Response(
+            JSON.stringify({ error: "Missing Office 365 credentials" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          )
         }
-      )
-    }
-
-    // Step 1: Get access token from Microsoft Graph
-    const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`
-    
-    const tokenParams = new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      scope: 'https://graph.microsoft.com/.default',
-      grant_type: 'client_credentials'
-    })
-
-    const tokenResponse = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: tokenParams.toString()
-    })
-
-    if (!tokenResponse.ok) {
-      const tokenError = await tokenResponse.json()
-      throw new Error(`Authentication failed: ${tokenError.error_description || tokenError.error}`)
-    }
-
-    const tokenData = await tokenResponse.json()
-    const accessToken = tokenData.access_token
-
-    // Step 2: Test connection by getting user info or mailbox info
-    let testUrl = 'https://graph.microsoft.com/v1.0/me'
-    
-    // If a specific email is provided, try to access that mailbox
-    if (monitoredEmail && monitoredEmail.trim()) {
-      // First try to get the user by email
-      const userUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(monitoredEmail)}`
-      
-      const userResponse = await fetch(userUrl, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        }
-      })
-
-      if (userResponse.ok) {
-        // If user exists, try to access their mailbox
-        testUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(monitoredEmail)}/messages?$top=1`
+        const result = await testOffice365Send(body.tenantId, body.clientId, body.clientSecret, body.defaultSendFromEmail)
+        return new Response(JSON.stringify(result), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        })
       }
-    }
-
-    const testResponse = await fetch(testUrl, {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
+    } else {
+      if (!body.tenantId || !body.clientId || !body.clientSecret) {
+        return new Response(
+          JSON.stringify({ error: "Missing required fields" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        )
       }
-    })
-
-    if (!testResponse.ok) {
-      const testError = await testResponse.json()
-      throw new Error(`API access failed: ${testError.error?.message || 'Unknown error'}`)
-    }
-
-    const testData = await testResponse.json()
-    
-    // Count emails if we're testing mailbox access
-    let emailCount = 0
-    if (testData.value && Array.isArray(testData.value)) {
-      emailCount = testData.value.length
-    }
-
-    // Step 3: Test specific permissions by trying to access messages
-    if (monitoredEmail) {
-      const messagesUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(monitoredEmail)}/messages?$top=5&$select=id,subject,from,receivedDateTime,hasAttachments`
-      
-      const messagesResponse = await fetch(messagesUrl, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        }
-      })
-
-      if (messagesResponse.ok) {
-        const messagesData = await messagesResponse.json()
-        emailCount = messagesData.value ? messagesData.value.length : 0
-      }
-    }
-
-    return new Response(
-      JSON.stringify({ 
-        success: true, 
-        message: "Connection successful",
-        emailCount: emailCount,
-        monitoredEmail: monitoredEmail || 'Current user'
-      }),
-      {
+      const result = await testOffice365Monitoring(body.tenantId, body.clientId, body.clientSecret, body.monitoredEmail)
+      return new Response(JSON.stringify(result), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    )
+      })
+    }
 
   } catch (error) {
-    console.error("Office 365 test error:", error)
-    
+    console.error("Test error:", error)
+
     return new Response(
-      JSON.stringify({ 
-        error: "Connection test failed", 
+      JSON.stringify({
+        error: "Connection test failed",
         details: error instanceof Error ? error.message : "Unknown error"
       }),
       {
