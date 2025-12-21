@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, FileText, LogOut, User, HelpCircle, Menu, X, BarChart3, RefreshCw, Database, Building, Package, ClipboardCheck, Building2, DollarSign, Users as UsersIcon, BookUser, ClipboardList, Brain } from 'lucide-react';
+import { Settings, FileText, LogOut, User, HelpCircle, Menu, X, BarChart3, RefreshCw, Database, Building, Package, ClipboardCheck, Building2, DollarSign, Users as UsersIcon, BookUser, ClipboardList, Brain, MapPin, Receipt } from 'lucide-react';
 import type { User as UserType } from '../types';
 import type { CompanyBranding } from '../types';
 import DarkModeToggle from './DarkModeToggle';
@@ -8,8 +8,8 @@ import { geminiConfigService } from '../services/geminiConfigService';
 
 interface LayoutProps {
   children: React.ReactNode;
-  currentPage: 'extract' | 'vendor-setup' | 'checkin-setup' | 'client-setup' | 'transform' | 'types' | 'settings' | 'logs' | 'order-entry' | 'order-submissions' | 'order-submission-detail' | 'rate-quote' | 'client-users' | 'address-book';
-  onNavigate: (page: 'extract' | 'vendor-setup' | 'checkin-setup' | 'client-setup' | 'transform' | 'types' | 'settings' | 'logs' | 'order-entry' | 'order-submissions' | 'rate-quote' | 'client-users' | 'address-book') => void;
+  currentPage: 'extract' | 'vendor-setup' | 'checkin-setup' | 'client-setup' | 'transform' | 'types' | 'settings' | 'logs' | 'order-entry' | 'order-submissions' | 'order-submission-detail' | 'rate-quote' | 'client-users' | 'address-book' | 'track-trace' | 'invoices';
+  onNavigate: (page: 'extract' | 'vendor-setup' | 'checkin-setup' | 'client-setup' | 'transform' | 'types' | 'settings' | 'logs' | 'order-entry' | 'order-submissions' | 'rate-quote' | 'client-users' | 'address-book' | 'track-trace' | 'invoices') => void;
   user: UserType;
   companyBranding?: CompanyBranding;
   onLogout: () => void;
@@ -98,6 +98,22 @@ export default function Layout({ children, currentPage, onNavigate, user, compan
       label: 'Address Book',
       icon: BookUser,
       onClick: () => onNavigate('address-book'),
+      requiresPermission: true,
+      roles: ['client']
+    },
+    {
+      id: 'track-trace',
+      label: 'Track & Trace',
+      icon: MapPin,
+      onClick: () => onNavigate('track-trace'),
+      requiresPermission: true,
+      roles: ['client']
+    },
+    {
+      id: 'invoices',
+      label: 'Invoices',
+      icon: Receipt,
+      onClick: () => onNavigate('invoices'),
       requiresPermission: true,
       roles: ['client']
     },
@@ -227,6 +243,16 @@ export default function Layout({ children, currentPage, onNavigate, user, compan
         return false;
       }
       if (item.id === 'address-book' && user.role === 'client' && !user.isClientAdmin && !user.hasAddressBookAccess) {
+        return false;
+      }
+
+      // For track-trace, check if client user has access
+      if (item.id === 'track-trace' && (!user.hasTrackTraceAccess || user.role !== 'client')) {
+        return false;
+      }
+
+      // For invoices, check if client user has access
+      if (item.id === 'invoices' && (!user.hasInvoiceAccess || user.role !== 'client')) {
         return false;
       }
 
@@ -420,6 +446,8 @@ export default function Layout({ children, currentPage, onNavigate, user, compan
                     {currentPage === 'order-entry' && 'Order Entry'}
                     {currentPage === 'rate-quote' && 'Rate Quote'}
                     {currentPage === 'address-book' && 'Address Book'}
+                    {currentPage === 'track-trace' && 'Track & Trace'}
+                    {currentPage === 'invoices' && 'Invoices'}
                     {currentPage === 'client-users' && 'User Management'}
                   </h2>
                   <p className="text-gray-600 dark:text-gray-400 mt-1">
@@ -434,6 +462,8 @@ export default function Layout({ children, currentPage, onNavigate, user, compan
                     {currentPage === 'order-entry' && 'Create and manage orders for your organization'}
                     {currentPage === 'rate-quote' && 'Request and manage pricing quotes'}
                     {currentPage === 'address-book' && 'Manage customer shipping and receiving addresses'}
+                    {currentPage === 'track-trace' && 'Track and monitor your shipments in real-time'}
+                    {currentPage === 'invoices' && 'View and manage your invoices'}
                     {currentPage === 'client-users' && 'Manage users in your organization'}
                   </p>
                 </div>
