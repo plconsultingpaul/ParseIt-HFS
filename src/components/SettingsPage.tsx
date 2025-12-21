@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileText, Server, Key, Mail, Filter, Database, Settings as SettingsIcon, Users, GitBranch, RefreshCw, Sliders } from 'lucide-react';
+import { FileText, Server, Key, Mail, Filter, Database, Settings as SettingsIcon, Users, GitBranch, RefreshCw, Sliders, Bell } from 'lucide-react';
 import type { ExtractionType, SftpConfig, SettingsConfig, ApiConfig, EmailMonitoringConfig, EmailProcessingRule, ProcessedEmail, User, FeatureFlag } from '../types';
 import type { TransformationType } from '../types';
 import type { CompanyBranding } from '../types';
@@ -14,6 +14,7 @@ import UserManagementSettings from './settings/UserManagementSettings';
 import { Building } from 'lucide-react';
 import CompanyBrandingSettings from './settings/CompanyBrandingSettings';
 import FeatureManagementSettings from './settings/FeatureManagementSettings';
+import NotificationTemplatesSettings from './settings/NotificationTemplatesSettings';
 
 interface SettingsPageProps {
   extractionTypes: ExtractionType[];
@@ -56,7 +57,7 @@ interface SettingsPageProps {
   refreshCompanyBranding?: () => Promise<void>;
 }
 
-type SettingsTab = 'sftp' | 'api' | 'email' | 'users' | 'branding' | 'features';
+type SettingsTab = 'sftp' | 'api' | 'email' | 'users' | 'branding' | 'features' | 'notifications';
 
 export default function SettingsPage({
   extractionTypes,
@@ -102,6 +103,7 @@ export default function SettingsPage({
     ...(currentUser.permissions.sftp ? [{ id: 'sftp' as SettingsTab, label: 'SFTP Settings', icon: Server, description: 'Configure file upload server' }] : []),
     ...(currentUser.permissions.api ? [{ id: 'api' as SettingsTab, label: 'API Settings', icon: Key, description: 'Configure API endpoints and keys' }] : []),
     ...(currentUser.permissions.emailMonitoring ? [{ id: 'email' as SettingsTab, label: 'Email Monitoring', icon: Mail, description: 'Configure email automation' }] : []),
+    ...(currentUser.isAdmin ? [{ id: 'notifications' as SettingsTab, label: 'Notification Templates', icon: Bell, description: 'Manage notification templates' }] : []),
     ...(currentUser.permissions.userManagement ? [{ id: 'users' as SettingsTab, label: 'User Management', icon: Users, description: 'Manage users and permissions' }] : []),
     ...(currentUser.isAdmin ? [{ id: 'branding' as SettingsTab, label: 'Company Branding', icon: Building, description: 'Customize company branding' }] : []),
     ...(currentUser.isAdmin ? [{ id: 'features' as SettingsTab, label: 'Feature Management', icon: Sliders, description: 'Enable/disable system features' }] : [])
@@ -172,6 +174,10 @@ export default function SettingsPage({
             featureFlags={featureFlags}
             onUpdateFeatureFlags={onUpdateFeatureFlags}
           />
+        ) : <PermissionDenied />;
+      case 'notifications':
+        return currentUser.isAdmin ? (
+          <NotificationTemplatesSettings />
         ) : <PermissionDenied />;
       default:
         return null;
