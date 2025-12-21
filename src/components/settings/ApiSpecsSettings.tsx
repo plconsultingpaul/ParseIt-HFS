@@ -32,6 +32,8 @@ export default function ApiSpecsSettings({ apiConfig, secondaryApis }: ApiSpecsS
   const [selectedApiOption, setSelectedApiOption] = useState('');
   const [methodFilter, setMethodFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const [fieldSearchQuery, setFieldSearchQuery] = useState('');
+  const [fieldTypeFilter, setFieldTypeFilter] = useState<string>('ALL');
   const [deletingSpec, setDeletingSpec] = useState<ApiSpec | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<string>('');
@@ -323,6 +325,8 @@ export default function ApiSpecsSettings({ apiConfig, secondaryApis }: ApiSpecsS
   const handleSelectEndpoint = async (endpoint: ApiSpecEndpoint) => {
     try {
       setSelectedSpecEndpointId(endpoint.id);
+      setFieldSearchQuery('');
+      setFieldTypeFilter('ALL');
       const fields = await fetchEndpointFields(endpoint.id);
       setSelectedEndpointFields(fields);
     } catch (error) {
@@ -338,6 +342,8 @@ export default function ApiSpecsSettings({ apiConfig, secondaryApis }: ApiSpecsS
     setSelectedEndpointFields([]);
     setMethodFilter('ALL');
     setSearchQuery('');
+    setFieldSearchQuery('');
+    setFieldTypeFilter('ALL');
   };
 
   return (
@@ -592,13 +598,69 @@ export default function ApiSpecsSettings({ apiConfig, secondaryApis }: ApiSpecsS
                 </div>
 
                 <div className="flex flex-col overflow-hidden">
-                  <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
-                    Fields {selectedEndpointFields.length > 0 && `(${selectedEndpointFields.length})`}
-                  </h4>
+                  <div className="mb-3 space-y-2">
+                    <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                      Fields {selectedEndpointFields.length > 0 && (() => {
+                        const filteredCount = selectedEndpointFields.filter((field) => {
+                          const matchesSearch = !fieldSearchQuery ||
+                            field.field_path.toLowerCase().includes(fieldSearchQuery.toLowerCase()) ||
+                            field.description?.toLowerCase().includes(fieldSearchQuery.toLowerCase());
+                          const matchesType = fieldTypeFilter === 'ALL' ||
+                            (fieldTypeFilter === 'PARAMS' && (field.field_path.startsWith('[query]') || field.field_path.startsWith('[path]') || field.field_path.startsWith('[header]'))) ||
+                            (fieldTypeFilter === 'BODY' && field.field_path.startsWith('[body]')) ||
+                            (fieldTypeFilter === 'RESPONSE' && field.field_path.startsWith('[response]'));
+                          return matchesSearch && matchesType;
+                        }).length;
+                        return filteredCount !== selectedEndpointFields.length
+                          ? `(${filteredCount} of ${selectedEndpointFields.length})`
+                          : `(${selectedEndpointFields.length})`;
+                      })()}
+                    </h4>
+                    <input
+                      type="text"
+                      placeholder="Search fields..."
+                      value={fieldSearchQuery}
+                      onChange={(e) => setFieldSearchQuery(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                    <div className="flex gap-2 flex-wrap">
+                      {['ALL', 'PARAMS', 'BODY', 'RESPONSE'].map((type) => (
+                        <button
+                          key={type}
+                          onClick={() => setFieldTypeFilter(type)}
+                          className={`px-3 py-1 text-xs font-medium rounded-lg transition-colors ${
+                            fieldTypeFilter === type
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                          }`}
+                        >
+                          {type}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   {selectedSpecEndpointId ? (
-                    selectedEndpointFields.length > 0 ? (
+                    selectedEndpointFields.filter((field) => {
+                      const matchesSearch = !fieldSearchQuery ||
+                        field.field_path.toLowerCase().includes(fieldSearchQuery.toLowerCase()) ||
+                        field.description?.toLowerCase().includes(fieldSearchQuery.toLowerCase());
+                      const matchesType = fieldTypeFilter === 'ALL' ||
+                        (fieldTypeFilter === 'PARAMS' && (field.field_path.startsWith('[query]') || field.field_path.startsWith('[path]') || field.field_path.startsWith('[header]'))) ||
+                        (fieldTypeFilter === 'BODY' && field.field_path.startsWith('[body]')) ||
+                        (fieldTypeFilter === 'RESPONSE' && field.field_path.startsWith('[response]'));
+                      return matchesSearch && matchesType;
+                    }).length > 0 ? (
                       <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-                        {selectedEndpointFields.map((field) => (
+                        {selectedEndpointFields.filter((field) => {
+                          const matchesSearch = !fieldSearchQuery ||
+                            field.field_path.toLowerCase().includes(fieldSearchQuery.toLowerCase()) ||
+                            field.description?.toLowerCase().includes(fieldSearchQuery.toLowerCase());
+                          const matchesType = fieldTypeFilter === 'ALL' ||
+                            (fieldTypeFilter === 'PARAMS' && (field.field_path.startsWith('[query]') || field.field_path.startsWith('[path]') || field.field_path.startsWith('[header]'))) ||
+                            (fieldTypeFilter === 'BODY' && field.field_path.startsWith('[body]')) ||
+                            (fieldTypeFilter === 'RESPONSE' && field.field_path.startsWith('[response]'));
+                          return matchesSearch && matchesType;
+                        }).map((field) => (
                           <div
                             key={field.id}
                             className="bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg p-3"
@@ -639,7 +701,11 @@ export default function ApiSpecsSettings({ apiConfig, secondaryApis }: ApiSpecsS
                       </div>
                     ) : (
                       <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-700 rounded-lg">
-                        <p className="text-sm text-gray-500 dark:text-gray-400">No fields found for this endpoint</p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                          {selectedEndpointFields.length > 0
+                            ? 'No fields match your search or filter'
+                            : 'No fields found for this endpoint'}
+                        </p>
                       </div>
                     )
                   ) : (
