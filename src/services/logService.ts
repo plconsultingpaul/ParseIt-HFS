@@ -183,6 +183,7 @@ export async function fetchEmailPollingLogs(): Promise<EmailPollingLog[]> {
       status: log.status,
       emailsFound: log.emails_found,
       emailsProcessed: log.emails_processed,
+      emailsFailed: log.emails_failed || 0,
       errorMessage: log.error_message,
       executionTimeMs: log.execution_time_ms,
       createdAt: log.created_at
@@ -208,26 +209,40 @@ export async function fetchWorkflowExecutionLogs(): Promise<WorkflowExecutionLog
         error_message,
         started_at,
         updated_at,
-        completed_at
+        completed_at,
+        extraction_logs!extraction_log_id (
+          user_id,
+          processing_mode,
+          extraction_type_id,
+          transformation_type_id
+        )
       `)
       .order('started_at', { ascending: false })
       .limit(100);
 
     if (error) throw error;
 
-    return (data || []).map(log => ({
-      id: log.id,
-      extractionLogId: log.extraction_log_id,
-      workflowId: log.workflow_id,
-      status: log.status,
-      currentStepId: log.current_step_id,
-      currentStepName: log.current_step_name,
-      errorMessage: log.error_message,
-      contextData: null, // Will be loaded on demand
-      startedAt: log.started_at,
-      updatedAt: log.updated_at,
-      completedAt: log.completed_at
-    }));
+    return (data || []).map(log => {
+      const extractionLog = log.extraction_logs as any;
+      return {
+        id: log.id,
+        extractionLogId: log.extraction_log_id,
+        workflowId: log.workflow_id,
+        status: log.status,
+        currentStepId: log.current_step_id,
+        currentStepName: log.current_step_name,
+        errorMessage: log.error_message,
+        contextData: null,
+        createdAt: log.started_at,
+        startedAt: log.started_at,
+        updatedAt: log.updated_at,
+        completedAt: log.completed_at,
+        userId: extractionLog?.user_id || null,
+        processingMode: extractionLog?.processing_mode || null,
+        extractionTypeId: extractionLog?.extraction_type_id || null,
+        transformationTypeId: extractionLog?.transformation_type_id || null
+      };
+    });
   } catch (error) {
     console.error('Error fetching workflow execution logs:', error);
     throw error;
@@ -312,6 +327,9 @@ export async function fetchProcessedEmails(): Promise<ProcessedEmail[]> {
       processingRuleId: email.processing_rule_id,
       extractionTypeId: email.extraction_type_id,
       pdfFilename: email.pdf_filename,
+      attachmentCount: email.attachment_count,
+      pdfFilenames: email.pdf_filenames,
+      attachmentPageCounts: email.attachment_page_counts,
       processingStatus: email.processing_status,
       errorMessage: email.error_message,
       parseitId: email.parseit_id,
