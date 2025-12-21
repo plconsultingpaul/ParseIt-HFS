@@ -55,7 +55,7 @@ export default function ExtractionLogsSettings({
   const getUserName = (userId: string | null) => {
     console.log('getUserName called with userId:', userId);
     console.log('Available users:', users);
-    if (!userId) return 'Unknown';
+    if (!userId) return 'Email';
     const user = users.find(u => u.id === userId);
     console.log('Found user:', user);
     return user?.username || 'Unknown';
