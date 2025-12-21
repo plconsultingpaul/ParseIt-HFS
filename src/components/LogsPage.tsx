@@ -64,6 +64,7 @@ export default function LogsPage({
           <ExtractionLogsSettings
             extractionLogs={extractionLogs}
             extractionTypes={extractionTypes}
+            transformationTypes={transformationTypes}
             users={users}
             onRefresh={onRefreshLogs}
             onRefreshWithFilters={onRefreshLogsWithFilters}
@@ -82,6 +83,9 @@ export default function LogsPage({
             workflowExecutionLogs={workflowExecutionLogs}
             workflows={workflows}
             workflowSteps={workflowSteps}
+            users={users}
+            extractionTypes={extractionTypes}
+            transformationTypes={transformationTypes}
             onRefreshWorkflowLogs={onRefreshWorkflowLogs}
           />
         );
