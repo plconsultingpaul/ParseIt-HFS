@@ -169,6 +169,11 @@ export default function ExtractPage({
   };
 
   const handleSelectExtractionType = (typeId: string) => {
+    if (typeId !== selectedExtractionType) {
+      setUploadedFile(null);
+      setPdfPages([]);
+      setDetectionResult(null);
+    }
     setSelectedExtractionType(typeId);
   };
 
@@ -275,6 +280,7 @@ export default function ExtractPage({
                 {/* Upload Section */}
                 {uploadMode === 'manual' ? (
                   <PdfUploadSection
+                    key={selectedExtractionType}
                     onPdfUpload={handlePdfUpload}
                     extractionType={currentExtractionType}
                   />
