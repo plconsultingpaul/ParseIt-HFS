@@ -1158,8 +1158,8 @@ export default function HelpPage() {
                   <h4 className="font-medium text-amber-800 mb-3">Example 2: Purchase Order Workflow</h4>
                   <ol className="text-amber-700 space-y-1 list-decimal list-inside text-sm">
                     <li><strong>Step 1:</strong> Extract PO data (supplier email, PO number, items)</li>
-                    <li><strong>Step 2:</strong> Check if total amount > $1000 (conditional step)</li>
-                    <li><strong>Step 3a:</strong> If > $1000: Email manager for approval</li>
+                    <li><strong>Step 2:</strong> Check if total amount &gt; $1000 (conditional step)</li>
+                    <li><strong>Step 3a:</strong> If &gt; $1000: Email manager for approval</li>
                     <li><strong>Step 3b:</strong> If ≤ $1000: Email supplier with PO confirmation</li>
                   </ol>
                 </div>
