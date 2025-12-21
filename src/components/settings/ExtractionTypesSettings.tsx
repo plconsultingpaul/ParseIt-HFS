@@ -1,24 +1,40 @@
-import React, { useState } from 'react';
-import { Plus, Trash2, Save, FileText, Code, Database, Map, Brain, Copy, Split, AlertTriangle } from 'lucide-react';
-import type { ExtractionType, FieldMapping, ArraySplitConfig } from '../../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { Plus, Trash2, Save, FileText, Code, Database, Map, Brain, Copy, Split, AlertTriangle, FunctionSquare } from 'lucide-react';
+import type { ExtractionType, FieldMapping, ArraySplitConfig, FieldMappingFunction } from '../../types';
 import { useSupabaseData } from '../../hooks/useSupabaseData';
 import MappingPage from '../MappingPage';
 import { supabase } from '../../lib/supabase';
 import Select from '../common/Select';
+import { FieldMappingFunctionsManager } from './FieldMappingFunctionsManager';
+import { fieldMappingFunctionService } from '../../services/fieldMappingFunctionService';
 
 interface ExtractionTypesSettingsProps {
   extractionTypes: ExtractionType[];
   onUpdateExtractionTypes: (types: ExtractionType[]) => Promise<void>;
   onDeleteExtractionType: (id: string) => Promise<void>;
+  refreshData: () => Promise<void>;
 }
 
-export default function ExtractionTypesSettings({ 
-  extractionTypes, 
+export default function ExtractionTypesSettings({
+  extractionTypes,
   onUpdateExtractionTypes,
-  onDeleteExtractionType
+  onDeleteExtractionType,
+  refreshData
 }: ExtractionTypesSettingsProps) {
   const { workflows } = useSupabaseData();
   const [localExtractionTypes, setLocalExtractionTypes] = useState<ExtractionType[]>(extractionTypes);
+
+  useEffect(() => {
+    setLocalExtractionTypes(extractionTypes);
+    if (pendingSelectionRef.current && extractionTypes.length > 0) {
+      const { id, name } = pendingSelectionRef.current;
+      const newIndex = extractionTypes.findIndex(t => t.id === id || t.name === name);
+      if (newIndex >= 0) {
+        setSelectedTypeIndex(newIndex);
+      }
+    }
+  }, [extractionTypes]);
   const [selectedTypeIndex, setSelectedTypeIndex] = useState<number>(0);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -43,6 +59,49 @@ export default function ExtractionTypesSettings({
   });
   const [showJsonErrorModal, setShowJsonErrorModal] = useState(false);
   const [jsonErrorMessage, setJsonErrorMessage] = useState('');
+  const [notificationTemplates, setNotificationTemplates] = useState<Array<{ id: string; template_name: string; template_type: string }>>([]);
+  const [showFunctionsModal, setShowFunctionsModal] = useState(false);
+  const [availableFunctions, setAvailableFunctions] = useState<FieldMappingFunction[]>([]);
+  const pendingSelectionRef = useRef<{ id?: string; name?: string } | null>(null);
+
+  useEffect(() => {
+    fetchNotificationTemplates();
+  }, []);
+
+  useEffect(() => {
+    const loadFunctions = async () => {
+      const currentType = localExtractionTypes[selectedTypeIndex];
+      if (currentType?.id && !currentType.id.startsWith('temp-')) {
+        try {
+          const functions = await fieldMappingFunctionService.getFunctionsByExtractionType(currentType.id);
+          setAvailableFunctions(functions);
+        } catch (err) {
+          console.error('Failed to load functions:', err);
+          setAvailableFunctions([]);
+        }
+      } else {
+        setAvailableFunctions([]);
+      }
+    };
+    loadFunctions();
+  }, [selectedTypeIndex, localExtractionTypes]);
+
+  const fetchNotificationTemplates = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('notification_templates')
+        .select('id, template_name, template_type')
+        .order('template_type', { ascending: true })
+        .order('is_global_default', { ascending: false })
+        .order('template_name', { ascending: true });
+
+      if (!error && data) {
+        setNotificationTemplates(data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch notification templates:', error);
+    }
+  };
 
   const handleAddTypeClick = () => {
     setShowAddModal(true);
@@ -91,14 +150,15 @@ export default function ExtractionTypesSettings({
     // Automatically save the new type
     try {
       await onUpdateExtractionTypes(updatedTypes);
-      
+      await refreshData();
+
       // Select the new type and close modal
       setSelectedTypeIndex(updatedTypes.length - 1);
       setShowCopyModal(false);
       setTypeToCopy(null);
       setCopyTypeName('');
       setCopyNameError('');
-      
+
       // Show success message
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
@@ -155,7 +215,11 @@ export default function ExtractionTypesSettings({
       console.log('Calling onUpdateExtractionTypes...');
       await onUpdateExtractionTypes(updatedTypes);
       console.log('✅ onUpdateExtractionTypes completed successfully');
-      
+
+      console.log('Refreshing data to sync local state with database...');
+      await refreshData();
+      console.log('✅ Data refresh completed');
+
       // Select the new type and close modal
       console.log('Setting selectedTypeIndex to:', newTypeIndex);
       setSelectedTypeIndex(newTypeIndex);
@@ -163,7 +227,7 @@ export default function ExtractionTypesSettings({
       setShowAddModal(false);
       setNewTypeName('');
       setNameError('');
-      
+
       // Show success message
       console.log('Showing success message...');
       setSaveSuccess(true);
@@ -342,6 +406,7 @@ export default function ExtractionTypesSettings({
       // Automatically save the changes to persist the field mappings
       try {
         await onUpdateExtractionTypes(updated);
+        await refreshData();
         setSaveSuccess(true);
         setTimeout(() => setSaveSuccess(false), 3000);
       } catch (error) {
@@ -359,6 +424,10 @@ export default function ExtractionTypesSettings({
   const handleSave = async () => {
     setIsSaving(true);
     setSaveSuccess(false);
+    const currentType = localExtractionTypes[selectedTypeIndex];
+    if (currentType) {
+      pendingSelectionRef.current = { id: currentType.id, name: currentType.name };
+    }
     try {
       await onUpdateExtractionTypes(localExtractionTypes);
       setSaveSuccess(true);
@@ -422,6 +491,7 @@ export default function ExtractionTypesSettings({
 
     try {
       await onUpdateExtractionTypes(updated);
+      await refreshData();
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (error) {
@@ -440,6 +510,7 @@ export default function ExtractionTypesSettings({
 
       try {
         await onUpdateExtractionTypes(updated);
+        await refreshData();
         setSaveSuccess(true);
         setTimeout(() => setSaveSuccess(false), 3000);
       } catch (error) {
@@ -681,7 +752,7 @@ export default function ExtractionTypesSettings({
       )}
 
       {/* Array Split Configuration Modal */}
-      {showArraySplitModal && (
+      {showArraySplitModal && createPortal(
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 pt-20">
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-2xl w-full mx-4 shadow-2xl">
             <div className="text-center mb-6">
@@ -786,7 +857,8 @@ export default function ExtractionTypesSettings({
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* JSON Error Modal */}
@@ -811,6 +883,55 @@ export default function ExtractionTypesSettings({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Field Mapping Functions Modal */}
+      {showFunctionsModal && selectedType && selectedType.id && !selectedType.id.startsWith('temp-') && createPortal(
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-4xl w-full mx-4 my-8 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-3">
+                <div className="bg-blue-100 dark:bg-blue-900/50 p-2 rounded-lg">
+                  <FunctionSquare className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">
+                    Functions for {selectedType.name}
+                  </h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Create conditional logic functions to use in field mappings
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowFunctionsModal(false);
+                  const loadFunctions = async () => {
+                    try {
+                      const functions = await fieldMappingFunctionService.getFunctionsByExtractionType(selectedType.id);
+                      setAvailableFunctions(functions);
+                    } catch (err) {
+                      console.error('Failed to reload functions:', err);
+                    }
+                  };
+                  loadFunctions();
+                }}
+                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              >
+                <span className="sr-only">Close</span>
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <FieldMappingFunctionsManager
+              extractionTypeId={selectedType.id}
+              availableFields={(selectedType.fieldMappings || []).filter(m => m.fieldName).map(m => ({ fieldName: m.fieldName, dataType: m.dataType }))}
+              extractionTypes={localExtractionTypes}
+            />
+          </div>
+        </div>,
+        document.body
       )}
 
       <div className="flex items-center justify-between">
@@ -1090,6 +1211,117 @@ export default function ExtractionTypesSettings({
               />
             </div>
 
+            {/* Notification Settings */}
+            <div className="mb-4 border border-gray-300 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-700/50">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
+                <span>📧</span> Notification Settings
+              </h3>
+
+              {/* Failure Notifications */}
+              <div className="mb-4">
+                <label className="flex items-center space-x-2 cursor-pointer mb-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedType.enableFailureNotifications || false}
+                    onChange={(e) => updateExtractionType(selectedTypeIndex, 'enableFailureNotifications', e.target.checked)}
+                    className="w-4 h-4 text-red-600 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-red-500 focus:ring-2"
+                  />
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Enable Failure Notifications
+                  </span>
+                </label>
+
+                {selectedType.enableFailureNotifications && (
+                  <div className="ml-6 space-y-3">
+                    <Select
+                      label="Failure Notification Template"
+                      value={selectedType.failureNotificationTemplateId || '__default__'}
+                      onValueChange={(value) => updateExtractionType(selectedTypeIndex, 'failureNotificationTemplateId', value === '__default__' ? undefined : value)}
+                      options={[
+                        { value: '__default__', label: 'Use Global Default' },
+                        ...notificationTemplates
+                          .filter(t => t.template_type === 'failure')
+                          .map((template) => ({
+                            value: template.id,
+                            label: template.template_name
+                          }))
+                      ]}
+                      placeholder="Select a template..."
+                      helpText="Template used for failure notification emails."
+                    />
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Override Recipient Email (Optional)
+                      </label>
+                      <input
+                        type="email"
+                        value={selectedType.failureRecipientEmailOverride || ''}
+                        onChange={(e) => updateExtractionType(selectedTypeIndex, 'failureRecipientEmailOverride', e.target.value)}
+                        placeholder="admin@example.com"
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      />
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        Leave empty to use template default (usually sender email)
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Success Notifications */}
+              <div className="mb-0">
+                <label className="flex items-center space-x-2 cursor-pointer mb-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedType.enableSuccessNotifications || false}
+                    onChange={(e) => updateExtractionType(selectedTypeIndex, 'enableSuccessNotifications', e.target.checked)}
+                    className="w-4 h-4 text-green-600 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-green-500 focus:ring-2"
+                  />
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Enable Success Notifications
+                  </span>
+                </label>
+
+                {selectedType.enableSuccessNotifications && (
+                  <div className="ml-6 space-y-3">
+                    <Select
+                      label="Success Notification Template"
+                      value={selectedType.successNotificationTemplateId || '__default__'}
+                      onValueChange={(value) => updateExtractionType(selectedTypeIndex, 'successNotificationTemplateId', value === '__default__' ? undefined : value)}
+                      options={[
+                        { value: '__default__', label: 'Use Global Default' },
+                        ...notificationTemplates
+                          .filter(t => t.template_type === 'success')
+                          .map((template) => ({
+                            value: template.id,
+                            label: template.template_name
+                          }))
+                      ]}
+                      placeholder="Select a template..."
+                      helpText="Template used for success notification emails. Supports {{response.*}} variables for API response data."
+                    />
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Override Recipient Email (Optional)
+                      </label>
+                      <input
+                        type="email"
+                        value={selectedType.successRecipientEmailOverride || ''}
+                        onChange={(e) => updateExtractionType(selectedTypeIndex, 'successRecipientEmailOverride', e.target.value)}
+                        placeholder="notifications@example.com"
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      />
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        Leave empty to send to original sender email
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Default Upload Mode */}
             <div className="mb-4">
               <div className="flex items-center justify-between mb-2">
@@ -1366,6 +1598,16 @@ export default function ExtractionTypesSettings({
                     {selectedType.formatType === 'CSV' ? 'CSV Column Mappings' : 'Field Mappings'}
                   </label>
                   <div className="flex items-center space-x-2">
+                    {selectedType.id && !selectedType.id.startsWith('temp-') && (
+                      <button
+                        onClick={() => setShowFunctionsModal(true)}
+                        className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors duration-200 flex items-center space-x-1"
+                        title="Manage conditional logic functions for field mappings"
+                      >
+                        <FunctionSquare className="h-3 w-3" />
+                        <span>Functions</span>
+                      </button>
+                    )}
                     {selectedType.formatType === 'JSON' && (
                       <button
                         onClick={() => generateFieldMappingsFromTemplateAsync(selectedTypeIndex)}
@@ -1397,10 +1639,12 @@ export default function ExtractionTypesSettings({
                   {(selectedType.fieldMappings || []).map((mapping, mappingIndex) => (
                     <div key={mappingIndex} className={`p-3 rounded-lg border-2 ${
                       mapping.type === 'hardcoded'
-                       ? 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700'
+                        ? 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700'
                         : mapping.type === 'mapped'
-                       ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-700'
-                       : 'bg-orange-50 dark:bg-orange-900/20 border-orange-300 dark:border-orange-700'
+                        ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-700'
+                        : mapping.type === 'function'
+                        ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-300 dark:border-indigo-700'
+                        : 'bg-orange-50 dark:bg-orange-900/20 border-orange-300 dark:border-orange-700'
                     }`}>
                       <div className="grid grid-cols-1 md:grid-cols-[minmax(120px,1fr)_120px_minmax(200px,2fr)_150px_80px_60px_60px_40px] gap-3 items-end">
                         <div>
@@ -1416,6 +1660,8 @@ export default function ExtractionTypesSettings({
                                 ? 'border-green-400 dark:border-green-500'
                                 : mapping.type === 'mapped'
                                 ? 'border-blue-400 dark:border-blue-500'
+                                : mapping.type === 'function'
+                                ? 'border-indigo-400 dark:border-indigo-500'
                                 : 'border-orange-400 dark:border-orange-500'
                             }`}
                             placeholder="fieldName"
@@ -1425,30 +1671,57 @@ export default function ExtractionTypesSettings({
                           <Select
                             label="Type"
                             value={mapping.type}
-                            onValueChange={(value) => updateFieldMapping(selectedTypeIndex, mappingIndex, 'type', value as 'mapped' | 'hardcoded')}
+                            onValueChange={(value) => {
+                              updateFieldMapping(selectedTypeIndex, mappingIndex, 'type', value as 'ai' | 'mapped' | 'hardcoded' | 'function');
+                              if (value !== 'function') {
+                                updateFieldMapping(selectedTypeIndex, mappingIndex, 'functionId', undefined);
+                              }
+                            }}
                             options={[
                               { value: 'ai', label: 'AI' },
                               { value: 'mapped', label: 'Mapped' },
-                              { value: 'hardcoded', label: 'Hardcoded' }
+                              { value: 'hardcoded', label: 'Hardcoded' },
+                              { value: 'function', label: 'Function' }
                             ]}
                             searchable={false}
                           />
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                            {mapping.type === 'hardcoded' ? 'Value' : mapping.type === 'mapped' ? 'PDF Coordinates' : 'Description'}
+                            {mapping.type === 'hardcoded' ? 'Value' : mapping.type === 'mapped' ? 'PDF Coordinates' : mapping.type === 'function' ? 'Select Function' : 'Description'}
                           </label>
-                          <input
-                            type="text"
-                            value={mapping.value}
-                            onChange={(e) => updateFieldMapping(selectedTypeIndex, mappingIndex, 'value', e.target.value)}
-                            className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
-                            placeholder={
-                              mapping.type === 'hardcoded' ? 'Fixed value' :
-                              mapping.type === 'mapped' ? 'e.g., (100, 200, 150, 30)' :
-                              'What to extract'
-                            }
-                          />
+                          {mapping.type === 'function' ? (
+                            <select
+                              value={mapping.functionId || ''}
+                              onChange={(e) => {
+                                updateFieldMapping(selectedTypeIndex, mappingIndex, 'functionId', e.target.value || undefined);
+                                const func = availableFunctions.find(f => f.id === e.target.value);
+                                if (func) {
+                                  updateFieldMapping(selectedTypeIndex, mappingIndex, 'value', func.function_name);
+                                }
+                              }}
+                              className="w-full px-2 py-1 border border-indigo-400 dark:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            >
+                              <option value="">Select a function...</option>
+                              {availableFunctions.map((func) => (
+                                <option key={func.id} value={func.id}>
+                                  {func.function_name}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              value={mapping.value}
+                              onChange={(e) => updateFieldMapping(selectedTypeIndex, mappingIndex, 'value', e.target.value)}
+                              className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
+                              placeholder={
+                                mapping.type === 'hardcoded' ? 'Fixed value' :
+                                mapping.type === 'mapped' ? 'e.g., (100, 200, 150, 30)' :
+                                'What to extract'
+                              }
+                            />
+                          )}
                         </div>
                         <div>
                           <Select
@@ -1550,7 +1823,8 @@ export default function ExtractionTypesSettings({
         <h4 className="font-semibold text-purple-800 dark:text-purple-300 mb-2">How Extraction Types Work</h4>
         <ul className="text-sm text-purple-700 dark:text-purple-400 space-y-1">
           <li>• Extraction types define templates for extracting specific data from PDFs</li>
-          <li>• Use field mappings to specify exactly what data to extract (AI, Mapped coordinates, or Hardcoded values)</li>
+          <li>• Use field mappings to specify exactly what data to extract (AI, Mapped coordinates, Hardcoded values, or Functions)</li>
+          <li>• <strong>Functions</strong> allow you to define conditional logic (if-then-else) to transform field values based on extracted data</li>
           <li>• JSON templates use placeholders like {`{{PARSE_IT_ID_PLACEHOLDER}}`} that get replaced with actual IDs</li>
           <li>• XML templates can include {`{{PARSE_IT_ID_PLACEHOLDER}}`} directly in the XML structure</li>
           <li>• Auto-detection instructions help AI choose the right extraction type automatically</li>
