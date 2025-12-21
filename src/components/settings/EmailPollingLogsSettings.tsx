@@ -64,12 +64,12 @@ export default function EmailPollingLogsSettings({
     return provider === 'gmail' ? '📧' : '🏢';
   };
 
-  // Calculate statistics
   const totalPolls = emailPollingLogs.length;
   const successfulPolls = emailPollingLogs.filter(log => log.status === 'success').length;
   const failedPolls = emailPollingLogs.filter(log => log.status === 'failed').length;
   const totalEmailsFound = emailPollingLogs.reduce((sum, log) => sum + log.emailsFound, 0);
   const totalEmailsProcessed = emailPollingLogs.reduce((sum, log) => sum + log.emailsProcessed, 0);
+  const totalEmailsFailed = emailPollingLogs.reduce((sum, log) => sum + (log.emailsFailed || 0), 0);
 
   return (
     <div className="space-y-6">
@@ -88,9 +88,8 @@ export default function EmailPollingLogsSettings({
         </button>
       </div>
 
-      {/* Statistics Cards */}
       {totalPolls > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
           <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
             <div className="flex items-center space-x-2">
               <Activity className="h-5 w-5 text-blue-600" />
@@ -98,7 +97,7 @@ export default function EmailPollingLogsSettings({
             </div>
             <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">{totalPolls}</p>
           </div>
-          
+
           <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
             <div className="flex items-center space-x-2">
               <CheckCircle className="h-5 w-5 text-green-600" />
@@ -106,7 +105,7 @@ export default function EmailPollingLogsSettings({
             </div>
             <p className="text-2xl font-bold text-green-600 dark:text-green-400 mt-1">{successfulPolls}</p>
           </div>
-          
+
           <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
             <div className="flex items-center space-x-2">
               <XCircle className="h-5 w-5 text-red-600" />
@@ -114,21 +113,29 @@ export default function EmailPollingLogsSettings({
             </div>
             <p className="text-2xl font-bold text-red-600 dark:text-red-400 mt-1">{failedPolls}</p>
           </div>
-          
+
           <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
             <div className="flex items-center space-x-2">
-              <Activity className="h-5 w-5 text-purple-600" />
+              <Activity className="h-5 w-5 text-cyan-600" />
               <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Emails Found</span>
             </div>
-            <p className="text-2xl font-bold text-purple-600 dark:text-purple-400 mt-1">{totalEmailsFound}</p>
+            <p className="text-2xl font-bold text-cyan-600 dark:text-cyan-400 mt-1">{totalEmailsFound}</p>
           </div>
-          
+
           <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
             <div className="flex items-center space-x-2">
-              <CheckCircle className="h-5 w-5 text-indigo-600" />
+              <CheckCircle className="h-5 w-5 text-green-600" />
               <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Processed</span>
             </div>
-            <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mt-1">{totalEmailsProcessed}</p>
+            <p className="text-2xl font-bold text-green-600 dark:text-green-400 mt-1">{totalEmailsProcessed}</p>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+            <div className="flex items-center space-x-2">
+              <XCircle className="h-5 w-5 text-red-600" />
+              <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Emails Failed</span>
+            </div>
+            <p className="text-2xl font-bold text-red-600 dark:text-red-400 mt-1">{totalEmailsFailed}</p>
           </div>
         </div>
       )}
@@ -160,6 +167,9 @@ export default function EmailPollingLogsSettings({
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Emails Processed
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Emails Failed
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Execution Time
@@ -195,6 +205,11 @@ export default function EmailPollingLogsSettings({
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className="text-sm text-gray-900 dark:text-gray-100">{log.emailsProcessed}</span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`text-sm font-medium ${(log.emailsFailed || 0) > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-gray-100'}`}>
+                      {log.emailsFailed || 0}
+                    </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center space-x-2">
