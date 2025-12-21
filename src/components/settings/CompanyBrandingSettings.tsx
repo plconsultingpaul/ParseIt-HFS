@@ -19,14 +19,17 @@ export default function CompanyBrandingSettings({
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string>('Company branding saved successfully!');
   const [isUploading, setIsUploading] = useState(false);
+  const [isUploadingClientLogin, setIsUploadingClientLogin] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadErrorClientLogin, setUploadErrorClientLogin] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const clientLoginFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setLocalBranding(companyBranding);
   }, [companyBranding]);
 
-  const updateBranding = (field: keyof CompanyBranding, value: string | boolean) => {
+  const updateBranding = (field: keyof CompanyBranding, value: string | boolean | number) => {
     setLocalBranding(prev => ({ ...prev, [field]: value }));
   };
 
@@ -66,6 +69,45 @@ export default function CompanyBrandingSettings({
       setIsUploading(false);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleClientLoginFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingClientLogin(true);
+    setUploadErrorClientLogin(null);
+    setSaveSuccess(false);
+
+    try {
+      const { publicUrl } = await uploadCompanyLogo(file);
+
+      const updatedBranding = {
+        ...localBranding,
+        clientLoginLogoUrl: publicUrl
+      };
+
+      setLocalBranding(updatedBranding);
+
+      await onUpdateCompanyBranding(updatedBranding);
+
+      if (refreshCompanyBranding) {
+        await refreshCompanyBranding();
+      }
+
+      setUploadErrorClientLogin(null);
+      setSuccessMessage('Client login logo uploaded and saved successfully!');
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (error: any) {
+      console.error('Failed to upload client login logo:', error);
+      setUploadErrorClientLogin(error.message || 'Failed to upload and save logo');
+    } finally {
+      setIsUploadingClientLogin(false);
+      if (clientLoginFileInputRef.current) {
+        clientLoginFileInputRef.current.value = '';
       }
     }
   };
@@ -241,6 +283,24 @@ export default function CompanyBrandingSettings({
               )}
             </div>
 
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Login Page Logo Size (Height in pixels)
+              </label>
+              <input
+                type="number"
+                value={localBranding.loginLogoSize || 80}
+                onChange={(e) => updateBranding('loginLogoSize', parseInt(e.target.value) || 80)}
+                min={32}
+                max={300}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all hover:border-blue-400 dark:hover:border-blue-500"
+                placeholder="80"
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Controls the logo height on the admin login page only (32-300px). Does not affect sidebar.
+              </p>
+            </div>
+
             {/* Logo Preview */}
             {localBranding.logoUrl && (
               <div>
@@ -266,6 +326,154 @@ export default function CompanyBrandingSettings({
                     <div className="text-sm text-gray-600 dark:text-gray-400">
                       <p>Logo will appear in the sidebar and login screen</p>
                       <p className="text-xs mt-1">Recommended size: 200x50px or similar aspect ratio</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Client Login Branding */}
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 shadow-sm">
+          <div className="flex items-center space-x-3 mb-6">
+            <div className="bg-amber-100 dark:bg-amber-900/50 p-2 rounded-lg">
+              <Image className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+            </div>
+            <div>
+              <h4 className="font-semibold text-gray-900 dark:text-gray-100">Client Login Branding</h4>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Customize the client login page appearance</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Company Name (Client Login)
+              </label>
+              <input
+                type="text"
+                value={localBranding.clientLoginCompanyName || ''}
+                onChange={(e) => updateBranding('clientLoginCompanyName', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all hover:border-amber-400 dark:hover:border-amber-500"
+                placeholder="Your Company Name"
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Displayed as the main heading on the client login page. Leave blank to show no company name.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Logo URL
+                </label>
+                <input
+                  type="url"
+                  value={localBranding.clientLoginLogoUrl || ''}
+                  onChange={(e) => updateBranding('clientLoginLogoUrl', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all hover:border-amber-400 dark:hover:border-amber-500"
+                  placeholder="https://example.com/client-logo.png"
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  If not set, the main company logo will be used
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Logo Size (Height in pixels)
+                </label>
+                <input
+                  type="number"
+                  value={localBranding.clientLoginLogoSize || 80}
+                  onChange={(e) => updateBranding('clientLoginLogoSize', parseInt(e.target.value) || 80)}
+                  min={32}
+                  max={300}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all hover:border-amber-400 dark:hover:border-amber-500"
+                  placeholder="80"
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Controls the logo height on the client login page (32-300px)
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <div className="h-px flex-1 bg-gray-300 dark:bg-gray-600"></div>
+              <span className="text-sm text-gray-500 dark:text-gray-400">OR</span>
+              <div className="h-px flex-1 bg-gray-300 dark:bg-gray-600"></div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Upload Logo File
+              </label>
+              <input
+                ref={clientLoginFileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
+                onChange={handleClientLoginFileUpload}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => clientLoginFileInputRef.current?.click()}
+                disabled={isUploadingClientLogin}
+                className="w-full px-4 py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg hover:border-amber-500 dark:hover:border-amber-400 transition-colors bg-white dark:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <div className="flex items-center justify-center space-x-2">
+                  {isUploadingClientLogin ? (
+                    <>
+                      <Loader className="h-5 w-5 text-amber-600 dark:text-amber-400 animate-spin" />
+                      <span className="text-sm text-gray-700 dark:text-gray-300">Uploading and saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                      <span className="text-sm text-gray-700 dark:text-gray-300">Click to upload client login logo</span>
+                    </>
+                  )}
+                </div>
+              </button>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                Supported formats: PNG, JPG, SVG, WebP (Max 2MB)
+              </p>
+              {uploadErrorClientLogin && (
+                <div className="mt-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-3">
+                  <p className="text-red-700 dark:text-red-400 text-sm">{uploadErrorClientLogin}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Client Login Logo Preview */}
+            {(localBranding.clientLoginLogoUrl || localBranding.logoUrl) && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Logo Preview
+                </label>
+                <div className="bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg p-4">
+                  <div className="flex items-center space-x-4">
+                    <img
+                      src={localBranding.clientLoginLogoUrl || localBranding.logoUrl}
+                      alt="Client Login Logo Preview"
+                      style={{ height: `${localBranding.clientLoginLogoSize || 80}px` }}
+                      className="w-auto object-contain"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = 'none';
+                        const errorDiv = target.nextElementSibling as HTMLElement;
+                        if (errorDiv) errorDiv.style.display = 'block';
+                      }}
+                    />
+                    <div className="hidden bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded p-2">
+                      <p className="text-red-700 dark:text-red-400 text-sm">Failed to load logo image</p>
+                    </div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                      <p>This logo will appear on the client login page (/client/login)</p>
+                      <p className="text-xs mt-1">
+                        Current size: {localBranding.clientLoginLogoSize || 80}px height
+                        {!localBranding.clientLoginLogoUrl && ' (using main logo)'}
+                      </p>
                     </div>
                   </div>
                 </div>
