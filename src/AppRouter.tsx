@@ -1,12 +1,18 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth';
 import { useSupabaseData } from './hooks/useSupabaseData';
 import { DarkModeProvider } from './contexts/DarkModeContext';
 import { Loader2 } from 'lucide-react';
 
 import LoginPage from './components/LoginPage';
+import ClientLoginPage from './components/ClientLoginPage';
+import ClientLayout from './components/ClientLayout';
+import ClientHelpPage from './components/ClientHelpPage';
+import ClientUsersPage from './components/ClientUsersPage';
 import DriverCheckinPage from './components/DriverCheckinPage';
+import PasswordSetupPage from './components/PasswordSetupPage';
+import PasswordResetPage from './components/PasswordResetPage';
 import LayoutRouter from './components/LayoutRouter';
 import PrivateRoute from './components/router/PrivateRoute';
 import RoleBasedRoute from './components/router/RoleBasedRoute';
@@ -25,6 +31,10 @@ import OrderEntrySubmissionsPage from './components/OrderEntrySubmissionsPage';
 import OrderEntrySubmissionDetailPage from './components/OrderEntrySubmissionDetailPage';
 import RateQuotePage from './components/RateQuotePage';
 import AddressBookPage from './components/AddressBookPage';
+import TrackTracePage from './components/TrackTracePage';
+import ShipmentDetailsPage from './components/ShipmentDetailsPage';
+import InvoicePage from './components/InvoicePage';
+import HelpPage from './components/HelpPage';
 
 import type { ExtractionType, TransformationType, SftpConfig, SettingsConfig, ApiConfig, EmailMonitoringConfig, EmailProcessingRule } from './types';
 
@@ -185,7 +195,36 @@ function AppContent() {
     );
   }
 
+  const publicPaths = ['/client/login', '/client', '/password-setup', '/reset-password', '/driver-checkin', '/checkin', '/help'];
+  const isPublicPath = publicPaths.some(p => location.pathname === p || location.pathname.startsWith(p + '/'));
+
   if (!isAuthenticated || !user) {
+    if (isPublicPath) {
+      return (
+        <Routes>
+          <Route path="/driver-checkin" element={<DriverCheckinPage />} />
+          <Route path="/checkin" element={<DriverCheckinPage />} />
+          <Route path="/password-setup" element={<PasswordSetupPage />} />
+          <Route path="/reset-password" element={<PasswordResetPage />} />
+          <Route path="/help" element={<HelpPage />} />
+          <Route path="/client/login" element={
+            <ClientPortalLogin
+              companyBranding={companyBranding}
+              onLogin={login}
+              isAuthenticated={isAuthenticated}
+              user={user}
+            />
+          } />
+          <Route path="/client" element={
+            <ClientPortalRedirect
+              isAuthenticated={isAuthenticated}
+              user={user}
+            />
+          } />
+          <Route path="*" element={<Navigate to="/client/login" replace />} />
+        </Routes>
+      );
+    }
     return <LoginPage companyBranding={companyBranding} onLogin={login} />;
   }
 
@@ -193,6 +232,8 @@ function AppContent() {
     <Routes>
       <Route path="/driver-checkin" element={<DriverCheckinPage />} />
       <Route path="/checkin" element={<DriverCheckinPage />} />
+      <Route path="/password-setup" element={<PasswordSetupPage />} />
+      <Route path="/reset-password" element={<PasswordResetPage />} />
 
       <Route path="/" element={
         <PrivateRoute isAuthenticated={isAuthenticated} user={user}>
@@ -420,6 +461,51 @@ function AppContent() {
         </PrivateRoute>
       } />
 
+      <Route path="/track-trace" element={
+        <PrivateRoute isAuthenticated={isAuthenticated} user={user}>
+          <RoleBasedRoute
+            user={user}
+            requireClientAccess="trackTrace"
+            deniedTitle="Track & Trace Access Denied"
+            deniedMessage="You do not have permission to access Track & Trace. This feature is only available to client users with appropriate access."
+          >
+            <LayoutRouter user={user} companyBranding={companyBranding} onLogout={logout}>
+              <TrackTracePage currentUser={user} />
+            </LayoutRouter>
+          </RoleBasedRoute>
+        </PrivateRoute>
+      } />
+
+      <Route path="/shipment/:orderId" element={
+        <PrivateRoute isAuthenticated={isAuthenticated} user={user}>
+          <RoleBasedRoute
+            user={user}
+            requireClientAccess="trackTrace"
+            deniedTitle="Shipment Details Access Denied"
+            deniedMessage="You do not have permission to access shipment details."
+          >
+            <LayoutRouter user={user} companyBranding={companyBranding} onLogout={logout}>
+              <ShipmentDetailsPage currentUser={user} />
+            </LayoutRouter>
+          </RoleBasedRoute>
+        </PrivateRoute>
+      } />
+
+      <Route path="/invoices" element={
+        <PrivateRoute isAuthenticated={isAuthenticated} user={user}>
+          <RoleBasedRoute
+            user={user}
+            requireClientAccess="invoice"
+            deniedTitle="Invoice Access Denied"
+            deniedMessage="You do not have permission to access Invoices. This feature is only available to client users with appropriate access."
+          >
+            <LayoutRouter user={user} companyBranding={companyBranding} onLogout={logout}>
+              <InvoicePage />
+            </LayoutRouter>
+          </RoleBasedRoute>
+        </PrivateRoute>
+      } />
+
       <Route path="/client-users" element={
         <PrivateRoute isAuthenticated={isAuthenticated} user={user}>
           <RoleBasedRoute
@@ -537,8 +623,301 @@ function AppContent() {
         </PrivateRoute>
       } />
 
+      <Route path="/help" element={<HelpPage />} />
+
+      <Route path="/client/login" element={
+        <ClientPortalLogin
+          companyBranding={companyBranding}
+          onLogin={login}
+          isAuthenticated={isAuthenticated}
+          user={user}
+        />
+      } />
+
+      <Route path="/client" element={
+        <ClientPortalRedirect
+          isAuthenticated={isAuthenticated}
+          user={user}
+        />
+      } />
+
+      <Route path="/client/track-trace" element={
+        <ClientPortalRoute
+          isAuthenticated={isAuthenticated}
+          user={user}
+          companyBranding={companyBranding}
+          onLogout={logout}
+          currentPage="track-trace"
+          requiredAccess="trackTrace"
+        >
+          <TrackTracePage currentUser={user} />
+        </ClientPortalRoute>
+      } />
+
+      <Route path="/client/shipment/:orderId" element={
+        <ClientPortalRoute
+          isAuthenticated={isAuthenticated}
+          user={user}
+          companyBranding={companyBranding}
+          onLogout={logout}
+          currentPage="track-trace"
+          requiredAccess="trackTrace"
+        >
+          <ShipmentDetailsPage currentUser={user} />
+        </ClientPortalRoute>
+      } />
+
+      <Route path="/client/order-entry" element={
+        <ClientPortalRoute
+          isAuthenticated={isAuthenticated}
+          user={user}
+          companyBranding={companyBranding}
+          onLogout={logout}
+          currentPage="order-entry"
+          requiredAccess="orderEntry"
+        >
+          <OrderEntryPage currentUser={user!} />
+        </ClientPortalRoute>
+      } />
+
+      <Route path="/client/rate-quotes" element={
+        <ClientPortalRoute
+          isAuthenticated={isAuthenticated}
+          user={user}
+          companyBranding={companyBranding}
+          onLogout={logout}
+          currentPage="rate-quote"
+          requiredAccess="rateQuote"
+        >
+          <RateQuotePage />
+        </ClientPortalRoute>
+      } />
+
+      <Route path="/client/invoices" element={
+        <ClientPortalRoute
+          isAuthenticated={isAuthenticated}
+          user={user}
+          companyBranding={companyBranding}
+          onLogout={logout}
+          currentPage="invoices"
+          requiredAccess="invoice"
+        >
+          <InvoicePage />
+        </ClientPortalRoute>
+      } />
+
+      <Route path="/client/address-book" element={
+        <ClientPortalRoute
+          isAuthenticated={isAuthenticated}
+          user={user}
+          companyBranding={companyBranding}
+          onLogout={logout}
+          currentPage="address-book"
+          requiredAccess="addressBook"
+        >
+          <AddressBookPage user={user!} />
+        </ClientPortalRoute>
+      } />
+
+      <Route path="/client/users" element={
+        <ClientPortalRoute
+          isAuthenticated={isAuthenticated}
+          user={user}
+          companyBranding={companyBranding}
+          onLogout={logout}
+          currentPage="users"
+          requiredAccess="clientAdmin"
+        >
+          <ClientUsersPage
+            currentUser={user!}
+            getAllUsers={getAllUsers}
+            createUser={createUser}
+            updateUser={updateUser}
+            deleteUser={deleteUser}
+            updateUserPassword={updateUserPassword}
+          />
+        </ClientPortalRoute>
+      } />
+
+      <Route path="/client/help" element={
+        <ClientPortalRoute
+          isAuthenticated={isAuthenticated}
+          user={user}
+          companyBranding={companyBranding}
+          onLogout={logout}
+          currentPage="help"
+        >
+          <ClientHelpPage />
+        </ClientPortalRoute>
+      } />
+
       <Route path="*" element={<NotFound />} />
     </Routes>
+  );
+}
+
+interface ClientPortalLoginProps {
+  companyBranding?: any;
+  onLogin: (username: string, password: string) => Promise<{ success: boolean; message?: string }>;
+  isAuthenticated: boolean;
+  user: any;
+}
+
+function ClientPortalLogin({ companyBranding, onLogin, isAuthenticated, user }: ClientPortalLoginProps) {
+  const navigate = useNavigate();
+
+  React.useEffect(() => {
+    if (isAuthenticated && user) {
+      if (user.role === 'client') {
+        const defaultPage = getClientDefaultPage(user);
+        navigate(`/client/${defaultPage}`, { replace: true });
+      } else {
+        navigate('/', { replace: true });
+      }
+    }
+  }, [isAuthenticated, user, navigate]);
+
+  const handleClientLogin = async (username: string, password: string) => {
+    const result = await onLogin(username, password);
+    return {
+      ...result,
+      isClientUser: result.success
+    };
+  };
+
+  if (isAuthenticated && user) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  return <ClientLoginPage companyBranding={companyBranding} onLogin={handleClientLogin} />;
+}
+
+interface ClientPortalRedirectProps {
+  isAuthenticated: boolean;
+  user: any;
+}
+
+function ClientPortalRedirect({ isAuthenticated, user }: ClientPortalRedirectProps) {
+  if (!isAuthenticated || !user) {
+    return <Navigate to="/client/login" replace />;
+  }
+
+  if (user.role !== 'client') {
+    return <Navigate to="/" replace />;
+  }
+
+  const defaultPage = getClientDefaultPage(user);
+  return <Navigate to={`/client/${defaultPage}`} replace />;
+}
+
+function getClientDefaultPage(user: any): string {
+  if (user.hasTrackTraceAccess) return 'track-trace';
+  if (user.hasOrderEntryAccess) return 'order-entry';
+  if (user.hasRateQuoteAccess) return 'rate-quotes';
+  if (user.hasInvoiceAccess) return 'invoices';
+  if (user.hasAddressBookAccess || user.isClientAdmin) return 'address-book';
+  if (user.isClientAdmin) return 'users';
+  return 'help';
+}
+
+interface ClientPortalRouteProps {
+  isAuthenticated: boolean;
+  user: any;
+  companyBranding?: any;
+  onLogout: () => void;
+  currentPage: 'order-entry' | 'rate-quote' | 'address-book' | 'track-trace' | 'invoices' | 'users' | 'help';
+  requiredAccess?: 'orderEntry' | 'rateQuote' | 'addressBook' | 'trackTrace' | 'invoice' | 'clientAdmin';
+  children: React.ReactNode;
+}
+
+function ClientPortalRoute({
+  isAuthenticated,
+  user,
+  companyBranding,
+  onLogout,
+  currentPage,
+  requiredAccess,
+  children
+}: ClientPortalRouteProps) {
+  const navigate = useNavigate();
+
+  console.log(`[ClientPortalRoute] Rendering ${currentPage} - user object:`, {
+    id: user?.id,
+    username: user?.username,
+    clientId: user?.clientId,
+    role: user?.role,
+    hasTrackTraceAccess: user?.hasTrackTraceAccess
+  });
+
+  if (!isAuthenticated || !user) {
+    return <Navigate to="/client/login" replace />;
+  }
+
+  if (user.role !== 'client') {
+    return <Navigate to="/" replace />;
+  }
+
+  if (requiredAccess) {
+    let hasAccess = false;
+    switch (requiredAccess) {
+      case 'orderEntry':
+        hasAccess = user.hasOrderEntryAccess === true;
+        break;
+      case 'rateQuote':
+        hasAccess = user.hasRateQuoteAccess === true;
+        break;
+      case 'addressBook':
+        hasAccess = user.hasAddressBookAccess === true || user.isClientAdmin === true;
+        break;
+      case 'trackTrace':
+        hasAccess = user.hasTrackTraceAccess === true;
+        break;
+      case 'invoice':
+        hasAccess = user.hasInvoiceAccess === true;
+        break;
+      case 'clientAdmin':
+        hasAccess = user.isClientAdmin === true;
+        break;
+    }
+
+    if (!hasAccess) {
+      const defaultPage = getClientDefaultPage(user);
+      return <Navigate to={`/client/${defaultPage}`} replace />;
+    }
+  }
+
+  const handleNavigate = (page: 'order-entry' | 'rate-quote' | 'address-book' | 'track-trace' | 'invoices' | 'users' | 'help') => {
+    const routeMap: Record<string, string> = {
+      'order-entry': '/client/order-entry',
+      'rate-quote': '/client/rate-quotes',
+      'address-book': '/client/address-book',
+      'track-trace': '/client/track-trace',
+      'invoices': '/client/invoices',
+      'users': '/client/users',
+      'help': '/client/help'
+    };
+    navigate(routeMap[page] || '/client/help');
+  };
+
+  const handleClientLogout = () => {
+    onLogout();
+    navigate('/client/login');
+  };
+
+  return (
+    <ClientLayout
+      currentPage={currentPage}
+      onNavigate={handleNavigate}
+      user={user}
+      companyBranding={companyBranding}
+      onLogout={handleClientLogout}
+    >
+      {children}
+    </ClientLayout>
   );
 }
 
