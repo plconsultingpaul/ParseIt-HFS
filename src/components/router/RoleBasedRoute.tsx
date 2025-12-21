@@ -7,7 +7,7 @@ interface RoleBasedRouteProps {
   user: User;
   requireRole?: 'admin' | 'user' | 'vendor' | 'client';
   requirePermission?: keyof User['permissions'];
-  requireClientAccess?: 'orderEntry' | 'rateQuote' | 'addressBook' | 'clientAdmin';
+  requireClientAccess?: 'orderEntry' | 'rateQuote' | 'addressBook' | 'trackTrace' | 'invoice' | 'clientAdmin';
   customCheck?: (user: User) => boolean;
   deniedTitle?: string;
   deniedMessage?: string;
@@ -50,6 +50,10 @@ export default function RoleBasedRoute({
           return user.hasRateQuoteAccess === true;
         case 'addressBook':
           return user.hasAddressBookAccess === true || user.isClientAdmin === true;
+        case 'trackTrace':
+          return user.hasTrackTraceAccess === true;
+        case 'invoice':
+          return user.hasInvoiceAccess === true;
         case 'clientAdmin':
           return user.isClientAdmin === true;
         default:
