@@ -1,7 +1,62 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Save, Users, Shield, User as UserIcon, Eye, EyeOff, Settings, FileText, Server, Key, Mail, Filter, Database, GitBranch, Brain, RefreshCw } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Plus, Trash2, Save, Users, Shield, User as UserIcon, Eye, EyeOff, Settings, FileText, Server, Key, Mail, Filter, Database, GitBranch, Brain, RefreshCw, Send, Clock } from 'lucide-react';
 import type { User, ExtractionType, TransformationType } from '../../types';
 import Select from '../common/Select';
+import InvitationEmailTemplateEditor from './InvitationEmailTemplateEditor';
+import PasswordResetTemplateEditor from './PasswordResetTemplateEditor';
+import { supabase } from '../../lib/supabase';
+
+const formatLastLogin = (lastLogin: string | undefined): string => {
+  if (!lastLogin) return 'Never';
+
+  const loginDate = new Date(lastLogin);
+  const now = new Date();
+  const diffMs = now.getTime() - loginDate.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins} min${diffMins !== 1 ? 's' : ''} ago`;
+  if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+  if (diffDays < 7) return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+
+  return loginDate.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: loginDate.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+  });
+};
+
+const formatInvitationSent = (sentAt: string | undefined, count: number | undefined): string => {
+  if (!sentAt) return 'Never';
+
+  const sentDate = new Date(sentAt);
+  const now = new Date();
+  const diffMs = now.getTime() - sentDate.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  let timeStr: string;
+  if (diffMins < 1) timeStr = 'Just now';
+  else if (diffMins < 60) timeStr = `${diffMins} min${diffMins !== 1 ? 's' : ''} ago`;
+  else if (diffHours < 24) timeStr = `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+  else if (diffDays < 7) timeStr = `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+  else {
+    timeStr = sentDate.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: sentDate.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+    });
+  }
+
+  if (count && count > 1) {
+    return `${timeStr} (x${count})`;
+  }
+  return timeStr;
+};
 
 interface UserManagementSettingsProps {
   currentUser: User;
@@ -69,6 +124,10 @@ export default function UserManagementSettings({
   const [userForTransformationTypes, setUserForTransformationTypes] = useState<User | null>(null);
   const [selectedTransformationTypeIds, setSelectedTransformationTypeIds] = useState<string[]>([]);
   const [isUpdatingTransformationTypes, setIsUpdatingTransformationTypes] = useState(false);
+  const [showEmailTemplateModal, setShowEmailTemplateModal] = useState(false);
+  const [showForgotUsernameTemplateModal, setShowForgotUsernameTemplateModal] = useState(false);
+  const [showResetPasswordTemplateModal, setShowResetPasswordTemplateModal] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState<string | null>(null);
 
   const permissionOptions = [
     { key: 'extractionTypes', label: 'Extraction Types', icon: FileText, description: 'Manage PDF extraction templates and configurations' },
@@ -503,6 +562,47 @@ export default function UserManagementSettings({
   const getPermissionCount = (user: User) => {
     return Object.values(user.permissions).filter(Boolean).length;
   };
+
+  const handleSendRegistrationEmail = async (user: User) => {
+    if (!user.email) {
+      setError('Cannot send registration email - user has no email address');
+      setTimeout(() => setError(''), 3000);
+      return;
+    }
+
+    setSendingEmail(user.id);
+    setError('');
+    setSuccess('');
+
+    try {
+      const { data, error } = await supabase.functions.invoke('send-registration-email', {
+        body: {
+          userId: user.id,
+          userEmail: user.email,
+          userName: user.username,
+          templateType: 'admin'
+        }
+      });
+
+      if (error) throw error;
+
+      if (data.success) {
+        setSuccess(`Registration email sent to ${user.email}`);
+        await loadUsers();
+        setTimeout(() => setSuccess(''), 5000);
+      } else {
+        setError(data.message || 'Failed to send registration email');
+        setTimeout(() => setError(''), 5000);
+      }
+    } catch (error: any) {
+      console.error('Failed to send registration email:', error);
+      setError(error.message || 'Failed to send registration email');
+      setTimeout(() => setError(''), 5000);
+    } finally {
+      setSendingEmail(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -1232,13 +1332,36 @@ export default function UserManagementSettings({
           <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">User Management</h3>
           <p className="text-gray-600 dark:text-gray-400 mt-1">Manage user accounts and permissions</p>
         </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
-        >
-          <Plus className="h-4 w-4" />
-          <span>Add User</span>
-        </button>
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={() => setShowEmailTemplateModal(true)}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2"
+          >
+            <Mail className="h-4 w-4" />
+            <span>Edit Invite Email</span>
+          </button>
+          <button
+            onClick={() => setShowForgotUsernameTemplateModal(true)}
+            className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2"
+          >
+            <Mail className="h-4 w-4" />
+            <span>Edit Forgot Username Email</span>
+          </button>
+          <button
+            onClick={() => setShowResetPasswordTemplateModal(true)}
+            className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2"
+          >
+            <Mail className="h-4 w-4" />
+            <span>Edit Reset Password Email</span>
+          </button>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Add User</span>
+          </button>
+        </div>
       </div>
 
       {success && (
@@ -1290,7 +1413,7 @@ export default function UserManagementSettings({
                       {user.email}
                     </p>
                   )}
-                  <div className="flex items-center space-x-4 mt-1">
+                  <div className="flex items-center flex-wrap gap-x-4 gap-y-1 mt-1">
                     <span className={`text-sm ${
                       user.role === 'admin' ? 'text-purple-600 dark:text-purple-400 font-medium' :
                       user.role === 'vendor' ? 'text-orange-600 dark:text-orange-400 font-medium' :
@@ -1318,10 +1441,35 @@ export default function UserManagementSettings({
                       </span>
                     )}
                   </div>
+                  <div className="flex items-center flex-wrap gap-x-4 gap-y-1 mt-2">
+                    <span className="text-sm text-gray-500 dark:text-gray-400 flex items-center">
+                      <Mail className="h-3 w-3 mr-1" />
+                      Invite: {formatInvitationSent(user.invitationSentAt, user.invitationSentCount)}
+                    </span>
+                    <span className="text-sm text-gray-500 dark:text-gray-400 flex items-center">
+                      <Clock className="h-3 w-3 mr-1" />
+                      Last Login: {formatLastLogin(user.lastLogin)}
+                    </span>
+                  </div>
                 </div>
               </div>
 
               <div className="flex items-center space-x-2">
+                {user.email && (
+                  <button
+                    onClick={() => handleSendRegistrationEmail(user)}
+                    disabled={sendingEmail === user.id}
+                    className="px-3 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800 hover:bg-green-200 transition-colors duration-200 flex items-center space-x-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Send registration email"
+                  >
+                    {sendingEmail === user.id ? (
+                      <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-green-600"></div>
+                    ) : (
+                      <Send className="h-3 w-3" />
+                    )}
+                    <span>Send Invite</span>
+                  </button>
+                )}
                 <button
                   onClick={() => handleManageEmail(user)}
                   className="px-3 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800 hover:bg-blue-200 transition-colors duration-200 flex items-center space-x-1"
@@ -1430,8 +1578,28 @@ export default function UserManagementSettings({
           <li>• The default admin account (admin) cannot be deactivated</li>
           <li>• The default admin account (admin/J@ckjohn1) is always available and protected</li>
           <li>• Click "Permissions" to customize which settings each user can access</li>
+          <li>• Click "Send Invite" to send a registration email with password setup link</li>
         </ul>
       </div>
+
+      {showEmailTemplateModal && (
+        <InvitationEmailTemplateEditor
+          onClose={() => setShowEmailTemplateModal(false)}
+          templateType="admin"
+        />
+      )}
+
+      <PasswordResetTemplateEditor
+        isOpen={showForgotUsernameTemplateModal}
+        onClose={() => setShowForgotUsernameTemplateModal(false)}
+        templateType="admin_forgot_username"
+      />
+
+      <PasswordResetTemplateEditor
+        isOpen={showResetPasswordTemplateModal}
+        onClose={() => setShowResetPasswordTemplateModal(false)}
+        templateType="admin_reset_password"
+      />
     </div>
   );
 }
