@@ -121,6 +121,42 @@ const resolveSchemaRef = (ref: string, specContent: any) => {
 const extractFieldsFromEndpoint = (endpoint: any, specContent: any): any[] => {
   const fields: any[] = [];
 
+  const extractSchemaFields = (properties: any, requiredFields: string[] = [], parentPath = '', prefix = '') => {
+    if (!properties) return;
+
+    Object.entries(properties).forEach(([fieldName, fieldDef]: [string, any]) => {
+      const basePath = parentPath ? `${parentPath}.${fieldName}` : fieldName;
+      const fieldPath = prefix ? `${prefix} ${basePath}` : basePath;
+
+      fields.push({
+        api_spec_endpoint_id: endpoint.id,
+        field_name: fieldName,
+        field_path: fieldPath,
+        field_type: fieldDef.type || 'string',
+        is_required: requiredFields.includes(fieldName),
+        description: fieldDef.description || '',
+        example: fieldDef.example ? String(fieldDef.example) : null,
+        format: fieldDef.format || null,
+        parent_field_id: null,
+      });
+
+      if (fieldDef.type === 'object' && fieldDef.properties) {
+        extractSchemaFields(fieldDef.properties, fieldDef.required || [], basePath, prefix);
+      }
+
+      if (fieldDef.type === 'array' && fieldDef.items?.properties) {
+        extractSchemaFields(fieldDef.items.properties, fieldDef.items.required || [], `${basePath}[]`, prefix);
+      }
+
+      if (fieldDef.type === 'array' && fieldDef.items?.$ref) {
+        const itemSchema = resolveSchemaRef(fieldDef.items.$ref, specContent);
+        if (itemSchema?.properties) {
+          extractSchemaFields(itemSchema.properties, itemSchema.required || [], `${basePath}[]`, prefix);
+        }
+      }
+    });
+  };
+
   if (endpoint.parameters && Array.isArray(endpoint.parameters)) {
     endpoint.parameters.forEach((paramRef: any) => {
       let param = paramRef;
@@ -176,53 +212,50 @@ const extractFieldsFromEndpoint = (endpoint: any, specContent: any): any[] => {
   }
 
   const requestBody = endpoint.request_body;
-  if (!requestBody) return fields;
+  if (requestBody) {
+    const schema = requestBody.content?.['application/json']?.schema;
+    if (schema) {
+      const resolvedSchema = schema.$ref
+        ? resolveSchemaRef(schema.$ref, specContent)
+        : schema;
 
-  const schema = requestBody.content?.['application/json']?.schema;
-  if (!schema) return fields;
+      if (resolvedSchema?.properties) {
+        extractSchemaFields(resolvedSchema.properties, resolvedSchema.required || [], '', '[body]');
+      }
+    }
+  }
 
-  const resolvedSchema = schema.$ref
-    ? resolveSchemaRef(schema.$ref, specContent)
-    : schema;
+  const responses = endpoint.responses;
+  if (responses && typeof responses === 'object') {
+    const successCodes = ['200', '201', '202', '204'];
+    for (const statusCode of successCodes) {
+      const response = responses[statusCode];
+      if (!response) continue;
 
-  if (!resolvedSchema) return fields;
+      const responseSchema = response.content?.['application/json']?.schema;
+      if (!responseSchema) continue;
 
-  const extractFields = (properties: any, requiredFields: string[] = [], parentPath = '') => {
-    if (!properties) return;
+      const resolvedResponseSchema = responseSchema.$ref
+        ? resolveSchemaRef(responseSchema.$ref, specContent)
+        : responseSchema;
 
-    Object.entries(properties).forEach(([fieldName, fieldDef]: [string, any]) => {
-      const fieldPath = parentPath ? `${parentPath}.${fieldName}` : fieldName;
-
-      fields.push({
-        api_spec_endpoint_id: endpoint.id,
-        field_name: fieldName,
-        field_path: fieldPath,
-        field_type: fieldDef.type || 'string',
-        is_required: requiredFields.includes(fieldName),
-        description: fieldDef.description || '',
-        example: fieldDef.example ? String(fieldDef.example) : null,
-        format: fieldDef.format || null,
-        parent_field_id: null,
-      });
-
-      if (fieldDef.type === 'object' && fieldDef.properties) {
-        extractFields(fieldDef.properties, fieldDef.required || [], fieldPath);
+      if (resolvedResponseSchema?.properties) {
+        extractSchemaFields(resolvedResponseSchema.properties, resolvedResponseSchema.required || [], '', '[response]');
+        break;
       }
 
-      if (fieldDef.type === 'array' && fieldDef.items?.properties) {
-        extractFields(fieldDef.items.properties, fieldDef.items.required || [], `${fieldPath}[]`);
-      }
+      if (resolvedResponseSchema?.type === 'array' && resolvedResponseSchema.items) {
+        const itemSchema = resolvedResponseSchema.items.$ref
+          ? resolveSchemaRef(resolvedResponseSchema.items.$ref, specContent)
+          : resolvedResponseSchema.items;
 
-      if (fieldDef.type === 'array' && fieldDef.items?.$ref) {
-        const itemSchema = resolveSchemaRef(fieldDef.items.$ref, specContent);
         if (itemSchema?.properties) {
-          extractFields(itemSchema.properties, itemSchema.required || [], `${fieldPath}[]`);
+          extractSchemaFields(itemSchema.properties, itemSchema.required || [], '[]', '[response]');
+          break;
         }
       }
-    });
-  };
-
-  extractFields(resolvedSchema.properties, resolvedSchema.required || []);
+    }
+  }
 
   return fields;
 };
