@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Plus, Trash2, Save, FileText, Code, Database, Map, Brain, RefreshCw, Copy } from 'lucide-react';
 import type { TransformationType, TransformationFieldMapping, PageGroupConfig } from '../../types';
 import { useSupabaseData } from '../../hooks/useSupabaseData';
@@ -669,7 +670,7 @@ export default function TransformationTypesSettings({
       )}
 
       {/* Delete Confirmation Modal */}
-      {showDeleteModal && typeToDelete && (
+      {showDeleteModal && typeToDelete && createPortal(
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
             <div className="text-center mb-6">
@@ -679,7 +680,7 @@ export default function TransformationTypesSettings({
               <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">Delete Transformation Type</h3>
               <p className="text-gray-600 dark:text-gray-400">Are you sure you want to delete "{typeToDelete.name}"? This action cannot be undone.</p>
             </div>
-            
+
             <div className="flex space-x-3">
               <button
                 onClick={confirmDelete}
@@ -698,7 +699,8 @@ export default function TransformationTypesSettings({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       <div className="flex items-center justify-between">
