@@ -43,8 +43,10 @@ export default function App() {
     isAuthenticated,
     user,
     loading: authLoading,
+    sessionExpiredMessage,
     login,
     logout,
+    clearSessionExpiredMessage,
     getAllUsers,
     createUser,
     updateUser,
@@ -134,9 +136,15 @@ export default function App() {
     );
   }
 
-  // Show login page if not authenticated
   if (!isAuthenticated || !user) {
-    return <LoginPage companyBranding={companyBranding} onLogin={login} />;
+    return (
+      <LoginPage
+        companyBranding={companyBranding}
+        onLogin={login}
+        sessionExpiredMessage={sessionExpiredMessage}
+        onClearSessionExpiredMessage={clearSessionExpiredMessage}
+      />
+    );
   }
 
   const handleNavigate = (page: 'extract' | 'vendor-setup' | 'checkin-setup' | 'client-setup' | 'transform' | 'types' | 'settings' | 'logs' | 'order-entry' | 'order-submissions' | 'rate-quote' | 'client-users') => {
