@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { Send, Loader2 } from 'lucide-react';
 import PageProcessorCard from './PageProcessorCard';
 import PageGroupCard from './PageGroupCard';
-import type { ExtractionType, SftpConfig, SettingsConfig, ApiConfig, User, PageProcessingState, ApiError, WorkflowExecutionLog } from '../../types';
+import type { ExtractionType, SftpConfig, SettingsConfig, ApiConfig, User, PageProcessingState, ApiError, WorkflowExecutionLog, FieldMappingFunction } from '../../types';
 import { extractDataFromPDF, extractJsonFromMultiPagePDF } from '../../lib/gemini';
 import { extractCsvFromPDF, extractCsvFromMultiPagePDF } from '../../lib/csvExtractor';
 import { uploadToSftp } from '../../lib/sftp';
 import { executeWorkflow } from '../../lib/workflow';
 import { sendToApi } from '../../lib/apiClient';
+import { fieldMappingFunctionService } from '../../services/fieldMappingFunctionService';
 
 interface MultiPageProcessorProps {
   pdfPages: File[];
@@ -37,6 +38,7 @@ export default function MultiPageProcessor({
   const [isExtractingAll, setIsExtractingAll] = useState(false);
   const [currentProcessingPage, setCurrentProcessingPage] = useState<number | null>(null);
   const [pageProcessingStates, setPageProcessingStates] = useState<PageProcessingState[]>([]);
+  const [functions, setFunctions] = useState<FieldMappingFunction[]>([]);
 
   const isJsonType = currentExtractionType?.formatType === 'JSON';
   const isCsvType = currentExtractionType?.formatType === 'CSV';
@@ -57,6 +59,24 @@ export default function MultiPageProcessor({
     }));
     setPageProcessingStates(initialStates);
   }, [pdfPages, currentExtractionType]);
+
+  // Load function definitions when extraction type changes
+  useEffect(() => {
+    const loadFunctions = async () => {
+      if (currentExtractionType?.id) {
+        try {
+          const funcs = await fieldMappingFunctionService.getFunctionsByExtractionType(currentExtractionType.id);
+          setFunctions(funcs);
+        } catch (error) {
+          console.warn('Failed to load field mapping functions:', error);
+          setFunctions([]);
+        }
+      } else {
+        setFunctions([]);
+      }
+    };
+    loadFunctions();
+  }, [currentExtractionType?.id]);
 
   const updatePageState = (pageIndex: number, updates: Partial<PageProcessingState>) => {
     setPageProcessingStates(prev => 
@@ -270,7 +290,8 @@ export default function MultiPageProcessor({
           traceTypeMapping: currentExtractionType.traceTypeMapping,
           traceTypeValue: currentExtractionType.traceTypeValue,
           apiKey: geminiApiKey,
-          arraySplitConfigs: currentExtractionType.arraySplitConfigs
+          arraySplitConfigs: currentExtractionType.arraySplitConfigs,
+          functions
         });
       }
 
@@ -619,7 +640,8 @@ export default function MultiPageProcessor({
           traceTypeMapping: currentExtractionType.traceTypeMapping,
           traceTypeValue: currentExtractionType.traceTypeValue,
           apiKey: geminiApiKey,
-          arraySplitConfigs: currentExtractionType.arraySplitConfigs
+          arraySplitConfigs: currentExtractionType.arraySplitConfigs,
+          functions
         });
 
         pageIndices.forEach(index => {
@@ -716,7 +738,8 @@ export default function MultiPageProcessor({
           traceTypeMapping: currentExtractionType.traceTypeMapping,
           traceTypeValue: currentExtractionType.traceTypeValue,
           apiKey: geminiApiKey,
-          arraySplitConfigs: currentExtractionType.arraySplitConfigs
+          arraySplitConfigs: currentExtractionType.arraySplitConfigs,
+          functions
         });
 
         pageIndices.forEach(index => {
@@ -1052,7 +1075,8 @@ export default function MultiPageProcessor({
               traceTypeMapping: currentExtractionType.traceTypeMapping,
               traceTypeValue: currentExtractionType.traceTypeValue,
               apiKey: geminiApiKey,
-              arraySplitConfigs: currentExtractionType.arraySplitConfigs
+              arraySplitConfigs: currentExtractionType.arraySplitConfigs,
+              functions
             });
 
             // Update all pages in this group with the same extracted data
