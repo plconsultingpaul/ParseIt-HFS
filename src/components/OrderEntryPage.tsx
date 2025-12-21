@@ -19,7 +19,9 @@ interface OrderEntryPageProps {
 }
 
 export default function OrderEntryPage({ currentUser }: OrderEntryPageProps) {
-  const { loading, config, fieldGroups, fields, layouts, error: configError } = useOrderEntryForm();
+  const { loading, config, fieldGroups, fields, layouts, error: configError, templateName } = useOrderEntryForm({
+    clientId: currentUser.clientId
+  });
   const toast = useToast();
 
   const [formData, setFormData] = useState<Record<string, any>>({});
@@ -508,7 +510,7 @@ export default function OrderEntryPage({ currentUser }: OrderEntryPageProps) {
               New Order Entry
             </h1>
             <p className="text-purple-100">
-              Fill out the form below to submit your order
+              {templateName ? `Using template: ${templateName}` : 'Fill out the form below to submit your order'}
             </p>
           </div>
         </div>
