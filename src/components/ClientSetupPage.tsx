@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Users, Building2, ClipboardList, FileText } from 'lucide-react';
+import { Users, Building2, ClipboardList, FileText, Search } from 'lucide-react';
 import type { User, ExtractionType, TransformationType, Client } from '../types';
 import ClientManagementSettings from './settings/ClientManagementSettings';
 import ClientUsersManagementSettings from './settings/ClientUsersManagementSettings';
 import OrderEntryConfigSettings from './settings/OrderEntryConfigSettings';
 import OrderEntrySubmissionsPage from './OrderEntrySubmissionsPage';
+import TrackTraceTemplatesSettings from './settings/TrackTraceTemplatesSettings';
 import { useSupabaseData } from '../hooks/useSupabaseData';
 
 interface ClientSetupPageProps {
@@ -13,12 +14,12 @@ interface ClientSetupPageProps {
   transformationTypes: TransformationType[];
   getAllUsers: () => Promise<User[]>;
   createUser: (username: string, password: string, isAdmin: boolean, role: 'admin' | 'user' | 'vendor' | 'client', email?: string) => Promise<{ success: boolean; message: string }>;
-  updateUser: (userId: string, updates: { isAdmin?: boolean; isActive?: boolean; permissions?: any; role?: 'admin' | 'user' | 'vendor' | 'client'; currentZone?: string; clientId?: string; isClientAdmin?: boolean; hasOrderEntryAccess?: boolean; hasRateQuoteAccess?: boolean; email?: string }) => Promise<{ success: boolean; message: string }>;
+  updateUser: (userId: string, updates: { isAdmin?: boolean; isActive?: boolean; permissions?: any; role?: 'admin' | 'user' | 'vendor' | 'client'; currentZone?: string; clientId?: string; isClientAdmin?: boolean; hasOrderEntryAccess?: boolean; hasRateQuoteAccess?: boolean; hasTrackTraceAccess?: boolean; hasInvoiceAccess?: boolean; email?: string }) => Promise<{ success: boolean; message: string }>;
   deleteUser: (userId: string) => Promise<{ success: boolean; message: string }>;
   updateUserPassword: (userId: string, newPassword: string) => Promise<{ success: boolean; message: string }>;
 }
 
-type ClientSetupTab = 'clients' | 'users' | 'orderEntry' | 'submissions';
+type ClientSetupTab = 'clients' | 'users' | 'orderEntry' | 'submissions' | 'trackTrace';
 
 export default function ClientSetupPage({
   currentUser,
@@ -37,12 +38,19 @@ export default function ClientSetupPage({
 
   const defaultTab: ClientSetupTab = isClientUser ? 'users' : 'clients';
   const [activeTab, setActiveTab] = useState<ClientSetupTab>(defaultTab);
+  const [preselectedClientId, setPreselectedClientId] = useState<string | null>(null);
+
+  const handleManageClientUsers = (clientId: string) => {
+    setPreselectedClientId(clientId);
+    setActiveTab('users');
+  };
 
   const tabs = [
     ...(!isClientUser && hasSystemUserManagement ? [{ id: 'clients' as ClientSetupTab, label: 'Client Management', icon: Building2, description: 'Manage client companies and access' }] : []),
     ...(isClientAdmin || hasSystemUserManagement ? [{ id: 'users' as ClientSetupTab, label: 'User Management', icon: Users, description: 'Manage client users and permissions' }] : []),
     ...(!isClientUser && hasSystemUserManagement ? [{ id: 'orderEntry' as ClientSetupTab, label: 'Order Entry', icon: ClipboardList, description: 'Configure order entry forms and API' }] : []),
-    ...(!isClientUser && hasSystemUserManagement ? [{ id: 'submissions' as ClientSetupTab, label: 'Submissions', icon: FileText, description: 'View order entry submissions' }] : [])
+    ...(!isClientUser && hasSystemUserManagement ? [{ id: 'submissions' as ClientSetupTab, label: 'Submissions', icon: FileText, description: 'View order entry submissions' }] : []),
+    ...(!isClientUser && hasSystemUserManagement ? [{ id: 'trackTrace' as ClientSetupTab, label: 'Track & Trace', icon: Search, description: 'Manage Track & Trace templates' }] : [])
   ];
 
   const renderTabContent = () => {
@@ -52,6 +60,7 @@ export default function ClientSetupPage({
           <ClientManagementSettings
             currentUser={currentUser}
             getAllUsers={getAllUsers}
+            onManageUsers={handleManageClientUsers}
           />
         ) : <PermissionDenied />;
       case 'users':
@@ -63,6 +72,8 @@ export default function ClientSetupPage({
             updateUser={updateUser}
             deleteUser={deleteUser}
             updateUserPassword={updateUserPassword}
+            preselectedClientId={preselectedClientId}
+            onPreselectedClientHandled={() => setPreselectedClientId(null)}
           />
         ) : <PermissionDenied />;
       case 'orderEntry':
@@ -75,6 +86,10 @@ export default function ClientSetupPage({
       case 'submissions':
         return (!isClientUser && hasSystemUserManagement) ? (
           <OrderEntrySubmissionsPage currentUser={currentUser} />
+        ) : <PermissionDenied />;
+      case 'trackTrace':
+        return (!isClientUser && hasSystemUserManagement) ? (
+          <TrackTraceTemplatesSettings currentUser={currentUser} />
         ) : <PermissionDenied />;
       default:
         return null;
