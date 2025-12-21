@@ -7,13 +7,138 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
+type FunctionOperator =
+  | 'equals'
+  | 'not_equals'
+  | 'in'
+  | 'not_in'
+  | 'greater_than'
+  | 'less_than'
+  | 'contains'
+  | 'starts_with'
+  | 'ends_with'
+  | 'is_empty'
+  | 'is_not_empty';
+
+interface FunctionCondition {
+  if: {
+    field: string;
+    operator: FunctionOperator;
+    value: any;
+  };
+  then: any;
+}
+
+interface FunctionLogic {
+  conditions: FunctionCondition[];
+  default?: any;
+}
+
+function getFieldValue(fieldPath: string, data: Record<string, any>): any {
+  if (!fieldPath || !data) return undefined;
+
+  const parts = fieldPath.split('.');
+  let value: any = data;
+
+  for (const part of parts) {
+    if (value === null || value === undefined) {
+      return undefined;
+    }
+    value = value[part];
+  }
+
+  return value;
+}
+
+function evaluateCondition(condition: FunctionCondition['if'], data: Record<string, any>): boolean {
+  const { field, operator, value: expectedValue } = condition;
+  const actualValue = getFieldValue(field, data);
+
+  switch (operator) {
+    case 'equals':
+      return actualValue === expectedValue;
+
+    case 'not_equals':
+      return actualValue !== expectedValue;
+
+    case 'in':
+      if (!Array.isArray(expectedValue)) return false;
+      return expectedValue.includes(actualValue);
+
+    case 'not_in':
+      if (!Array.isArray(expectedValue)) return true;
+      return !expectedValue.includes(actualValue);
+
+    case 'greater_than':
+      return Number(actualValue) > Number(expectedValue);
+
+    case 'less_than':
+      return Number(actualValue) < Number(expectedValue);
+
+    case 'contains':
+      if (typeof actualValue !== 'string') return false;
+      return actualValue.includes(String(expectedValue));
+
+    case 'starts_with':
+      if (typeof actualValue !== 'string') return false;
+      return actualValue.startsWith(String(expectedValue));
+
+    case 'ends_with':
+      if (typeof actualValue !== 'string') return false;
+      return actualValue.endsWith(String(expectedValue));
+
+    case 'is_empty':
+      return actualValue === null || actualValue === undefined || actualValue === '' ||
+             (Array.isArray(actualValue) && actualValue.length === 0);
+
+    case 'is_not_empty':
+      return actualValue !== null && actualValue !== undefined && actualValue !== '' &&
+             (!Array.isArray(actualValue) || actualValue.length > 0);
+
+    default:
+      return false;
+  }
+}
+
+function evaluateFunction(functionLogic: FunctionLogic, data: Record<string, any>): any {
+  if (!functionLogic || !functionLogic.conditions) {
+    console.log('[evaluateFunction] No function logic or conditions, returning default:', functionLogic?.default);
+    return functionLogic?.default;
+  }
+
+  console.log(`[evaluateFunction] Evaluating ${functionLogic.conditions.length} conditions`);
+
+  for (let i = 0; i < functionLogic.conditions.length; i++) {
+    const condition = functionLogic.conditions[i];
+    const fieldValue = getFieldValue(condition.if.field, data);
+
+    console.log(`[evaluateFunction] Condition ${i + 1}:`);
+    console.log(`[evaluateFunction]   - Field: "${condition.if.field}"`);
+    console.log(`[evaluateFunction]   - Field value: "${fieldValue}"`);
+    console.log(`[evaluateFunction]   - Operator: "${condition.if.operator}"`);
+    console.log(`[evaluateFunction]   - Expected value: "${condition.if.value}"`);
+
+    const conditionResult = evaluateCondition(condition.if, data);
+    console.log(`[evaluateFunction]   - Condition result: ${conditionResult}`);
+
+    if (conditionResult) {
+      console.log(`[evaluateFunction]   - ✓ Condition matched! Returning: "${condition.then}"`);
+      return condition.then;
+    }
+  }
+
+  console.log(`[evaluateFunction] No conditions matched, returning default: "${functionLogic.default}"`);
+  return functionLogic.default;
+}
+
 interface FieldMapping {
   fieldName: string;
-  type: "ai" | "mapped" | "hardcoded";
+  type: "ai" | "mapped" | "hardcoded" | "function";
   value: string;
   dataType?: "string" | "number" | "integer" | "datetime" | "phone" | "boolean";
   maxLength?: number;
   isWorkflowOnly?: boolean;
+  functionId?: string;
 }
 
 interface ExtractionRequest {
@@ -334,6 +459,65 @@ Please analyze the PDF and return the extracted data as a JSON array.`;
     for (const mapping of hardcodedFieldsList) {
       for (const row of extractedData) {
         row[mapping.fieldName] = mapping.value;
+      }
+    }
+
+    console.log('[EdgeFunction] Applying function-based fields...');
+    const functionFieldsList = requestData.fieldMappings.filter(m => m.type === 'function' && m.functionId);
+    console.log('[EdgeFunction] - Function fields count:', functionFieldsList.length);
+
+    if (functionFieldsList.length > 0) {
+      const functionIds = [...new Set(functionFieldsList.map(m => m.functionId))];
+      const { data: functions, error: funcError } = await supabase
+        .from('field_mapping_functions')
+        .select('*')
+        .in('id', functionIds);
+
+      if (funcError) {
+        console.error('[EdgeFunction] Error loading functions:', funcError);
+      } else if (functions && functions.length > 0) {
+        console.log('[EdgeFunction] - Loaded functions:', functions.length);
+        const functionsById = new Map(functions.map(f => [f.id, f]));
+
+        for (const mapping of functionFieldsList) {
+          const func = functionsById.get(mapping.functionId!);
+          if (func) {
+            console.log(`[EdgeFunction] - Evaluating function "${func.function_name}" for field "${mapping.fieldName}"`);
+            console.log(`[EdgeFunction]   - Function logic:`, JSON.stringify(func.function_logic, null, 2));
+
+            for (let i = 0; i < extractedData.length; i++) {
+              const row = extractedData[i];
+
+              if (i === 0) {
+                console.log(`[EdgeFunction]   - Row ${i + 1} available fields:`, Object.keys(row).join(', '));
+                console.log(`[EdgeFunction]   - Row ${i + 1} data sample:`, JSON.stringify(row, null, 2));
+              }
+
+              try {
+                const result = evaluateFunction(func.function_logic, row);
+                row[mapping.fieldName] = result;
+
+                if (i === 0) {
+                  console.log(`[EdgeFunction]   - Row ${i + 1} evaluated result: "${result}"`);
+                  console.log(`[EdgeFunction]   - Result type: ${typeof result}, is null: ${result === null}, is undefined: ${result === undefined}`);
+                }
+              } catch (err) {
+                console.error(`[EdgeFunction] Error evaluating function for field "${mapping.fieldName}" on row ${i + 1}:`, err);
+                console.error(`[EdgeFunction] - Error details:`, err instanceof Error ? err.message : String(err));
+                const defaultValue = func.function_logic?.default || null;
+                row[mapping.fieldName] = defaultValue;
+
+                if (i === 0) {
+                  console.log(`[EdgeFunction]   - Using default value: "${defaultValue}"`);
+                }
+              }
+            }
+
+            console.log(`[EdgeFunction]   - Completed function evaluation for all ${extractedData.length} rows`);
+          } else {
+            console.warn(`[EdgeFunction] Function not found for mapping "${mapping.fieldName}" with ID: ${mapping.functionId}`);
+          }
+        }
       }
     }
 
