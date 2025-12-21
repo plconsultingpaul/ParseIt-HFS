@@ -114,7 +114,7 @@ export default function PasswordSetupPage() {
       }
 
       const { data, error: hashError } = await supabase.rpc('hash_password', {
-        password_text: password
+        password: password
       });
 
       if (hashError) throw hashError;
@@ -122,7 +122,7 @@ export default function PasswordSetupPage() {
       const { error: updateError } = await supabase
         .from('users')
         .update({
-          password: data,
+          password_hash: data,
           updated_at: new Date().toISOString()
         })
         .eq('id', userId);
@@ -134,7 +134,7 @@ export default function PasswordSetupPage() {
       setSuccess(true);
 
       setTimeout(() => {
-        window.location.href = '/';
+        window.location.href = '/client/login';
       }, 3000);
     } catch (err: any) {
       setError(err.message || 'Failed to set password');
