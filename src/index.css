@@ -212,20 +212,6 @@ a {
   border-color: rgb(var(--color-info-border));
 }
 
-/* Ensure proper contrast for form elements */
-input, textarea, select {
-  @apply bg-theme-surface text-theme-primary border-theme-primary;
-}
-
-input:focus, textarea:focus, select:focus {
-  @apply border-theme-accent ring-purple-500;
-}
-
-/* Dark mode specific adjustments */
-.dark input, .dark textarea, .dark select {
-  background-color: rgb(var(--color-surface-elevated));
-}
-
 /* Fix dropdown options in dark mode */
 .dark select option {
   background-color: rgb(var(--color-surface-elevated));
