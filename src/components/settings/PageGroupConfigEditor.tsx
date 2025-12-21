@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { Plus, Trash2, MoveUp, MoveDown, Brain, FileText, ChevronDown, ChevronUp, Database, ArrowRight } from 'lucide-react';
-import type { PageGroupConfig, Workflow, TransformationFieldMapping } from '../../types';
+import React, { useState, useEffect } from 'react';
+import { Plus, Trash2, MoveUp, MoveDown, Brain, FileText, ChevronDown, ChevronUp, Database, ArrowRight, Code } from 'lucide-react';
+import type { PageGroupConfig, Workflow, TransformationFieldMapping, FieldMappingFunction } from '../../types';
+import { fieldMappingFunctionService } from '../../services/fieldMappingFunctionService';
 
 interface PageGroupConfigEditorProps {
   transformationTypeId: string;
@@ -17,6 +18,21 @@ export default function PageGroupConfigEditor({
 }: PageGroupConfigEditorProps) {
   const [configs, setConfigs] = useState<PageGroupConfig[]>(pageGroupConfigs);
   const [expandedFieldMappings, setExpandedFieldMappings] = useState<Set<number>>(new Set());
+  const [functions, setFunctions] = useState<FieldMappingFunction[]>([]);
+
+  useEffect(() => {
+    const loadFunctions = async () => {
+      try {
+        const data = await fieldMappingFunctionService.getFunctionsByExtractionType(transformationTypeId);
+        setFunctions(data);
+      } catch (error) {
+        console.error('Failed to load functions:', error);
+      }
+    };
+    if (transformationTypeId) {
+      loadFunctions();
+    }
+  }, [transformationTypeId]);
 
   const handleAddGroup = () => {
     const newOrder = configs.length > 0 ? Math.max(...configs.map(c => c.groupOrder)) + 1 : 1;
@@ -535,6 +551,8 @@ export default function PageGroupConfigEditor({
                               ? 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700'
                               : mapping.type === 'mapped'
                               ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-700'
+                              : mapping.type === 'function'
+                              ? 'bg-purple-50 dark:bg-purple-900/20 border-purple-300 dark:border-purple-700'
                               : 'bg-orange-50 dark:bg-orange-900/20 border-orange-300 dark:border-orange-700'
                           }`}>
                             <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
@@ -551,6 +569,8 @@ export default function PageGroupConfigEditor({
                                       ? 'border-green-400 dark:border-green-500'
                                       : mapping.type === 'mapped'
                                       ? 'border-blue-400 dark:border-blue-500'
+                                      : mapping.type === 'function'
+                                      ? 'border-purple-400 dark:border-purple-500'
                                       : 'border-orange-400 dark:border-orange-500'
                                   }`}
                                   placeholder="fieldName"
@@ -562,30 +582,52 @@ export default function PageGroupConfigEditor({
                                 </label>
                                 <select
                                   value={mapping.type}
-                                  onChange={(e) => handleUpdateFieldMapping(index, mappingIndex, 'type', e.target.value as 'ai' | 'mapped' | 'hardcoded')}
+                                  onChange={(e) => handleUpdateFieldMapping(index, mappingIndex, 'type', e.target.value as 'ai' | 'mapped' | 'hardcoded' | 'function')}
                                   className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                                 >
                                   <option value="ai">AI</option>
                                   <option value="mapped">Mapped</option>
                                   <option value="hardcoded">Hardcoded</option>
+                                  <option value="function">Function</option>
                                 </select>
                               </div>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                                  {mapping.type === 'hardcoded' ? 'Value' : mapping.type === 'mapped' ? 'PDF Coordinates' : 'Description'}
-                                </label>
-                                <input
-                                  type="text"
-                                  value={mapping.value}
-                                  onChange={(e) => handleUpdateFieldMapping(index, mappingIndex, 'value', e.target.value)}
-                                  className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                  placeholder={
-                                    mapping.type === 'hardcoded' ? 'Fixed value' :
-                                    mapping.type === 'mapped' ? 'e.g., (100, 200, 150, 30)' :
-                                    'What to extract'
-                                  }
-                                />
-                              </div>
+                              {mapping.type !== 'function' && (
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                    {mapping.type === 'hardcoded' ? 'Value' : mapping.type === 'mapped' ? 'PDF Coordinates' : 'Description'}
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={mapping.value}
+                                    onChange={(e) => handleUpdateFieldMapping(index, mappingIndex, 'value', e.target.value)}
+                                    className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    placeholder={
+                                      mapping.type === 'hardcoded' ? 'Fixed value' :
+                                      mapping.type === 'mapped' ? 'e.g., (100, 200, 150, 30)' :
+                                      'What to extract'
+                                    }
+                                  />
+                                </div>
+                              )}
+                              {mapping.type === 'function' && (
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                    Function
+                                  </label>
+                                  <select
+                                    value={mapping.functionId || ''}
+                                    onChange={(e) => handleUpdateFieldMapping(index, mappingIndex, 'functionId', e.target.value)}
+                                    className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  >
+                                    <option value="">Select function...</option>
+                                    {functions.map((func) => (
+                                      <option key={func.id} value={func.id}>
+                                        {func.function_name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
                               <div>
                                 <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
                                   Page in Group
