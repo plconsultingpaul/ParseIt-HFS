@@ -26,12 +26,13 @@ export default function VariableDropdown({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ top: 0, left: 0 });
 
+  const dropdownMaxHeight = 320;
+
   useEffect(() => {
     if (isOpen && triggerRef.current) {
       const updatePosition = () => {
         const triggerRect = triggerRef.current!.getBoundingClientRect();
         const dropdownWidth = 256;
-        const dropdownMaxHeight = 240;
 
         let left = triggerRect.right - dropdownWidth;
         let top = triggerRect.bottom + 4;
@@ -101,10 +102,11 @@ export default function VariableDropdown({
   const dropdown = (
     <div
       ref={dropdownRef}
-      className="fixed w-72 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-96 overflow-auto"
+      className="fixed w-72 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg overflow-y-auto"
       style={{
         top: `${position.top}px`,
         left: `${position.left}px`,
+        maxHeight: `${dropdownMaxHeight}px`,
         zIndex: 9999
       }}
     >
