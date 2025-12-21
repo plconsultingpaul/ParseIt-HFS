@@ -1,5 +1,5 @@
 import React from 'react';
-import { Mail, CheckCircle, XCircle, Clock, AlertCircle, RefreshCw } from 'lucide-react';
+import { Mail, CheckCircle, XCircle, Clock, AlertCircle, RefreshCw, Filter, X } from 'lucide-react';
 import type { ProcessedEmail } from '../../types';
 
 interface ProcessedEmailsSettingsProps {
@@ -9,6 +9,20 @@ interface ProcessedEmailsSettingsProps {
 
 export default function ProcessedEmailsSettings({ processedEmails, onRefresh }: ProcessedEmailsSettingsProps) {
   const [isRefreshing, setIsRefreshing] = React.useState(false);
+  const [selectedError, setSelectedError] = React.useState<{ subject: string; error: string } | null>(null);
+
+  const getTodayRange = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+    return { start: today, end: todayEnd };
+  };
+
+  const todayRange = getTodayRange();
+  const [startDate, setStartDate] = React.useState(todayRange.start.toISOString().split('T')[0]);
+  const [endDate, setEndDate] = React.useState(todayRange.end.toISOString().split('T')[0]);
+  const [statusFilter, setStatusFilter] = React.useState<'all' | 'completed' | 'failed' | 'processing'>('all');
 
   const handleRefresh = async () => {
     if (!onRefresh) return;
@@ -49,6 +63,45 @@ export default function ProcessedEmailsSettings({ processedEmails, onRefresh }: 
     }
   };
 
+  const formatFilenamesWithPages = (email: ProcessedEmail): string => {
+    const filenames = email.pdfFilenames || email.pdfFilename;
+    if (!filenames) return '-';
+
+    const pageCounts = email.attachmentPageCounts;
+    if (!pageCounts) return filenames;
+
+    const filenameList = filenames.split(', ');
+    const pageCountList = pageCounts.split(', ');
+
+    return filenameList.map((filename, index) => {
+      const pages = pageCountList[index] ? parseInt(pageCountList[index], 10) : 1;
+      const pageLabel = pages === 1 ? 'page' : 'pages';
+      return `${filename} (${pages} ${pageLabel})`;
+    }).join(', ');
+  };
+
+  const handleClearFilters = () => {
+    const todayRange = getTodayRange();
+    setStartDate(todayRange.start.toISOString().split('T')[0]);
+    setEndDate(todayRange.end.toISOString().split('T')[0]);
+    setStatusFilter('all');
+  };
+
+  const filteredEmails = React.useMemo(() => {
+    return processedEmails.filter((email) => {
+      const emailDate = new Date(email.receivedDate);
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+
+      const isInDateRange = emailDate >= start && emailDate <= end;
+      const matchesStatus = statusFilter === 'all' || email.processingStatus === statusFilter;
+
+      return isInDateRange && matchesStatus;
+    });
+  }, [processedEmails, startDate, endDate, statusFilter]);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -66,100 +119,199 @@ export default function ProcessedEmailsSettings({ processedEmails, onRefresh }: 
         </button>
       </div>
 
-      {processedEmails.length === 0 ? (
+      <div className="bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Filter className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+          <h4 className="font-semibold text-gray-900 dark:text-gray-100">Filters</h4>
+        </div>
+        <div className="flex flex-wrap items-end gap-4">
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              From Date
+            </label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              To Date
+            </label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Status
+            </label>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as any)}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="all">All Statuses</option>
+              <option value="completed">Completed</option>
+              <option value="failed">Failed</option>
+              <option value="processing">Processing</option>
+            </select>
+          </div>
+          <div>
+            <button
+              onClick={handleClearFilters}
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors duration-200"
+            >
+              Clear Filters
+            </button>
+          </div>
+        </div>
+        <div className="mt-3 text-sm text-gray-600 dark:text-gray-400">
+          Showing {filteredEmails.length} of {processedEmails.length} emails
+        </div>
+      </div>
+
+      {filteredEmails.length === 0 ? (
         <div className="text-center py-12">
           <Mail className="h-12 w-12 text-gray-400 dark:text-gray-500 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No Processed Emails</h3>
-          <p className="text-gray-600 dark:text-gray-400">Processed emails will appear here once email monitoring is active.</p>
+          <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No Emails Found</h3>
+          <p className="text-gray-600 dark:text-gray-400">
+            {processedEmails.length === 0
+              ? 'Processed emails will appear here once email monitoring is active.'
+              : 'No emails match the selected filters. Try adjusting your date range or status filter.'}
+          </p>
         </div>
       ) : (
-        <div className="space-y-4">
-          {processedEmails.map((email) => (
-            <div key={email.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 shadow-sm">
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-start space-x-3">
-                  <div className="bg-purple-100 p-2 rounded-lg">
-                    <Mail className="h-5 w-5 text-purple-600" />
-                  </div>
-                  <div className="flex-1">
-                    <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-1">
-                      {email.subject}
-                    </h4>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                      From: {email.sender}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      Received: {new Date(email.receivedDate).toLocaleString()}
-                    </p>
-                  </div>
+        <div className="space-y-2">
+          {filteredEmails.map((email) => (
+            <div key={email.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm">
+              <div className="grid grid-cols-[auto,280px,180px,200px,1fr,auto] gap-4 items-center">
+                <div className="bg-blue-100 dark:bg-blue-900/30 p-2 rounded-lg">
+                  <Mail className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                 </div>
-                <div className={`px-3 py-1 rounded-full border text-xs font-medium flex items-center space-x-1 ${getStatusColor(email.processingStatus)}`}>
+
+                <div className="min-w-0">
+                  <h4 className="font-semibold text-gray-900 dark:text-gray-100 truncate">
+                    {email.subject}
+                  </h4>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
+                    From: {email.sender}
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Received: {new Date(email.receivedDate).toLocaleString()}
+                  </p>
+                </div>
+
+                <div className="text-sm">
+                  <span className="font-medium text-gray-700 dark:text-gray-300">
+                    PDF {email.attachmentCount && email.attachmentCount > 1 ? `Files (${email.attachmentCount}):` : 'File:'}
+                  </span>
+                  <p className="text-gray-600 dark:text-gray-400 truncate" title={formatFilenamesWithPages(email)}>
+                    {formatFilenamesWithPages(email)}
+                  </p>
+                </div>
+
+                <div className="text-sm">
+                  <span className="font-medium text-gray-700 dark:text-gray-300">Processed:</span>
+                  <p className="text-gray-600 dark:text-gray-400">
+                    {email.processedAt ? new Date(email.processedAt).toLocaleString() : '-'}
+                  </p>
+                </div>
+
+                <div className="min-w-0">
+                  {email.errorMessage && (
+                    <button
+                      onClick={() => setSelectedError({ subject: email.subject, error: email.errorMessage! })}
+                      className="w-full text-left flex items-center gap-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg px-3 py-2 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors cursor-pointer"
+                    >
+                      <XCircle className="h-4 w-4 text-red-600 shrink-0" />
+                      <span className="text-red-700 dark:text-red-400 text-sm truncate">{email.errorMessage}</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className={`px-3 py-1 rounded-full border text-xs font-medium flex items-center gap-1 whitespace-nowrap ${getStatusColor(email.processingStatus)}`}>
                   {getStatusIcon(email.processingStatus)}
                   <span className="capitalize">{email.processingStatus}</span>
                 </div>
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                {email.pdfFilename && (
-                  <div>
-                    <span className="font-medium text-gray-700 dark:text-gray-300">PDF File:</span>
-                    <p className="text-gray-600 dark:text-gray-400">{email.pdfFilename}</p>
-                  </div>
-                )}
-                {email.parseitId && (
-                  <div>
-                    <span className="font-medium text-gray-700 dark:text-gray-300">Parse-It ID:</span>
-                    <p className="text-gray-600 dark:text-gray-400">{email.parseitId}</p>
-                  </div>
-                )}
-                {email.processedAt && (
-                  <div>
-                    <span className="font-medium text-gray-700 dark:text-gray-300">Processed:</span>
-                    <p className="text-gray-600 dark:text-gray-400">{new Date(email.processedAt).toLocaleString()}</p>
-                  </div>
-                )}
-              </div>
-
-              {email.errorMessage && (
-                <div className="mt-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-3">
-                  <div className="flex items-center space-x-2 mb-1">
-                    <XCircle className="h-4 w-4 text-red-600" />
-                    <span className="font-medium text-red-800 dark:text-red-300">Error</span>
-                  </div>
-                  <p className="text-red-700 dark:text-red-400 text-sm">{email.errorMessage}</p>
-                </div>
-              )}
             </div>
           ))}
         </div>
       )}
 
       {/* Statistics */}
-      {processedEmails.length > 0 && (
+      {filteredEmails.length > 0 && (
         <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
-          <h4 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">Processing Statistics</h4>
+          <h4 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">Processing Statistics (Filtered)</h4>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
             <div>
               <span className="font-medium text-blue-700 dark:text-blue-400">Total:</span>
-              <p className="text-blue-600 dark:text-blue-300">{processedEmails.length}</p>
+              <p className="text-blue-600 dark:text-blue-300">{filteredEmails.length}</p>
             </div>
             <div>
               <span className="font-medium text-blue-700 dark:text-blue-400">Completed:</span>
               <p className="text-blue-600 dark:text-blue-300">
-                {processedEmails.filter(e => e.processingStatus === 'completed').length}
+                {filteredEmails.filter(e => e.processingStatus === 'completed').length}
               </p>
             </div>
             <div>
               <span className="font-medium text-blue-700 dark:text-blue-400">Failed:</span>
               <p className="text-blue-600 dark:text-blue-300">
-                {processedEmails.filter(e => e.processingStatus === 'failed').length}
+                {filteredEmails.filter(e => e.processingStatus === 'failed').length}
               </p>
             </div>
             <div>
               <span className="font-medium text-blue-700 dark:text-blue-400">Processing:</span>
               <p className="text-blue-600 dark:text-blue-300">
-                {processedEmails.filter(e => e.processingStatus === 'processing').length}
+                {filteredEmails.filter(e => e.processingStatus === 'processing').length}
               </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedError && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center gap-2">
+                <XCircle className="h-5 w-5 text-red-600" />
+                <h3 className="font-semibold text-gray-900 dark:text-gray-100">Error Details</h3>
+              </div>
+              <button
+                onClick={() => setSelectedError(null)}
+                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              >
+                <X className="h-5 w-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Email Subject</label>
+                <p className="text-gray-900 dark:text-gray-100 mt-1">{selectedError.subject}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Error Message</label>
+                <div className="mt-1 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-4 max-h-[50vh] overflow-auto">
+                  <pre className="text-red-700 dark:text-red-400 text-sm whitespace-pre-wrap break-words font-mono">
+                    {selectedError.error}
+                  </pre>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end p-4 border-t border-gray-200 dark:border-gray-700">
+              <button
+                onClick={() => setSelectedError(null)}
+                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white font-semibold rounded-lg transition-colors"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
