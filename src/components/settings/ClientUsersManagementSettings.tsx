@@ -1,16 +1,72 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Edit, Users, Shield, Eye, EyeOff, FileText, DollarSign, AlertCircle, BookUser, Mail, Send } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Plus, Trash2, Edit, Users, Shield, Eye, EyeOff, FileText, DollarSign, AlertCircle, BookUser, Mail, Send, Clock, MapPin, Receipt } from 'lucide-react';
 import type { User, Client } from '../../types';
 import { supabase } from '../../lib/supabase';
 import Select from '../common/Select';
+import InvitationEmailTemplateEditor from './InvitationEmailTemplateEditor';
+import PasswordResetTemplateEditor from './PasswordResetTemplateEditor';
+
+const formatLastLogin = (lastLogin: string | undefined): string => {
+  if (!lastLogin) return 'Never';
+
+  const loginDate = new Date(lastLogin);
+  const now = new Date();
+  const diffMs = now.getTime() - loginDate.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins} min${diffMins !== 1 ? 's' : ''} ago`;
+  if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+  if (diffDays < 7) return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+
+  return loginDate.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: loginDate.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+  });
+};
+
+const formatInvitationSent = (sentAt: string | undefined, count: number | undefined): string => {
+  if (!sentAt) return 'Never';
+
+  const sentDate = new Date(sentAt);
+  const now = new Date();
+  const diffMs = now.getTime() - sentDate.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  let timeStr: string;
+  if (diffMins < 1) timeStr = 'Just now';
+  else if (diffMins < 60) timeStr = `${diffMins} min${diffMins !== 1 ? 's' : ''} ago`;
+  else if (diffHours < 24) timeStr = `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+  else if (diffDays < 7) timeStr = `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+  else {
+    timeStr = sentDate.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: sentDate.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+    });
+  }
+
+  if (count && count > 1) {
+    return `${timeStr} (x${count})`;
+  }
+  return timeStr;
+};
 
 interface ClientUsersManagementSettingsProps {
   currentUser: User;
   getAllUsers: () => Promise<User[]>;
-  createUser: (username: string, password: string, isAdmin: boolean, role: 'admin' | 'user' | 'vendor' | 'client', email?: string) => Promise<{ success: boolean; message: string }>;
-  updateUser: (userId: string, updates: { isAdmin?: boolean; isActive?: boolean; permissions?: any; role?: 'admin' | 'user' | 'vendor' | 'client'; currentZone?: string; clientId?: string; isClientAdmin?: boolean; hasOrderEntryAccess?: boolean; hasRateQuoteAccess?: boolean; email?: string }) => Promise<{ success: boolean; message: string }>;
+  createUser: (username: string, password: string, isAdmin: boolean, role: 'admin' | 'user' | 'vendor' | 'client', email?: string, name?: string) => Promise<{ success: boolean; message: string }>;
+  updateUser: (userId: string, updates: { isAdmin?: boolean; isActive?: boolean; permissions?: any; role?: 'admin' | 'user' | 'vendor' | 'client'; currentZone?: string; clientId?: string; isClientAdmin?: boolean; hasOrderEntryAccess?: boolean; hasRateQuoteAccess?: boolean; hasTrackTraceAccess?: boolean; hasInvoiceAccess?: boolean; email?: string; name?: string }) => Promise<{ success: boolean; message: string }>;
   deleteUser: (userId: string) => Promise<{ success: boolean; message: string }>;
   updateUserPassword: (userId: string, newPassword: string) => Promise<{ success: boolean; message: string }>;
+  preselectedClientId?: string | null;
+  onPreselectedClientHandled?: () => void;
 }
 
 export default function ClientUsersManagementSettings({
@@ -19,7 +75,9 @@ export default function ClientUsersManagementSettings({
   createUser,
   updateUser,
   deleteUser,
-  updateUserPassword
+  updateUserPassword,
+  preselectedClientId,
+  onPreselectedClientHandled
 }: ClientUsersManagementSettingsProps) {
   const [clients, setClients] = useState<Client[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
@@ -28,24 +86,33 @@ export default function ClientUsersManagementSettings({
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [showEditUserModal, setShowEditUserModal] = useState(false);
   const [showDeleteUserModal, setShowDeleteUserModal] = useState(false);
+  const [showEmailTemplateModal, setShowEmailTemplateModal] = useState(false);
+  const [showForgotUsernameTemplateModal, setShowForgotUsernameTemplateModal] = useState(false);
+  const [showResetPasswordTemplateModal, setShowResetPasswordTemplateModal] = useState(false);
   const [userToEdit, setUserToEdit] = useState<User | null>(null);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [newUser, setNewUser] = useState({
     username: '',
-    password: '',
-    email: '',
-    isClientAdmin: false,
-    hasOrderEntryAccess: false,
-    hasRateQuoteAccess: false,
-    hasAddressBookAccess: false
-  });
-  const [editUser, setEditUser] = useState({
+    name: '',
     password: '',
     email: '',
     isClientAdmin: false,
     hasOrderEntryAccess: false,
     hasRateQuoteAccess: false,
     hasAddressBookAccess: false,
+    hasTrackTraceAccess: false,
+    hasInvoiceAccess: false
+  });
+  const [editUser, setEditUser] = useState({
+    password: '',
+    name: '',
+    email: '',
+    isClientAdmin: false,
+    hasOrderEntryAccess: false,
+    hasRateQuoteAccess: false,
+    hasAddressBookAccess: false,
+    hasTrackTraceAccess: false,
+    hasInvoiceAccess: false,
     isActive: true
   });
   const [showPassword, setShowPassword] = useState(false);
@@ -60,6 +127,16 @@ export default function ClientUsersManagementSettings({
   useEffect(() => {
     loadClients();
   }, []);
+
+  useEffect(() => {
+    if (preselectedClientId && clients.length > 0) {
+      const clientExists = clients.some(c => c.id === preselectedClientId);
+      if (clientExists) {
+        setSelectedClientId(preselectedClientId);
+        onPreselectedClientHandled?.();
+      }
+    }
+  }, [preselectedClientId, clients]);
 
   useEffect(() => {
     if (selectedClientId) {
@@ -84,6 +161,9 @@ export default function ClientUsersManagementSettings({
         isActive: client.is_active,
         hasOrderEntryAccess: client.has_order_entry_access,
         hasRateQuoteAccess: client.has_rate_quote_access,
+        hasAddressBookAccess: client.has_address_book_access,
+        hasTrackTraceAccess: client.has_track_trace_access,
+        hasInvoiceAccess: client.has_invoice_access,
         createdAt: client.created_at,
         updatedAt: client.updated_at
       }));
@@ -145,6 +225,16 @@ export default function ClientUsersManagementSettings({
       return;
     }
 
+    if (newUser.hasTrackTraceAccess && !selectedClient.hasTrackTraceAccess) {
+      setError('Cannot grant Track & Trace access - client does not have this feature enabled');
+      return;
+    }
+
+    if (newUser.hasInvoiceAccess && !selectedClient.hasInvoiceAccess) {
+      setError('Cannot grant Invoice access - client does not have this feature enabled');
+      return;
+    }
+
     setIsCreating(true);
     setError('');
     setSuccess('');
@@ -155,7 +245,8 @@ export default function ClientUsersManagementSettings({
         newUser.password,
         false,
         'client',
-        newUser.email.trim() || undefined
+        newUser.email.trim() || undefined,
+        newUser.name.trim() || undefined
       );
 
       if (result.success) {
@@ -169,6 +260,8 @@ export default function ClientUsersManagementSettings({
             hasOrderEntryAccess: newUser.hasOrderEntryAccess,
             hasRateQuoteAccess: newUser.hasRateQuoteAccess,
             hasAddressBookAccess: newUser.isClientAdmin ? true : newUser.hasAddressBookAccess,
+            hasTrackTraceAccess: newUser.hasTrackTraceAccess,
+            hasInvoiceAccess: newUser.hasInvoiceAccess,
             role: 'client'
           });
         }
@@ -177,12 +270,15 @@ export default function ClientUsersManagementSettings({
         setShowAddUserModal(false);
         setNewUser({
           username: '',
+          name: '',
           password: '',
           email: '',
           isClientAdmin: false,
           hasOrderEntryAccess: false,
           hasRateQuoteAccess: false,
-          hasAddressBookAccess: false
+          hasAddressBookAccess: false,
+          hasTrackTraceAccess: false,
+          hasInvoiceAccess: false
         });
         await loadClientUsers();
         setTimeout(() => setSuccess(''), 3000);
@@ -201,11 +297,14 @@ export default function ClientUsersManagementSettings({
     setUserToEdit(user);
     setEditUser({
       password: '',
+      name: user.name || '',
       email: user.email || '',
       isClientAdmin: user.isClientAdmin || false,
       hasOrderEntryAccess: user.hasOrderEntryAccess || false,
       hasRateQuoteAccess: user.hasRateQuoteAccess || false,
       hasAddressBookAccess: user.hasAddressBookAccess || false,
+      hasTrackTraceAccess: user.hasTrackTraceAccess || false,
+      hasInvoiceAccess: user.hasInvoiceAccess || false,
       isActive: user.isActive
     });
     setShowEditUserModal(true);
@@ -236,6 +335,16 @@ export default function ClientUsersManagementSettings({
       return;
     }
 
+    if (editUser.hasTrackTraceAccess && !selectedClient.hasTrackTraceAccess) {
+      setError('Cannot grant Track & Trace access - client does not have this feature enabled');
+      return;
+    }
+
+    if (editUser.hasInvoiceAccess && !selectedClient.hasInvoiceAccess) {
+      setError('Cannot grant Invoice access - client does not have this feature enabled');
+      return;
+    }
+
     setIsSaving(true);
     setError('');
     setSuccess('');
@@ -253,11 +362,14 @@ export default function ClientUsersManagementSettings({
       }
 
       const updateResult = await updateUser(userToEdit.id, {
+        name: editUser.name.trim() || undefined,
         email: editUser.email.trim() || undefined,
         isClientAdmin: editUser.isClientAdmin,
         hasOrderEntryAccess: editUser.hasOrderEntryAccess,
         hasRateQuoteAccess: editUser.hasRateQuoteAccess,
         hasAddressBookAccess: editUser.isClientAdmin ? true : editUser.hasAddressBookAccess,
+        hasTrackTraceAccess: editUser.hasTrackTraceAccess,
+        hasInvoiceAccess: editUser.hasInvoiceAccess,
         isActive: editUser.isActive
       });
 
@@ -326,7 +438,8 @@ export default function ClientUsersManagementSettings({
         body: {
           userId: user.id,
           userEmail: user.email,
-          userName: user.username
+          userName: user.username,
+          templateType: 'client'
         }
       });
 
@@ -334,6 +447,7 @@ export default function ClientUsersManagementSettings({
 
       if (data.success) {
         setSuccess(`Registration email sent to ${user.email}`);
+        await loadClientUsers();
         setTimeout(() => setSuccess(''), 5000);
       } else {
         setError(data.message || 'Failed to send registration email');
@@ -371,7 +485,7 @@ export default function ClientUsersManagementSettings({
 
   return (
     <div className="space-y-6">
-      {showAddUserModal && selectedClient && (
+      {showAddUserModal && selectedClient && createPortal(
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 pt-20 overflow-y-auto">
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-md w-full mx-4 my-8 shadow-2xl">
             <div className="text-center mb-6">
@@ -392,6 +506,19 @@ export default function ClientUsersManagementSettings({
                   value={newUser.username}
                   onChange={(e) => setNewUser(prev => ({ ...prev, username: e.target.value }))}
                   placeholder="Enter username"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Name (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={newUser.name}
+                  onChange={(e) => setNewUser(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="Enter full name"
                   className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 />
               </div>
@@ -509,6 +636,38 @@ export default function ClientUsersManagementSettings({
                       {!newUser.isClientAdmin && !selectedClient.hasAddressBookAccess && <span className="text-xs">(Not available for client)</span>}
                     </label>
                   </div>
+
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="newUserTrackTrace"
+                      checked={newUser.hasTrackTraceAccess}
+                      onChange={(e) => setNewUser(prev => ({ ...prev, hasTrackTraceAccess: e.target.checked }))}
+                      disabled={!selectedClient.hasTrackTraceAccess}
+                      className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 disabled:opacity-50"
+                    />
+                    <label htmlFor="newUserTrackTrace" className={`text-sm flex items-center space-x-2 ${!selectedClient.hasTrackTraceAccess ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-300'}`}>
+                      <MapPin className="h-4 w-4" />
+                      <span>Track & Trace Access</span>
+                      {!selectedClient.hasTrackTraceAccess && <span className="text-xs">(Not available for client)</span>}
+                    </label>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="newUserInvoice"
+                      checked={newUser.hasInvoiceAccess}
+                      onChange={(e) => setNewUser(prev => ({ ...prev, hasInvoiceAccess: e.target.checked }))}
+                      disabled={!selectedClient.hasInvoiceAccess}
+                      className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 disabled:opacity-50"
+                    />
+                    <label htmlFor="newUserInvoice" className={`text-sm flex items-center space-x-2 ${!selectedClient.hasInvoiceAccess ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-300'}`}>
+                      <Receipt className="h-4 w-4" />
+                      <span>Invoice Access</span>
+                      {!selectedClient.hasInvoiceAccess && <span className="text-xs">(Not available for client)</span>}
+                    </label>
+                  </div>
                 </div>
               </div>
 
@@ -532,12 +691,15 @@ export default function ClientUsersManagementSettings({
                     setShowAddUserModal(false);
                     setNewUser({
                       username: '',
+                      name: '',
                       password: '',
                       email: '',
                       isClientAdmin: false,
                       hasOrderEntryAccess: false,
                       hasRateQuoteAccess: false,
-                      hasAddressBookAccess: false
+                      hasAddressBookAccess: false,
+                      hasTrackTraceAccess: false,
+                      hasInvoiceAccess: false
                     });
                     setError('');
                     setShowPassword(false);
@@ -549,10 +711,11 @@ export default function ClientUsersManagementSettings({
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {showEditUserModal && userToEdit && selectedClient && (
+      {showEditUserModal && userToEdit && selectedClient && createPortal(
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 pt-20 overflow-y-auto">
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-md w-full mx-4 my-8 shadow-2xl">
             <div className="text-center mb-6">
@@ -588,6 +751,19 @@ export default function ClientUsersManagementSettings({
                     )}
                   </button>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Name
+                </label>
+                <input
+                  type="text"
+                  value={editUser.name}
+                  onChange={(e) => setEditUser(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="Enter full name"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
               </div>
 
               <div>
@@ -690,6 +866,38 @@ export default function ClientUsersManagementSettings({
                       {!editUser.isClientAdmin && !selectedClient.hasAddressBookAccess && <span className="text-xs">(Not available for client)</span>}
                     </label>
                   </div>
+
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="editUserTrackTrace"
+                      checked={editUser.hasTrackTraceAccess}
+                      onChange={(e) => setEditUser(prev => ({ ...prev, hasTrackTraceAccess: e.target.checked }))}
+                      disabled={!selectedClient.hasTrackTraceAccess}
+                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 disabled:opacity-50"
+                    />
+                    <label htmlFor="editUserTrackTrace" className={`text-sm flex items-center space-x-2 ${!selectedClient.hasTrackTraceAccess ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-300'}`}>
+                      <MapPin className="h-4 w-4" />
+                      <span>Track & Trace Access</span>
+                      {!selectedClient.hasTrackTraceAccess && <span className="text-xs">(Not available for client)</span>}
+                    </label>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="editUserInvoice"
+                      checked={editUser.hasInvoiceAccess}
+                      onChange={(e) => setEditUser(prev => ({ ...prev, hasInvoiceAccess: e.target.checked }))}
+                      disabled={!selectedClient.hasInvoiceAccess}
+                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 disabled:opacity-50"
+                    />
+                    <label htmlFor="editUserInvoice" className={`text-sm flex items-center space-x-2 ${!selectedClient.hasInvoiceAccess ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-300'}`}>
+                      <Receipt className="h-4 w-4" />
+                      <span>Invoice Access</span>
+                      {!selectedClient.hasInvoiceAccess && <span className="text-xs">(Not available for client)</span>}
+                    </label>
+                  </div>
                 </div>
               </div>
 
@@ -721,10 +929,11 @@ export default function ClientUsersManagementSettings({
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {showDeleteUserModal && userToDelete && (
+      {showDeleteUserModal && userToDelete && createPortal(
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 pt-20">
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
             <div className="text-center mb-6">
@@ -765,14 +974,13 @@ export default function ClientUsersManagementSettings({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">User Management</h3>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">Manage client users and their access permissions</p>
-        </div>
+      <div>
+        <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">User Management</h3>
+        <p className="text-gray-600 dark:text-gray-400 mt-1">Manage client users and their access permissions</p>
       </div>
 
       <div className="w-full md:w-96">
@@ -814,13 +1022,40 @@ export default function ClientUsersManagementSettings({
               <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Users for {selectedClient.clientName}</h4>
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{clientUsers.length} user{clientUsers.length !== 1 ? 's' : ''}</p>
             </div>
-            <button
-              onClick={() => setShowAddUserModal(true)}
-              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Add User</span>
-            </button>
+            <div className="flex items-center space-x-3">
+              {currentUser.role === 'admin' && (
+                <>
+                  <button
+                    onClick={() => setShowEmailTemplateModal(true)}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2"
+                  >
+                    <Mail className="h-4 w-4" />
+                    <span>Edit Invite Email</span>
+                  </button>
+                  <button
+                    onClick={() => setShowForgotUsernameTemplateModal(true)}
+                    className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2"
+                  >
+                    <Mail className="h-4 w-4" />
+                    <span>Edit Forgot Username Email</span>
+                  </button>
+                  <button
+                    onClick={() => setShowResetPasswordTemplateModal(true)}
+                    className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2"
+                  >
+                    <Mail className="h-4 w-4" />
+                    <span>Edit Reset Password Email</span>
+                  </button>
+                </>
+              )}
+              <button
+                onClick={() => setShowAddUserModal(true)}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Add User</span>
+              </button>
+            </div>
           </div>
 
           {clientUsers.length === 0 ? (
@@ -846,6 +1081,8 @@ export default function ClientUsersManagementSettings({
                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">Role</th>
                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">Access</th>
                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">Status</th>
+                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">Invite Sent</th>
+                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">Last Login</th>
                     <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">Actions</th>
                   </tr>
                 </thead>
@@ -876,7 +1113,13 @@ export default function ClientUsersManagementSettings({
                           {user.hasAddressBookAccess && (
                             <span className="px-2 py-1 bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 text-xs rounded-full">AB</span>
                           )}
-                          {!user.hasOrderEntryAccess && !user.hasRateQuoteAccess && !user.hasAddressBookAccess && (
+                          {user.hasTrackTraceAccess && (
+                            <span className="px-2 py-1 bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200 text-xs rounded-full">TT</span>
+                          )}
+                          {user.hasInvoiceAccess && (
+                            <span className="px-2 py-1 bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200 text-xs rounded-full">INV</span>
+                          )}
+                          {!user.hasOrderEntryAccess && !user.hasRateQuoteAccess && !user.hasAddressBookAccess && !user.hasTrackTraceAccess && !user.hasInvoiceAccess && (
                             <span className="text-xs text-gray-400 dark:text-gray-500">None</span>
                           )}
                         </div>
@@ -889,6 +1132,18 @@ export default function ClientUsersManagementSettings({
                         }`}>
                           {user.isActive ? 'Active' : 'Inactive'}
                         </span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
+                          <Mail className="h-4 w-4 flex-shrink-0" />
+                          <span>{formatInvitationSent(user.invitationSentAt, user.invitationSentCount)}</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
+                          <Clock className="h-4 w-4 flex-shrink-0" />
+                          <span>{formatLastLogin(user.lastLogin)}</span>
+                        </div>
                       </td>
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end space-x-2">
@@ -938,8 +1193,28 @@ export default function ClientUsersManagementSettings({
           <li>• Client Admins can manage users within their organization</li>
           <li>• Users can only be granted access to features enabled at the client level</li>
           <li>• Order Entry (OE) and Rate Quote (RQ) access are controlled individually per user</li>
+          <li>• Click the send icon next to a user to send an invitation email with password setup link</li>
         </ul>
       </div>
+
+      {showEmailTemplateModal && (
+        <InvitationEmailTemplateEditor
+          onClose={() => setShowEmailTemplateModal(false)}
+          templateType="client"
+        />
+      )}
+
+      <PasswordResetTemplateEditor
+        isOpen={showForgotUsernameTemplateModal}
+        onClose={() => setShowForgotUsernameTemplateModal(false)}
+        templateType="client_forgot_username"
+      />
+
+      <PasswordResetTemplateEditor
+        isOpen={showResetPasswordTemplateModal}
+        onClose={() => setShowResetPasswordTemplateModal(false)}
+        templateType="client_reset_password"
+      />
     </div>
   );
 }
