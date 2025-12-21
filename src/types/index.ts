@@ -1,11 +1,71 @@
+export type FunctionOperator =
+  | 'equals'
+  | 'not_equals'
+  | 'in'
+  | 'not_in'
+  | 'greater_than'
+  | 'less_than'
+  | 'contains'
+  | 'starts_with'
+  | 'ends_with'
+  | 'is_empty'
+  | 'is_not_empty';
+
+export interface FunctionConditionClause {
+  field: string;
+  operator: FunctionOperator;
+  value: any;
+}
+
+export interface FunctionCondition {
+  if: FunctionConditionClause;
+  additionalConditions?: FunctionConditionClause[];
+  then: any;
+}
+
+export interface ConditionalFunctionLogic {
+  conditions: FunctionCondition[];
+  default?: any;
+}
+
+export interface DateFunctionLogic {
+  type: 'date';
+  source: 'field' | 'current_date';
+  fieldName?: string;
+  operation: 'add' | 'subtract';
+  days: number;
+  outputFormat?: string;
+}
+
+export interface AddressLookupFunctionLogic {
+  type: 'address_lookup';
+  inputFields: string[];
+  lookupType: 'postal_code' | 'city' | 'province' | 'country' | 'full_address';
+  countryContext?: string;
+}
+
+export type FunctionType = 'conditional' | 'date' | 'address_lookup';
+
+export interface FieldMappingFunction {
+  id: string;
+  extraction_type_id: string;
+  function_name: string;
+  description?: string;
+  function_type: FunctionType;
+  function_logic: ConditionalFunctionLogic | DateFunctionLogic | AddressLookupFunctionLogic;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface FieldMapping {
   fieldName: string;
-  type: 'ai' | 'mapped' | 'hardcoded';
+  type: 'ai' | 'mapped' | 'hardcoded' | 'function';
   value: string;
   dataType?: 'string' | 'number' | 'integer' | 'datetime' | 'phone' | 'boolean';
   maxLength?: number;
   removeIfNull?: boolean;
   isWorkflowOnly?: boolean;
+  functionId?: string;
 }
 
 export interface ArraySplitConfig {
@@ -45,15 +105,22 @@ export interface ExtractionType {
   pageProcessingSinglePage?: number;
   pageProcessingRangeStart?: number;
   pageProcessingRangeEnd?: number;
+  enableFailureNotifications?: boolean;
+  enableSuccessNotifications?: boolean;
+  failureNotificationTemplateId?: string;
+  successNotificationTemplateId?: string;
+  failureRecipientEmailOverride?: string;
+  successRecipientEmailOverride?: string;
 }
 
 export interface TransformationFieldMapping {
   fieldName: string;
-  type: 'ai' | 'mapped' | 'hardcoded';
+  type: 'ai' | 'mapped' | 'hardcoded' | 'function';
   value: string;
   dataType?: 'string' | 'number' | 'integer' | 'datetime' | 'phone' | 'boolean';
   maxLength?: number;
   pageNumberInGroup?: number;
+  functionId?: string;
 }
 
 export interface PageGroupConfig {
@@ -202,13 +269,24 @@ export interface ExtractionLog {
 export interface WorkflowExecutionLog {
   id: string;
   workflowId: string;
+  extractionLogId?: string;
   status: 'running' | 'completed' | 'failed';
   currentStepId?: string;
   currentStepName?: string;
   errorMessage?: string;
   contextData?: any;
   createdAt: string;
+  startedAt: string;
+  updatedAt?: string;
   completedAt?: string;
+  userId?: string;
+  processingMode?: 'extraction' | 'transformation';
+  extractionTypeId?: string;
+  transformationTypeId?: string;
+  senderEmail?: string;
+  failureNotificationSent?: boolean;
+  successNotificationSent?: boolean;
+  notificationSentAt?: string;
 }
 
 export interface DetectionResult {
@@ -249,6 +327,7 @@ export interface UserPermissions {
 export interface User {
   id: string;
   username: string;
+  name?: string;
   email?: string;
   isAdmin: boolean;
   isActive: boolean;
@@ -261,7 +340,12 @@ export interface User {
   hasOrderEntryAccess?: boolean;
   hasRateQuoteAccess?: boolean;
   hasAddressBookAccess?: boolean;
+  hasTrackTraceAccess?: boolean;
+  hasInvoiceAccess?: boolean;
   createdAt?: string;
+  lastLogin?: string;
+  invitationSentAt?: string;
+  invitationSentCount?: number;
 }
 
 export interface AuthState {
@@ -282,6 +366,8 @@ export interface EmailConfig {
   gmailSendFromEmail?: string;
 }
 
+export type PostProcessAction = 'mark_read' | 'move' | 'archive' | 'delete' | 'none';
+
 export interface EmailMonitoringConfig {
   provider: 'office365' | 'gmail';
   tenantId: string;
@@ -297,6 +383,44 @@ export interface EmailMonitoringConfig {
   isEnabled: boolean;
   enableAutoDetect: boolean;
   lastCheck?: string;
+  monitoringTenantId?: string;
+  monitoringClientId?: string;
+  monitoringClientSecret?: string;
+  gmailMonitoringClientId?: string;
+  gmailMonitoringClientSecret?: string;
+  gmailMonitoringRefreshToken?: string;
+  cronEnabled?: boolean;
+  cronJobId?: number;
+  cronSchedule?: string;
+  lastCronRun?: string;
+  nextCronRun?: string;
+  postProcessAction?: PostProcessAction;
+  processedFolderPath?: string;
+}
+
+export interface CronStatus {
+  configured: boolean;
+  cronSettingsConfigured: boolean;
+  supabaseUrlSet: boolean;
+  supabaseAnonKeySet: boolean;
+  enabled: boolean;
+  jobExists: boolean;
+  jobId?: number;
+  schedule?: string;
+  pollingInterval?: number;
+  lastCronRun?: string;
+  nextCronRun?: string;
+  lastRunStatus?: string;
+  lastRunTime?: string;
+  lastRunEnd?: string;
+  lastRunReturnMessage?: string;
+  error?: string;
+}
+
+export interface CronSettings {
+  configured: boolean;
+  supabaseUrl: string;
+  supabaseAnonKeyMasked: string;
 }
 
 export interface EmailProcessingRule {
@@ -413,6 +537,10 @@ export interface Client {
   hasOrderEntryAccess: boolean;
   hasRateQuoteAccess: boolean;
   hasAddressBookAccess: boolean;
+  hasTrackTraceAccess: boolean;
+  hasInvoiceAccess: boolean;
+  trackTraceTemplateId?: string;
+  orderEntryTemplateId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -613,6 +741,10 @@ export interface CompanyBranding {
   logoUrl: string;
   logoStoragePath?: string;
   showCompanyName: boolean;
+  clientLoginLogoUrl?: string;
+  clientLoginLogoSize?: number;
+  clientLoginCompanyName?: string;
+  loginLogoSize?: number;
 }
 
 export interface ApiError {
@@ -634,4 +766,268 @@ export interface PageProcessingState {
   success: boolean;
   workflowExecutionLogId?: string;
   workflowExecutionLog?: WorkflowExecutionLog | null;
+}
+
+export interface EmailPollingLog {
+  id: string;
+  timestamp: string;
+  provider: string;
+  status: string;
+  emailsFound: number;
+  emailsProcessed: number;
+  emailsFailed: number;
+  errorMessage?: string;
+  executionTimeMs?: number;
+  createdAt: string;
+}
+
+export interface SftpPollingLog {
+  id: string;
+  timestamp: string;
+  status: string;
+  filesFound: number;
+  filesProcessed: number;
+  errorMessage?: string;
+  executionTimeMs?: number;
+  createdAt: string;
+}
+
+export interface ProcessedEmail {
+  id: string;
+  emailId: string;
+  sender: string;
+  subject: string;
+  receivedDate: string;
+  processingRuleId?: string;
+  extractionTypeId?: string;
+  pdfFilename?: string;
+  attachmentCount?: number;
+  pdfFilenames?: string;
+  attachmentPageCounts?: string;
+  processingStatus: string;
+  errorMessage?: string;
+  parseitId?: number;
+  processedAt: string;
+  createdAt: string;
+}
+
+export interface NotificationTemplateCustomField {
+  name: string;
+  label: string;
+  description?: string;
+}
+
+export interface NotificationTemplate {
+  id: string;
+  templateType: 'failure' | 'success';
+  templateName: string;
+  recipientEmail?: string;
+  subjectTemplate: string;
+  bodyTemplate: string;
+  attachPdf: boolean;
+  ccEmails?: string;
+  bccEmails?: string;
+  isGlobalDefault: boolean;
+  customFields?: NotificationTemplateCustomField[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TrackTraceOrderByOption {
+  field: string;
+  label: string;
+  defaultDirection: 'asc' | 'desc';
+}
+
+export interface TrackTraceConfig {
+  id: string;
+  clientId: string;
+  apiSourceType: 'main' | 'secondary';
+  secondaryApiId?: string;
+  apiSpecId?: string;
+  apiSpecEndpointId?: string;
+  apiPath: string;
+  httpMethod: string;
+  limitOptions: number[];
+  orderByOptions: TrackTraceOrderByOption[];
+  defaultLimit: number;
+  defaultOrderBy?: string;
+  defaultOrderDirection: 'asc' | 'desc';
+  isEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TrackTraceField {
+  id: string;
+  configId: string;
+  fieldType: 'filter' | 'select';
+  fieldName: string;
+  displayLabel: string;
+  dataType: 'string' | 'number' | 'date' | 'boolean';
+  filterOperator?: string;
+  parameterType?: 'query' | 'path' | 'header' | 'body';
+  apiFieldPath?: string;
+  isRequired: boolean;
+  fieldOrder: number;
+  isEnabled: boolean;
+  valueMappings?: TrackTraceValueMapping[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TrackTraceTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  apiSourceType: 'main' | 'secondary';
+  secondaryApiId?: string;
+  apiSpecId?: string;
+  apiSpecEndpointId?: string;
+  apiPath: string;
+  httpMethod: string;
+  limitOptions: number[];
+  orderByOptions: TrackTraceOrderByOption[];
+  defaultLimit: number;
+  defaultOrderBy?: string;
+  defaultOrderDirection: 'asc' | 'desc';
+  isActive: boolean;
+  showUrl: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TrackTraceValueMapping {
+  sourceValue: string;
+  displayValue: string;
+}
+
+export interface TrackTraceTemplateField {
+  id: string;
+  templateId: string;
+  fieldType: 'filter' | 'select';
+  fieldName: string;
+  displayLabel: string;
+  dataType: 'string' | 'number' | 'date' | 'boolean';
+  filterOperator?: string;
+  parameterType: 'query' | '$filter' | '$orderBy' | '$select' | 'path' | 'header' | 'body';
+  apiFieldPath?: string;
+  isRequired: boolean;
+  fieldOrder: number;
+  isEnabled: boolean;
+  valueMappings?: TrackTraceValueMapping[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TrackTraceTemplateDefaultField {
+  id: string;
+  templateId: string;
+  fieldName: string;
+  parameterType: 'query' | 'path' | 'header' | 'body';
+  apiFieldPath?: string;
+  valueType: 'static' | 'dynamic';
+  staticValue?: string;
+  dynamicValue?: string;
+  operator?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TrackTraceFilterValue {
+  id: string;
+  fieldName: string;
+  operator: string;
+  value: string;
+}
+
+export interface TrackTraceFilterPreset {
+  id: string;
+  templateId: string;
+  name: string;
+  displayOrder: number;
+  filterValues: TrackTraceFilterValue[];
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface TrackTraceFilterPresetDefaultField {
+  id: string;
+  presetId: string;
+  fieldName: string;
+  parameterType: 'query' | 'path' | 'header' | 'body';
+  apiFieldPath?: string;
+  valueType: 'static' | 'dynamic';
+  staticValue?: string;
+  dynamicValue?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrderEntryTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  workflowId?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrderEntryTemplateFieldGroup {
+  id: string;
+  templateId: string;
+  groupName: string;
+  groupOrder: number;
+  description?: string;
+  isCollapsible: boolean;
+  isExpandedByDefault: boolean;
+  backgroundColor?: string;
+  borderColor?: string;
+  isArrayGroup: boolean;
+  arrayMinRows: number;
+  arrayMaxRows: number;
+  arrayJsonPath?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrderEntryTemplateField {
+  id: string;
+  templateId: string;
+  fieldGroupId: string;
+  fieldName: string;
+  fieldLabel: string;
+  fieldType: OrderEntryFieldType;
+  placeholder?: string;
+  helpText?: string;
+  isRequired: boolean;
+  maxLength?: number;
+  minValue?: number;
+  maxValue?: number;
+  defaultValue?: string;
+  dropdownOptions: string[];
+  jsonPath?: string;
+  isArrayField: boolean;
+  arrayMinRows: number;
+  arrayMaxRows: number;
+  aiExtractionInstructions?: string;
+  validationRegex?: string;
+  validationErrorMessage?: string;
+  fieldOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrderEntryTemplateFieldLayout {
+  id: string;
+  templateId: string;
+  fieldId: string;
+  rowIndex: number;
+  columnIndex: number;
+  widthColumns: number;
+  mobileWidthColumns: number;
+  createdAt: string;
+  updatedAt: string;
 }
