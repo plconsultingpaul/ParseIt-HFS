@@ -2,6 +2,8 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { PDFDocument } from 'pdf-lib';
 import { withRetry } from './retryHelper';
 import { geminiConfigService } from '../services/geminiConfigService';
+import { evaluateFunction, evaluateAddressLookup } from './functionEvaluator';
+import type { FieldMappingFunction, AddressLookupFunctionLogic } from '../types';
 
 async function getActiveModelName(): Promise<string> {
   try {
@@ -109,6 +111,7 @@ export interface ExtractionRequest {
   traceTypeValue?: string;
   apiKey: string;
   arraySplitConfigs?: ArraySplitConfig[];
+  functions?: FieldMappingFunction[];
 }
 
 export interface JsonMultiPageExtractionRequest {
@@ -122,6 +125,7 @@ export interface JsonMultiPageExtractionRequest {
   traceTypeValue?: string;
   apiKey: string;
   arraySplitConfigs?: ArraySplitConfig[];
+  functions?: FieldMappingFunction[];
 }
 
 export interface ExtractionResult {
@@ -140,7 +144,8 @@ export async function extractDataFromPDF({
   traceTypeMapping,
   traceTypeValue,
   apiKey,
-  arraySplitConfigs = []
+  arraySplitConfigs = [],
+  functions = []
 }: ExtractionRequest): Promise<ExtractionResult> {
   if (!apiKey) {
     throw new Error('Google Gemini API key not configured. Please add it in the API settings.');
@@ -752,6 +757,62 @@ Please provide only the ${outputFormat} output without any additional explanatio
           });
         }
 
+        // STEP 5: Evaluate function-type field mappings (including async address lookups)
+        const functionMappings = fieldMappings.filter(m => m.type === 'function' && m.functionId);
+        console.log(`[STEP 5] Function mappings found: ${functionMappings.length}, Functions available: ${functions.length}`);
+        if (functionMappings.length > 0 && functions.length > 0) {
+          const setFieldValue = (obj: any, fieldPath: string, value: any) => {
+            const parts = fieldPath.split('.');
+            let current = obj;
+            for (let i = 0; i < parts.length - 1; i++) {
+              if (current[parts[i]] === undefined) {
+                current[parts[i]] = {};
+              }
+              if (Array.isArray(current[parts[i]])) {
+                const remainingPath = parts.slice(i + 1).join('.');
+                current[parts[i]].forEach((item: any) => {
+                  setFieldValue(item, remainingPath, value);
+                });
+                return;
+              }
+              current = current[parts[i]];
+            }
+            current[parts[parts.length - 1]] = value;
+          };
+
+          const isAddressLookupLogic = (logic: any): logic is AddressLookupFunctionLogic => {
+            return logic && logic.type === 'address_lookup';
+          };
+
+          for (const order of jsonData.orders) {
+            for (const mapping of functionMappings) {
+              console.log(`[STEP 5] Processing mapping: fieldName=${mapping.fieldName}, functionId=${mapping.functionId}`);
+              const func = functions.find(f => f.id === mapping.functionId);
+              if (func && func.function_logic) {
+                console.log(`[STEP 5] Found function: ${func.function_name}, type=${func.function_logic.type}`);
+                let result: any;
+                if (isAddressLookupLogic(func.function_logic)) {
+                  console.log(`[STEP 5] Calling evaluateAddressLookup for ${mapping.fieldName}`);
+                  result = await evaluateAddressLookup(func.function_logic, order);
+                  console.log(`[STEP 5] Address lookup result: "${result}"`);
+                } else {
+                  result = evaluateFunction(func.function_logic, order);
+                }
+                if (result !== undefined && result !== '') {
+                  console.log(`[STEP 5] Setting ${mapping.fieldName} = "${result}"`);
+                  setFieldValue(order, mapping.fieldName, result);
+                } else {
+                  console.log(`[STEP 5] Result empty or undefined, not setting field`);
+                }
+              } else {
+                console.log(`[STEP 5] Function not found for functionId=${mapping.functionId}`);
+              }
+            }
+          }
+        } else if (functionMappings.length > 0) {
+          console.log(`[STEP 5] Skipped: functions array is empty`);
+        }
+
         templateData = JSON.stringify(jsonData);
       } catch (parseError) {
         console.warn('Could not parse JSON for post-processing:', parseError);
@@ -855,7 +916,8 @@ export async function extractJsonFromMultiPagePDF({
   traceTypeMapping,
   traceTypeValue,
   apiKey,
-  arraySplitConfigs = []
+  arraySplitConfigs = [],
+  functions = []
 }: JsonMultiPageExtractionRequest): Promise<ExtractionResult> {
   if (!apiKey) {
     throw new Error('Google Gemini API key not configured. Please add it in the API settings.');
@@ -1151,6 +1213,50 @@ Please provide only the JSON output without any additional explanation or format
         jsonData.orders.forEach((order: any) => {
           processObject(order, regularMappings);
         });
+      }
+
+      // Evaluate function-type field mappings (including async address lookups)
+      const functionMappings = fieldMappings.filter(m => m.type === 'function' && m.functionId);
+      if (functionMappings.length > 0 && functions.length > 0) {
+        const setFieldValue = (obj: any, fieldPath: string, value: any) => {
+          const parts = fieldPath.split('.');
+          let current = obj;
+          for (let i = 0; i < parts.length - 1; i++) {
+            if (current[parts[i]] === undefined) {
+              current[parts[i]] = {};
+            }
+            if (Array.isArray(current[parts[i]])) {
+              const remainingPath = parts.slice(i + 1).join('.');
+              current[parts[i]].forEach((item: any) => {
+                setFieldValue(item, remainingPath, value);
+              });
+              return;
+            }
+            current = current[parts[i]];
+          }
+          current[parts[parts.length - 1]] = value;
+        };
+
+        const isAddressLookupLogic = (logic: any): logic is AddressLookupFunctionLogic => {
+          return logic && logic.type === 'address_lookup';
+        };
+
+        for (const order of jsonData.orders) {
+          for (const mapping of functionMappings) {
+            const func = functions.find(f => f.id === mapping.functionId);
+            if (func && func.function_logic) {
+              let result: any;
+              if (isAddressLookupLogic(func.function_logic)) {
+                result = await evaluateAddressLookup(func.function_logic, order);
+              } else {
+                result = evaluateFunction(func.function_logic, order);
+              }
+              if (result !== undefined && result !== '') {
+                setFieldValue(order, mapping.fieldName, result);
+              }
+            }
+          }
+        }
       }
 
       templateData = JSON.stringify(jsonData);
