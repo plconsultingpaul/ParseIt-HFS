@@ -95,6 +95,21 @@ export default function PdfUploadSection({ onPdfUpload, extractionType }: PdfUpl
   };
 
   const handlePdfUpload = async (files: File[]) => {
+    const fileBuffers: { file: File; buffer: ArrayBuffer }[] = [];
+    for (const file of files) {
+      try {
+        const buffer = await file.arrayBuffer();
+        fileBuffers.push({ file, buffer });
+      } catch (error) {
+        console.error(`Error reading PDF ${file.name}:`, error);
+      }
+    }
+
+    if (fileBuffers.length === 0) {
+      console.error('No PDF files could be read');
+      return;
+    }
+
     setUploadedFiles(files);
     setIsProcessingPdf(true);
     setPdfPages([]);
@@ -106,10 +121,9 @@ export default function PdfUploadSection({ onPdfUpload, extractionType }: PdfUpl
       const allPages: File[] = [];
       const pageCounts: { name: string; size: number; pages: number }[] = [];
 
-      for (const file of files) {
+      for (const { file, buffer } of fileBuffers) {
         try {
-          const arrayBuffer = await file.arrayBuffer();
-          const pdfDoc = await PDFDocument.load(arrayBuffer);
+          const pdfDoc = await PDFDocument.load(buffer);
           const pageCount = pdfDoc.getPageCount();
 
           for (let i = 0; i < pageCount; i++) {
