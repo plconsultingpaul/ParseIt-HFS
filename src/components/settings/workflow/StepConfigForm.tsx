@@ -4,6 +4,7 @@ import { X, Plus, Trash2, Braces } from 'lucide-react';
 import Select from '../../common/Select';
 import ApiEndpointConfigSection from './ApiEndpointConfigSection';
 import VariableDropdown from './VariableDropdown';
+import { supabase } from '../../../lib/supabase';
 
 interface StepConfigFormProps {
   step: any;
@@ -43,6 +44,12 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
   const [pdfEmailStrategy, setPdfEmailStrategy] = useState<'all_pages_in_group' | 'specific_page_in_group'>('all_pages_in_group');
   const [specificPageToEmail, setSpecificPageToEmail] = useState(1);
   const [ccUser, setCcUser] = useState(false);
+  const [isNotificationEmail, setIsNotificationEmail] = useState(false);
+  const [notificationTemplateId, setNotificationTemplateId] = useState('');
+  const [recipientEmailOverride, setRecipientEmailOverride] = useState('');
+  const [notificationTemplates, setNotificationTemplates] = useState<any[]>([]);
+  const [customFieldMappings, setCustomFieldMappings] = useState<Record<string, string>>({});
+  const [selectedTemplateCustomFields, setSelectedTemplateCustomFields] = useState<Array<{name: string; label: string; description?: string}>>([]);
   const [nextStepOnSuccess, setNextStepOnSuccess] = useState('');
   const [nextStepOnFailure, setNextStepOnFailure] = useState('');
   const [responseDataMappings, setResponseDataMappings] = useState<Array<{ responsePath: string; updatePath: string }>>([
@@ -76,6 +83,41 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
   const [apiEndpointConfig, setApiEndpointConfig] = useState<any>({});
   const [openVariableDropdown, setOpenVariableDropdown] = useState<string | null>(null);
   const buttonRefs = useRef<Record<string, React.RefObject<HTMLButtonElement>>>({});
+
+  useEffect(() => {
+    const loadNotificationTemplates = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('notification_templates')
+          .select('*, custom_fields')
+          .order('template_name');
+
+        if (error) {
+          console.error('Failed to load notification templates:', error);
+          return;
+        }
+
+        setNotificationTemplates(data || []);
+      } catch (err) {
+        console.error('Error loading notification templates:', err);
+      }
+    };
+
+    loadNotificationTemplates();
+  }, []);
+
+  useEffect(() => {
+    if (notificationTemplateId && notificationTemplates.length > 0) {
+      const template = notificationTemplates.find(t => t.id === notificationTemplateId);
+      if (template && template.custom_fields) {
+        setSelectedTemplateCustomFields(template.custom_fields);
+      } else {
+        setSelectedTemplateCustomFields([]);
+      }
+    } else {
+      setSelectedTemplateCustomFields([]);
+    }
+  }, [notificationTemplateId, notificationTemplates]);
 
   useEffect(() => {
     console.log('StepConfigForm useEffect - step data:', step);
@@ -168,6 +210,10 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
         setPdfEmailStrategy(config.pdfEmailStrategy || 'all_pages_in_group');
         setSpecificPageToEmail(config.specificPageToEmail || 1);
         setCcUser(config.ccUser || false);
+        setIsNotificationEmail(config.isNotificationEmail || false);
+        setNotificationTemplateId(config.notificationTemplateId || '');
+        setRecipientEmailOverride(config.recipientEmailOverride || '');
+        setCustomFieldMappings(config.customFieldMappings || {});
 
         // API Endpoint configuration
         if (step?.stepType === 'api_endpoint' || step?.step_type === 'api_endpoint') {
@@ -245,6 +291,13 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
       previousSteps.forEach(s => {
         const stepName = s.stepName || s.step_name || 'Unknown Step';
         const config = s.configJson || s.config_json;
+
+        console.log('=== Checking step for variables ===');
+        console.log('Step name:', stepName);
+        console.log('Full config:', JSON.stringify(config, null, 2));
+        console.log('Has responseDataMappings (new format)?', config?.responseDataMappings);
+        console.log('Has responseDataPath (old format)?', config?.responseDataPath);
+        console.log('Has updateJsonPath (old format)?', config?.updateJsonPath);
 
         if (config && config.responseDataMappings && Array.isArray(config.responseDataMappings)) {
           config.responseDataMappings.forEach((mapping: any) => {
@@ -347,6 +400,7 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
         };
         break;
       case 'email_action':
+        const hasCustomFieldMappings = Object.keys(customFieldMappings).some(k => customFieldMappings[k]?.trim());
         config = {
           actionType: emailActionType,
           to: emailTo,
@@ -357,7 +411,11 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
           from: emailFrom,
           pdfEmailStrategy: pdfEmailStrategy,
           specificPageToEmail: pdfEmailStrategy === 'specific_page_in_group' ? specificPageToEmail : undefined,
-          ccUser: ccUser
+          ccUser: ccUser,
+          isNotificationEmail: isNotificationEmail,
+          notificationTemplateId: isNotificationEmail ? notificationTemplateId : undefined,
+          recipientEmailOverride: isNotificationEmail && recipientEmailOverride.trim() ? recipientEmailOverride.trim() : undefined,
+          customFieldMappings: isNotificationEmail && hasCustomFieldMappings ? customFieldMappings : undefined
         };
         break;
     }
@@ -1038,6 +1096,142 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                   />
                 </div>
 
+                <div className="border-t border-gray-300 dark:border-gray-600 pt-4">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <input
+                      type="checkbox"
+                      id="isNotificationEmail"
+                      checked={isNotificationEmail}
+                      onChange={(e) => setIsNotificationEmail(e.target.checked)}
+                      className="w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded focus:ring-blue-500"
+                    />
+                    <div>
+                      <label htmlFor="isNotificationEmail" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Use Notification Template
+                      </label>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        Use a notification template instead of direct email configuration
+                      </p>
+                    </div>
+                  </div>
+
+                  {isNotificationEmail && (
+                    <div className="space-y-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                      <div>
+                        <Select
+                          label="Notification Template"
+                          value={notificationTemplateId}
+                          onValueChange={setNotificationTemplateId}
+                          options={notificationTemplates.map(t => ({
+                            value: t.id,
+                            label: `${t.template_name} (${t.template_type})`
+                          }))}
+                          required
+                        />
+                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                          Select a notification template to use for this email
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          Recipient Override (Optional)
+                        </label>
+                        <input
+                          type="email"
+                          value={recipientEmailOverride}
+                          onChange={(e) => setRecipientEmailOverride(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                          placeholder="custom@email.com or {{fieldName}}"
+                        />
+                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                          Override the template's default recipient. Leave empty to use template's recipient. Supports {`{{fieldName}}`} variables.
+                        </p>
+                      </div>
+
+                      {selectedTemplateCustomFields.length > 0 && (
+                        <div className="border-t border-blue-200 dark:border-blue-700 pt-4 mt-4">
+                          <h5 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3 flex items-center">
+                            <Braces className="w-4 h-4 mr-2" />
+                            Custom Field Mappings
+                          </h5>
+                          <p className="text-xs text-gray-600 dark:text-gray-400 mb-4">
+                            Map response data from previous steps to the template's custom fields
+                          </p>
+                          <div className="space-y-3">
+                            {selectedTemplateCustomFields.map((field) => (
+                              <div key={field.name} className="flex items-center space-x-3">
+                                <div className="w-1/3">
+                                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                    {field.label}
+                                  </label>
+                                  <code className="text-xs bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
+                                    {`{{${field.name}}}`}
+                                  </code>
+                                  {field.description && (
+                                    <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">{field.description}</p>
+                                  )}
+                                </div>
+                                <div className="flex-1 flex space-x-2">
+                                  <input
+                                    type="text"
+                                    value={customFieldMappings[field.name] || ''}
+                                    onChange={(e) => setCustomFieldMappings({
+                                      ...customFieldMappings,
+                                      [field.name]: e.target.value
+                                    })}
+                                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-600 dark:text-gray-100 text-sm font-mono"
+                                    placeholder="{{response.data.orderId}}"
+                                  />
+                                  <button
+                                    ref={getButtonRef(`custom-field-${field.name}`)}
+                                    type="button"
+                                    onClick={() => setOpenVariableDropdown(openVariableDropdown === `custom-field-${field.name}` ? null : `custom-field-${field.name}`)}
+                                    className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                                    title="Insert variable"
+                                  >
+                                    <Braces className="w-4 h-4" />
+                                  </button>
+                                  <VariableDropdown
+                                    isOpen={openVariableDropdown === `custom-field-${field.name}`}
+                                    onClose={() => setOpenVariableDropdown(null)}
+                                    triggerRef={getButtonRef(`custom-field-${field.name}`)}
+                                    variables={getAvailableVariables()}
+                                    onSelect={(variableName) => {
+                                      const currentValue = customFieldMappings[field.name] || '';
+                                      setCustomFieldMappings({
+                                        ...customFieldMappings,
+                                        [field.name]: currentValue ? `${currentValue}{{${variableName}}}` : `{{${variableName}}}`
+                                      });
+                                      setOpenVariableDropdown(null);
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex items-center space-x-3 pt-2">
+                        <input
+                          type="checkbox"
+                          id="includeAttachmentNotification"
+                          checked={includeAttachment}
+                          onChange={(e) => setIncludeAttachment(e.target.checked)}
+                          className="w-4 h-4 text-purple-600 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded focus:ring-purple-500"
+                        />
+                        <label htmlFor="includeAttachmentNotification" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Override attachment setting (leave unchecked to use template's setting)
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {!isNotificationEmail && (
+                  <div className="space-y-4">
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -1192,6 +1386,8 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                         </div>
                       )}
                     </div>
+                  </div>
+                )}
                   </div>
                 )}
               </div>
