@@ -1,20 +1,26 @@
 import React, { useState } from 'react';
-import { GitBranch, CheckCircle, XCircle, Clock, AlertCircle, RefreshCw, Eye, Calendar, Timer, Play, X, Copy, Database, Check, ChevronDown, ChevronRight } from 'lucide-react';
+import { GitBranch, CheckCircle, XCircle, Clock, AlertCircle, RefreshCw, Eye, Calendar, Timer, Play, X, Copy, Database, Check, ChevronDown, ChevronRight, User as UserIcon } from 'lucide-react';
 import { fetchWorkflowExecutionLogById, fetchWorkflowStepLogsByExecutionId, type WorkflowStepLog } from '../../services/logService';
-import type { WorkflowExecutionLog, ExtractionWorkflow, WorkflowStep } from '../../types';
+import type { WorkflowExecutionLog, ExtractionWorkflow, WorkflowStep, User, ExtractionType, TransformationType } from '../../types';
 
 interface WorkflowExecutionLogsSettingsProps {
   workflowExecutionLogs: WorkflowExecutionLog[];
   workflows: ExtractionWorkflow[];
   workflowSteps: WorkflowStep[];
+  users: User[];
+  extractionTypes: ExtractionType[];
+  transformationTypes: TransformationType[];
   onRefreshWorkflowLogs: () => Promise<WorkflowExecutionLog[]>;
 }
 
-export default function WorkflowExecutionLogsSettings({ 
-  workflowExecutionLogs, 
+export default function WorkflowExecutionLogsSettings({
+  workflowExecutionLogs,
   workflows,
   workflowSteps,
-  onRefreshWorkflowLogs 
+  users,
+  extractionTypes,
+  transformationTypes,
+  onRefreshWorkflowLogs
 }: WorkflowExecutionLogsSettingsProps) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
@@ -25,18 +31,10 @@ export default function WorkflowExecutionLogsSettings({
   const [expandedStepIds, setExpandedStepIds] = useState<Set<string>>(new Set());
   const [isContextCollapsed, setIsContextCollapsed] = useState(true);
 
-  // Debug logging
-  React.useEffect(() => {
-    console.log('WorkflowExecutionLogsSettings - Available workflows:', workflows);
-    console.log('WorkflowExecutionLogsSettings - Execution logs:', workflowExecutionLogs);
-  }, [workflows, workflowExecutionLogs]);
-
   const handleRefresh = async () => {
-    console.log('Refreshing workflow execution logs...');
     setIsRefreshing(true);
     try {
-      const logs = await onRefreshWorkflowLogs();
-      console.log('Refreshed workflow logs:', logs);
+      await onRefreshWorkflowLogs();
     } catch (error) {
       console.error('Failed to refresh workflow logs:', error);
       alert('Failed to refresh workflow execution logs. Please try again.');
@@ -80,11 +78,25 @@ export default function WorkflowExecutionLogsSettings({
   };
 
   const getWorkflowName = (workflowId: string) => {
-    console.log('Looking for workflow with ID:', workflowId);
-    console.log('Available workflows:', workflows);
     const workflow = workflows.find(w => w.id === workflowId);
-    console.log('Found workflow:', workflow);
     return workflow?.name || `Unknown Workflow (${workflowId.substring(0, 8)}...)`;
+  };
+
+  const getUserName = (userId: string | undefined) => {
+    if (!userId) return 'System';
+    const user = users.find(u => u.id === userId);
+    return user?.username || 'Unknown';
+  };
+
+  const getTypeName = (log: WorkflowExecutionLog) => {
+    if (log.processingMode === 'transformation' && log.transformationTypeId) {
+      const type = transformationTypes.find(t => t.id === log.transformationTypeId);
+      return type?.name || 'Unknown';
+    } else if (log.extractionTypeId) {
+      const type = extractionTypes.find(t => t.id === log.extractionTypeId);
+      return type?.name || 'Unknown';
+    }
+    return 'N/A';
   };
 
   const toggleLogExpansion = async (logId: string) => {
@@ -236,26 +248,32 @@ export default function WorkflowExecutionLogsSettings({
           <table className="w-full divide-y divide-gray-200 dark:divide-gray-700 table-fixed">
             <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-32">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-28">
                   Status
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-48">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-40">
                   Workflow
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-64">
-                  Current Step
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-32">
+                  User
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-48">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-28">
+                  Mode
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-40">
+                  Type
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-44">
                   Started
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-24">
                   Duration
                 </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-28">
+                  Notifications
+                </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-32">
                   Details
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Error
                 </th>
               </tr>
             </thead>
@@ -263,43 +281,77 @@ export default function WorkflowExecutionLogsSettings({
               {workflowExecutionLogs.map((log) => (
                 <React.Fragment key={log.id}>
                   <tr className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                    <td className="px-6 py-4 whitespace-nowrap w-32">
+                    <td className="px-6 py-4 whitespace-nowrap w-28">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(log.status)}`}>
                         {getStatusIcon(log.status)}
                         <span className="ml-1 capitalize">{log.status}</span>
                       </span>
                     </td>
-                    <td className="px-6 py-4 w-48">
+                    <td className="px-6 py-4 w-40">
                       <div className="flex items-center space-x-2">
-                        <GitBranch className="h-4 w-4 text-gray-400" />
+                        <GitBranch className="h-4 w-4 text-gray-400 flex-shrink-0" />
                         <span className="text-sm text-gray-900 dark:text-gray-100 truncate" title={getWorkflowName(log.workflowId)}>
                           {getWorkflowName(log.workflowId)}
                         </span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 w-64">
-                      <span className="text-sm text-gray-900 dark:text-gray-100 truncate block" title={log.currentStepName || 'N/A'}>
-                        {log.currentStepName || 'N/A'}
+                    <td className="px-6 py-4 whitespace-nowrap w-32">
+                      <div className="flex items-center space-x-2">
+                        <UserIcon className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                        <span className="text-sm text-gray-900 dark:text-gray-100 truncate" title={getUserName(log.userId)}>
+                          {getUserName(log.userId)}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap w-28">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        log.processingMode === 'transformation'
+                          ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-300'
+                          : 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300'
+                      }`}>
+                        {log.processingMode === 'transformation' ? 'Transform' : 'Extract'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap w-48">
+                    <td className="px-6 py-4 w-40">
+                      <span className="text-sm text-gray-900 dark:text-gray-100 truncate block" title={getTypeName(log)}>
+                        {getTypeName(log)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap w-44">
                       <div className="flex items-center space-x-2">
-                        <Calendar className="h-4 w-4 text-gray-400" />
+                        <Calendar className="h-4 w-4 text-gray-400 flex-shrink-0" />
                         <span className="text-sm text-gray-900 dark:text-gray-100">{formatDate(log.startedAt)}</span>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap w-24">
                       <div className="flex items-center space-x-2">
-                        <Timer className="h-4 w-4 text-gray-400" />
+                        <Timer className="h-4 w-4 text-gray-400 flex-shrink-0" />
                         <span className="text-sm text-gray-900 dark:text-gray-100">{getExecutionTime(log)}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap w-28">
+                      <div className="flex flex-col gap-1">
+                        {log.successNotificationSent && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300">
+                            ✓ Success
+                          </span>
+                        )}
+                        {log.failureNotificationSent && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300">
+                            ✓ Failure
+                          </span>
+                        )}
+                        {!log.successNotificationSent && !log.failureNotificationSent && (
+                          <span className="text-xs text-gray-400 dark:text-gray-500">None</span>
+                        )}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap w-32">
                       <button
                         onClick={() => toggleLogExpansion(log.id)}
                         className={`text-sm font-medium flex items-center space-x-1 whitespace-nowrap transition-colors duration-200 ${
-                          log.errorMessage 
-                            ? 'text-red-600 hover:text-red-800' 
+                          log.errorMessage
+                            ? 'text-red-600 hover:text-red-800'
                             : 'text-blue-600 hover:text-blue-800'
                         }`}
                       >
@@ -316,16 +368,11 @@ export default function WorkflowExecutionLogsSettings({
                         )}
                       </button>
                     </td>
-                    <td className="px-6 py-4">
-                      <span className="text-sm text-gray-400 dark:text-gray-500">
-                        {log.errorMessage ? 'Click View Details to see error' : '-'}
-                      </span>
-                    </td>
                   </tr>
 
                   {expandedLogId === log.id && (
                     <tr>
-                      <td colSpan={7} className="px-0 py-0">
+                      <td colSpan={8} className="px-0 py-0">
                         {loadingContextData ? (
                           <div className="bg-gray-50 dark:bg-gray-700 border-t border-gray-200 dark:border-gray-600 p-6">
                             <div className="flex items-center justify-center space-x-2">
@@ -371,16 +418,30 @@ export default function WorkflowExecutionLogsSettings({
                                 <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
                                   <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-3 flex items-center space-x-2">
                                     <GitBranch className="h-5 w-5 text-blue-600" />
-                                    <span>Current Progress</span>
+                                    <span>Processing Details</span>
                                   </h4>
                                   <div className="space-y-2 text-sm">
                                     <div className="flex justify-between">
-                                      <span className="text-gray-600 dark:text-gray-400">Current Step:</span>
-                                      <span className="text-gray-900 dark:text-gray-100">{expandedLogData.currentStepName || 'N/A'}</span>
-                                    </div>
-                                    <div className="flex justify-between">
                                       <span className="text-gray-600 dark:text-gray-400">Workflow:</span>
                                       <span className="text-gray-900 dark:text-gray-100">{getWorkflowName(expandedLogData.workflowId)}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-600 dark:text-gray-400">User:</span>
+                                      <span className="text-gray-900 dark:text-gray-100">{getUserName(expandedLogData.userId)}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-600 dark:text-gray-400">Mode:</span>
+                                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                                        expandedLogData.processingMode === 'transformation'
+                                          ? 'bg-orange-100 text-orange-800'
+                                          : 'bg-blue-100 text-blue-800'
+                                      }`}>
+                                        {expandedLogData.processingMode === 'transformation' ? 'Transform' : 'Extract'}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-600 dark:text-gray-400">Type:</span>
+                                      <span className="text-gray-900 dark:text-gray-100">{getTypeName(expandedLogData)}</span>
                                     </div>
                                   </div>
                                 </div>
