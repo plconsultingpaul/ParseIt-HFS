@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FileText, Send, Download, X, Loader2, Copy } from 'lucide-react';
-import type { ExtractionType, SftpConfig, SettingsConfig, ApiConfig, User, ApiError, WorkflowStep, WorkflowExecutionLog } from '../../types';
+import type { ExtractionType, SftpConfig, SettingsConfig, ApiConfig, User, ApiError, WorkflowStep, WorkflowExecutionLog, FieldMappingFunction } from '../../types';
 import { extractDataFromPDF } from '../../lib/gemini';
 import { uploadToSftp } from '../../lib/sftp';
 import { executeWorkflow } from '../../lib/workflow';
 import { sendToApi } from '../../lib/apiClient';
+import { fieldMappingFunctionService } from '../../services/fieldMappingFunctionService';
 
 interface SingleFileProcessorProps {
   uploadedFile: File;
@@ -40,8 +41,26 @@ export default function SingleFileProcessor({
   const [copySuccess, setCopySuccess] = useState(false);
   const [workflowExecutionLogId, setWorkflowExecutionLogId] = useState<string>('');
   const [workflowExecutionLog, setWorkflowExecutionLog] = useState<WorkflowExecutionLog | null>(null);
+  const [functions, setFunctions] = useState<FieldMappingFunction[]>([]);
 
   const isJsonType = currentExtractionType?.formatType === 'JSON';
+
+  useEffect(() => {
+    const loadFunctions = async () => {
+      if (currentExtractionType?.id) {
+        try {
+          const funcs = await fieldMappingFunctionService.getFunctionsByExtractionType(currentExtractionType.id);
+          setFunctions(funcs);
+        } catch (error) {
+          console.warn('Failed to load field mapping functions:', error);
+          setFunctions([]);
+        }
+      } else {
+        setFunctions([]);
+      }
+    };
+    loadFunctions();
+  }, [currentExtractionType?.id]);
   const previewButtonText = 'Preview Mappings';
   const dataLabel = isJsonType ? 'JSON' : 'XML';
 
@@ -152,7 +171,8 @@ export default function SingleFileProcessor({
         fieldMappings: currentExtractionType.fieldMappings,
         parseitIdMapping: currentExtractionType.parseitIdMapping,
         apiKey: geminiApiKey,
-        arraySplitConfigs: currentExtractionType.arraySplitConfigs
+        arraySplitConfigs: currentExtractionType.arraySplitConfigs,
+        functions
       });
 
       // Separate workflow-only data
@@ -183,7 +203,7 @@ export default function SingleFileProcessor({
       let dataToSend = extractedData;
       
       if (!dataToSend) {
-        dataToSend = await extractDataFromPDF({
+        const extractResult = await extractDataFromPDF({
           pdfFile: uploadedFile,
           defaultInstructions: currentExtractionType.defaultInstructions,
           additionalInstructions: additionalInstructions,
@@ -194,8 +214,10 @@ export default function SingleFileProcessor({
           traceTypeMapping: currentExtractionType.traceTypeMapping,
           traceTypeValue: currentExtractionType.traceTypeValue,
           apiKey: geminiApiKey,
-          arraySplitConfigs: currentExtractionType.arraySplitConfigs
+          arraySplitConfigs: currentExtractionType.arraySplitConfigs,
+          functions
         });
+        dataToSend = extractResult.templateData;
         setExtractedData(dataToSend);
       }
       
