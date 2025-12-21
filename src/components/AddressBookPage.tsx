@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Plus, Edit, Trash2, BookUser, Search, CheckCircle, XCircle, Truck, Building, Calendar, Eye, EyeOff } from 'lucide-react';
 import type { User, ClientAddress } from '../types';
 import {
@@ -540,7 +541,7 @@ function AddressModal({
   getStateProvOptions,
   handlePhoneChange
 }: AddressModalProps) {
-  return (
+  return createPortal(
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 pt-10 overflow-y-auto">
       <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-2xl w-full mx-4 my-8 shadow-2xl">
         <div className="text-center mb-6">
@@ -799,7 +800,8 @@ function AddressModal({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -811,7 +813,7 @@ interface DeleteModalProps {
 }
 
 function DeleteModal({ address, onConfirm, onClose, isDeleting }: DeleteModalProps) {
-  return (
+  return createPortal(
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 pt-20">
       <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
         <div className="text-center mb-6">
@@ -853,6 +855,7 @@ function DeleteModal({ address, onConfirm, onClose, isDeleting }: DeleteModalPro
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
