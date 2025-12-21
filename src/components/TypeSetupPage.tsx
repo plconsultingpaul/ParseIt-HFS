@@ -51,6 +51,7 @@ export default function TypeSetupPage({
             extractionTypes={extractionTypes}
             onUpdateExtractionTypes={onUpdateExtractionTypes}
             onDeleteExtractionType={onDeleteExtractionType}
+            refreshData={refreshData}
           />
         ) : <PermissionDenied />;
       case 'transformation':
