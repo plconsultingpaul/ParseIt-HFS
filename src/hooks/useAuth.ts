@@ -1,6 +1,87 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import type { User, AuthState, UserPermissions } from '../types';
+
+const MAX_SESSION_DURATION_MS = 8 * 60 * 60 * 1000;
+const IDLE_TIMEOUT_MS = 60 * 60 * 1000;
+const SESSION_STORAGE_KEY = 'parseit_session';
+
+interface SessionData {
+  user: User;
+  loginTimestamp: number;
+  lastActivityTimestamp: number;
+}
+
+function isSessionExpired(session: SessionData): { expired: boolean; reason?: string } {
+  const now = Date.now();
+
+  if (now - session.loginTimestamp > MAX_SESSION_DURATION_MS) {
+    return { expired: true, reason: 'Session expired. Please log in again.' };
+  }
+
+  if (now - session.lastActivityTimestamp > IDLE_TIMEOUT_MS) {
+    return { expired: true, reason: 'Session timed out due to inactivity. Please log in again.' };
+  }
+
+  return { expired: false };
+}
+
+function saveSession(user: User, isNewLogin: boolean = false): void {
+  const now = Date.now();
+  const existingSession = localStorage.getItem(SESSION_STORAGE_KEY);
+
+  let loginTimestamp = now;
+  if (!isNewLogin && existingSession) {
+    try {
+      const parsed = JSON.parse(existingSession);
+      loginTimestamp = parsed.loginTimestamp || now;
+    } catch {
+      loginTimestamp = now;
+    }
+  }
+
+  const session: SessionData = {
+    user,
+    loginTimestamp,
+    lastActivityTimestamp: now
+  };
+
+  localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+  localStorage.removeItem('parseit_user');
+}
+
+function clearSession(): void {
+  localStorage.removeItem(SESSION_STORAGE_KEY);
+  localStorage.removeItem('parseit_user');
+}
+
+function getSession(): SessionData | null {
+  const sessionStr = localStorage.getItem(SESSION_STORAGE_KEY);
+  if (sessionStr) {
+    try {
+      return JSON.parse(sessionStr);
+    } catch {
+      return null;
+    }
+  }
+
+  const oldUser = localStorage.getItem('parseit_user');
+  if (oldUser) {
+    try {
+      const user = JSON.parse(oldUser);
+      const now = Date.now();
+      return {
+        user,
+        loginTimestamp: now,
+        lastActivityTimestamp: now
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
 
 export function useAuth() {
   const [authState, setAuthState] = useState<AuthState>({
@@ -8,35 +89,120 @@ export function useAuth() {
     user: null
   });
   const [loading, setLoading] = useState(true);
+  const [sessionExpiredMessage, setSessionExpiredMessage] = useState<string | null>(null);
+  const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const activityThrottleRef = useRef<number>(0);
+
+  const handleLogout = useCallback((reason?: string) => {
+    if (idleTimerRef.current) {
+      clearTimeout(idleTimerRef.current);
+      idleTimerRef.current = null;
+    }
+    clearSession();
+    setAuthState({
+      isAuthenticated: false,
+      user: null
+    });
+    if (reason) {
+      setSessionExpiredMessage(reason);
+    }
+  }, []);
+
+  const updateLastActivity = useCallback(() => {
+    const now = Date.now();
+    if (now - activityThrottleRef.current < 30000) {
+      return;
+    }
+    activityThrottleRef.current = now;
+
+    const session = getSession();
+    if (session) {
+      const { expired, reason } = isSessionExpired(session);
+      if (expired) {
+        handleLogout(reason);
+        return;
+      }
+
+      session.lastActivityTimestamp = now;
+      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+
+      if (idleTimerRef.current) {
+        clearTimeout(idleTimerRef.current);
+      }
+      idleTimerRef.current = setTimeout(() => {
+        handleLogout('Session timed out due to inactivity. Please log in again.');
+      }, IDLE_TIMEOUT_MS);
+    }
+  }, [handleLogout]);
+
+  useEffect(() => {
+    const events = ['mousedown', 'keydown', 'scroll', 'touchstart'];
+
+    const handleActivity = () => {
+      if (authState.isAuthenticated) {
+        updateLastActivity();
+      }
+    };
+
+    events.forEach(event => {
+      window.addEventListener(event, handleActivity, { passive: true });
+    });
+
+    return () => {
+      events.forEach(event => {
+        window.removeEventListener(event, handleActivity);
+      });
+      if (idleTimerRef.current) {
+        clearTimeout(idleTimerRef.current);
+      }
+    };
+  }, [authState.isAuthenticated, updateLastActivity]);
 
   useEffect(() => {
     const validateUserFromStorage = async () => {
-      // Check if user is already logged in (from localStorage)
-      const savedUser = localStorage.getItem('parseit_user');
-      if (savedUser) {
+      const session = getSession();
+      if (session) {
+        const { expired, reason } = isSessionExpired(session);
+        if (expired) {
+          clearSession();
+          setAuthState({
+            isAuthenticated: false,
+            user: null
+          });
+          setSessionExpiredMessage(reason || 'Session expired. Please log in again.');
+          setLoading(false);
+          return;
+        }
+
         try {
-          const user = JSON.parse(savedUser);
-          
-          // Verify the user still exists and is active in the database
+          const user = session.user;
+
           const { data, error } = await supabase
             .from('users')
-            .select('id, username, email, is_admin, is_active, permissions, role, preferred_upload_mode, current_zone, client_id, is_client_admin, has_order_entry_access, has_rate_quote_access, has_address_book_access')
+            .select('id, username, name, email, is_admin, is_active, permissions, role, preferred_upload_mode, current_zone, client_id, is_client_admin, has_order_entry_access, has_rate_quote_access, has_address_book_access, has_track_trace_access, has_invoice_access')
             .eq('id', user.id)
             .eq('is_active', true);
 
           if (error || !data || data.length === 0) {
-            // User not found or inactive, clear localStorage
-            localStorage.removeItem('parseit_user');
+            console.log('[useAuth] Session validation failed - no user data found');
+            clearSession();
             setAuthState({
               isAuthenticated: false,
               user: null
             });
           } else {
-            // User exists and is active, update with latest data from database
             const userData = data[0];
+            console.log('[useAuth] Session validation - raw userData from DB:', {
+              id: userData.id,
+              username: userData.username,
+              client_id: userData.client_id,
+              has_track_trace_access: userData.has_track_trace_access,
+              role: userData.role
+            });
             const validatedUser: User = {
               id: userData.id,
               username: userData.username,
+              name: userData.name || undefined,
               email: userData.email || undefined,
               isAdmin: userData.is_admin,
               isActive: userData.is_active,
@@ -48,20 +214,32 @@ export function useAuth() {
               isClientAdmin: userData.is_client_admin || false,
               hasOrderEntryAccess: userData.has_order_entry_access || false,
               hasRateQuoteAccess: userData.has_rate_quote_access || false,
-              hasAddressBookAccess: userData.has_address_book_access || false
+              hasAddressBookAccess: userData.has_address_book_access || false,
+              hasTrackTraceAccess: userData.has_track_trace_access || false,
+              hasInvoiceAccess: userData.has_invoice_access || false
             };
+
+            console.log('[useAuth] Session validation - constructed validatedUser:', {
+              id: validatedUser.id,
+              username: validatedUser.username,
+              clientId: validatedUser.clientId,
+              hasTrackTraceAccess: validatedUser.hasTrackTraceAccess,
+              role: validatedUser.role
+            });
 
             setAuthState({
               isAuthenticated: true,
               user: validatedUser
             });
 
-            // Update localStorage with validated data
-            localStorage.setItem('parseit_user', JSON.stringify(validatedUser));
+            saveSession(validatedUser, false);
+
+            idleTimerRef.current = setTimeout(() => {
+              handleLogout('Session timed out due to inactivity. Please log in again.');
+            }, IDLE_TIMEOUT_MS);
           }
         } catch (error) {
-          // Error parsing JSON or database error, clear localStorage
-          localStorage.removeItem('parseit_user');
+          clearSession();
           setAuthState({
             isAuthenticated: false,
             user: null
@@ -72,7 +250,7 @@ export function useAuth() {
     };
 
     validateUserFromStorage();
-  }, []);
+  }, [handleLogout]);
 
   const login = async (username: string, password: string): Promise<{ success: boolean; message?: string }> => {
     try {
@@ -90,7 +268,7 @@ export function useAuth() {
         // Get the complete user data directly from the users table to ensure we have all fields
         const { data: userData, error: userError } = await supabase
           .from('users')
-          .select('id, username, email, is_admin, is_active, permissions, role, preferred_upload_mode, current_zone, client_id, is_client_admin, has_order_entry_access, has_rate_quote_access, has_address_book_access')
+          .select('id, username, name, email, is_admin, is_active, permissions, role, preferred_upload_mode, current_zone, client_id, is_client_admin, has_order_entry_access, has_rate_quote_access, has_address_book_access, has_track_trace_access, has_invoice_access')
           .eq('username', username)
           .eq('is_active', true)
           .single();
@@ -101,6 +279,12 @@ export function useAuth() {
         }
 
         console.log('Complete user data from database:', userData);
+
+        // Update last_login timestamp
+        await supabase
+          .from('users')
+          .update({ last_login: new Date().toISOString() })
+          .eq('id', userData.id);
 
         // Parse permissions from database or use defaults
         let userPermissions: UserPermissions;
@@ -114,6 +298,7 @@ export function useAuth() {
         const user: User = {
           id: userData.id,
           username: userData.username,
+          name: userData.name || undefined,
           email: userData.email || undefined,
           isAdmin: userData.is_admin,
           isActive: userData.is_active,
@@ -125,7 +310,9 @@ export function useAuth() {
           isClientAdmin: userData.is_client_admin || false,
           hasOrderEntryAccess: userData.has_order_entry_access || false,
           hasRateQuoteAccess: userData.has_rate_quote_access || false,
-          hasAddressBookAccess: userData.has_address_book_access || false
+          hasAddressBookAccess: userData.has_address_book_access || false,
+          hasTrackTraceAccess: userData.has_track_trace_access || false,
+          hasInvoiceAccess: userData.has_invoice_access || false
         };
 
         console.log('Final user object created during login:', user);
@@ -135,8 +322,15 @@ export function useAuth() {
           user
         });
 
-        // Save to localStorage
-        localStorage.setItem('parseit_user', JSON.stringify(user));
+        saveSession(user, true);
+        setSessionExpiredMessage(null);
+
+        if (idleTimerRef.current) {
+          clearTimeout(idleTimerRef.current);
+        }
+        idleTimerRef.current = setTimeout(() => {
+          handleLogout('Session timed out due to inactivity. Please log in again.');
+        }, IDLE_TIMEOUT_MS);
 
         return { success: true };
       } else {
@@ -149,14 +343,14 @@ export function useAuth() {
   };
 
   const logout = () => {
-    setAuthState({
-      isAuthenticated: false,
-      user: null
-    });
-    localStorage.removeItem('parseit_user');
+    handleLogout();
   };
 
-  const createUser = async (username: string, password: string, isAdmin: boolean = false, role: 'admin' | 'user' | 'vendor' = 'user', email?: string): Promise<{ success: boolean; message: string }> => {
+  const clearSessionExpiredMessage = () => {
+    setSessionExpiredMessage(null);
+  };
+
+  const createUser = async (username: string, password: string, isAdmin: boolean = false, role: 'admin' | 'user' | 'vendor' = 'user', email?: string, name?: string): Promise<{ success: boolean; message: string }> => {
     try {
       console.log('Creating user with role:', role);
       
@@ -179,15 +373,19 @@ export function useAuth() {
         };
       }
 
-      // Always update the role after user creation to ensure it's set correctly
+      // Always update the role and name after user creation to ensure they're set correctly
       console.log('Updating user role to:', role);
       try {
+        const updateData: any = {
+          role: role,
+          updated_at: new Date().toISOString()
+        };
+        if (name) {
+          updateData.name = name;
+        }
         const { error: updateError } = await supabase
           .from('users')
-          .update({ 
-            role: role,
-            updated_at: new Date().toISOString()
-          })
+          .update(updateData)
           .eq('username', username);
 
         if (updateError) {
@@ -224,7 +422,7 @@ export function useAuth() {
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('id, username, email, is_admin, is_active, permissions, preferred_upload_mode, role, current_zone, client_id, is_client_admin, has_order_entry_access, has_rate_quote_access, has_address_book_access')
+        .select('id, username, name, email, is_admin, is_active, permissions, preferred_upload_mode, role, current_zone, client_id, is_client_admin, has_order_entry_access, has_rate_quote_access, has_address_book_access, has_track_trace_access, has_invoice_access, last_login, invitation_sent_at, invitation_sent_count')
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -234,6 +432,7 @@ export function useAuth() {
       return (data || []).map(user => ({
         id: user.id,
         username: user.username,
+        name: user.name || undefined,
         email: user.email || undefined,
         isAdmin: user.is_admin,
         isActive: user.is_active,
@@ -245,7 +444,12 @@ export function useAuth() {
         isClientAdmin: user.is_client_admin || false,
         hasOrderEntryAccess: user.has_order_entry_access || false,
         hasRateQuoteAccess: user.has_rate_quote_access || false,
-        hasAddressBookAccess: user.has_address_book_access || false
+        hasAddressBookAccess: user.has_address_book_access || false,
+        hasTrackTraceAccess: user.has_track_trace_access || false,
+        hasInvoiceAccess: user.has_invoice_access || false,
+        lastLogin: user.last_login || undefined,
+        invitationSentAt: user.invitation_sent_at || undefined,
+        invitationSentCount: user.invitation_sent_count || 0
       }));
     } catch (error) {
       console.error('Get users error:', error);
@@ -253,7 +457,7 @@ export function useAuth() {
     }
   };
 
-  const updateUser = async (userId: string, updates: { isAdmin?: boolean; isActive?: boolean; permissions?: UserPermissions; preferredUploadMode?: 'manual' | 'auto'; role?: 'admin' | 'user' | 'vendor' | 'client'; currentZone?: string; email?: string; clientId?: string; isClientAdmin?: boolean; hasOrderEntryAccess?: boolean; hasRateQuoteAccess?: boolean; hasAddressBookAccess?: boolean }): Promise<{ success: boolean; message: string }> => {
+  const updateUser = async (userId: string, updates: { isAdmin?: boolean; isActive?: boolean; permissions?: UserPermissions; preferredUploadMode?: 'manual' | 'auto'; role?: 'admin' | 'user' | 'vendor' | 'client'; currentZone?: string; email?: string; name?: string; clientId?: string; isClientAdmin?: boolean; hasOrderEntryAccess?: boolean; hasRateQuoteAccess?: boolean; hasAddressBookAccess?: boolean; hasTrackTraceAccess?: boolean; hasInvoiceAccess?: boolean }): Promise<{ success: boolean; message: string }> => {
     try {
       const updateData: any = {};
       if (updates.isAdmin !== undefined) updateData.is_admin = updates.isAdmin;
@@ -263,11 +467,14 @@ export function useAuth() {
       if (updates.role !== undefined) updateData.role = updates.role;
       if (updates.currentZone !== undefined) updateData.current_zone = updates.currentZone;
       if (updates.email !== undefined) updateData.email = updates.email;
+      if (updates.name !== undefined) updateData.name = updates.name;
       if (updates.clientId !== undefined) updateData.client_id = updates.clientId;
       if (updates.isClientAdmin !== undefined) updateData.is_client_admin = updates.isClientAdmin;
       if (updates.hasOrderEntryAccess !== undefined) updateData.has_order_entry_access = updates.hasOrderEntryAccess;
       if (updates.hasRateQuoteAccess !== undefined) updateData.has_rate_quote_access = updates.hasRateQuoteAccess;
       if (updates.hasAddressBookAccess !== undefined) updateData.has_address_book_access = updates.hasAddressBookAccess;
+      if (updates.hasTrackTraceAccess !== undefined) updateData.has_track_trace_access = updates.hasTrackTraceAccess;
+      if (updates.hasInvoiceAccess !== undefined) updateData.has_invoice_access = updates.hasInvoiceAccess;
       updateData.updated_at = new Date().toISOString();
 
       const { error } = await supabase
@@ -456,8 +663,10 @@ export function useAuth() {
   return {
     ...authState,
     loading,
+    sessionExpiredMessage,
     login,
     logout,
+    clearSessionExpiredMessage,
     createUser,
     getAllUsers,
     updateUser,
