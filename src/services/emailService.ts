@@ -30,13 +30,27 @@ export async function fetchEmailConfig(): Promise<EmailMonitoringConfig> {
         pollingInterval: config.polling_interval || 5,
         isEnabled: config.is_enabled || false,
         enableAutoDetect: config.enable_auto_detect || false,
-        lastCheck: config.last_check
+        lastCheck: config.last_check,
+        monitoringTenantId: config.monitoring_tenant_id || '',
+        monitoringClientId: config.monitoring_client_id || '',
+        monitoringClientSecret: config.monitoring_client_secret || '',
+        gmailMonitoringClientId: config.gmail_monitoring_client_id || '',
+        gmailMonitoringClientSecret: config.gmail_monitoring_client_secret || '',
+        gmailMonitoringRefreshToken: config.gmail_monitoring_refresh_token || '',
+        checkAllMessages: config.check_all_messages || false,
+        postProcessAction: config.post_process_action || 'mark_read',
+        processedFolderPath: config.processed_folder_path || 'Processed',
+        postProcessActionOnFailure: config.post_process_action_on_failure || 'none',
+        failureFolderPath: config.failure_folder_path || 'Failed'
       };
       console.log('[emailService] Returning config:', {
         ...returnConfig,
         clientSecret: returnConfig.clientSecret ? '***HIDDEN***' : '(empty)',
         gmailClientSecret: returnConfig.gmailClientSecret ? '***HIDDEN***' : '(empty)',
-        gmailRefreshToken: returnConfig.gmailRefreshToken ? '***HIDDEN***' : '(empty)'
+        gmailRefreshToken: returnConfig.gmailRefreshToken ? '***HIDDEN***' : '(empty)',
+        monitoringClientSecret: returnConfig.monitoringClientSecret ? '***HIDDEN***' : '(empty)',
+        gmailMonitoringClientSecret: returnConfig.gmailMonitoringClientSecret ? '***HIDDEN***' : '(empty)',
+        gmailMonitoringRefreshToken: returnConfig.gmailMonitoringRefreshToken ? '***HIDDEN***' : '(empty)'
       });
       return returnConfig;
     }
@@ -54,7 +68,18 @@ export async function fetchEmailConfig(): Promise<EmailMonitoringConfig> {
       gmailMonitoredLabel: 'INBOX',
       pollingInterval: 5,
       isEnabled: false,
-      enableAutoDetect: false
+      enableAutoDetect: false,
+      monitoringTenantId: '',
+      monitoringClientId: '',
+      monitoringClientSecret: '',
+      gmailMonitoringClientId: '',
+      gmailMonitoringClientSecret: '',
+      gmailMonitoringRefreshToken: '',
+      checkAllMessages: false,
+      postProcessAction: 'mark_read',
+      processedFolderPath: 'Processed',
+      postProcessActionOnFailure: 'none',
+      failureFolderPath: 'Failed'
     };
   } catch (error) {
     console.error('Error fetching email config:', error);
@@ -83,6 +108,17 @@ export async function updateEmailConfig(config: EmailMonitoringConfig): Promise<
       polling_interval: config.pollingInterval,
       is_enabled: config.isEnabled,
       enable_auto_detect: config.enableAutoDetect,
+      monitoring_tenant_id: config.monitoringTenantId || '',
+      monitoring_client_id: config.monitoringClientId || '',
+      monitoring_client_secret: config.monitoringClientSecret || '',
+      gmail_monitoring_client_id: config.gmailMonitoringClientId || '',
+      gmail_monitoring_client_secret: config.gmailMonitoringClientSecret || '',
+      gmail_monitoring_refresh_token: config.gmailMonitoringRefreshToken || '',
+      check_all_messages: config.checkAllMessages || false,
+      post_process_action: config.postProcessAction || 'mark_read',
+      processed_folder_path: config.processedFolderPath || 'Processed',
+      post_process_action_on_failure: config.postProcessActionOnFailure || 'none',
+      failure_folder_path: config.failureFolderPath || 'Failed',
       updated_at: new Date().toISOString()
     };
 
