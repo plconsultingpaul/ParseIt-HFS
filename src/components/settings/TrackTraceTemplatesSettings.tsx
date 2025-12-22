@@ -1143,8 +1143,12 @@ export default function TrackTraceTemplatesSettings({ currentUser }: TrackTraceT
                           onValueChange={(value) => {
                             const specId = value === '__none__' ? undefined : value;
                             setTemplate({ ...template, apiSpecId: specId, apiSpecEndpointId: undefined });
-                            if (specId) loadEndpointsForSpec(specId);
-                            else setApiEndpoints([]);
+                            if (specId) {
+                              loadEndpointsForSpec(specId);
+                            } else {
+                              setApiEndpoints([]);
+                              setEndpointFields([]);
+                            }
                           }}
                           options={[
                             { value: '__none__', label: 'None (Manual entry)' },
@@ -1170,6 +1174,11 @@ export default function TrackTraceTemplatesSettings({ currentUser }: TrackTraceT
                                 apiPath: endpoint?.path || template.apiPath,
                                 httpMethod: endpoint?.method?.toUpperCase() || template.httpMethod
                               });
+                              if (endpointId) {
+                                loadEndpointFields(endpointId);
+                              } else {
+                                setEndpointFields([]);
+                              }
                             }}
                             options={[
                               { value: '__none__', label: 'Select endpoint...' },
