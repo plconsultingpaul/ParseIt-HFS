@@ -973,13 +973,24 @@ export type TrackTraceTemplateSectionType =
   | 'barcode_details'
   | 'documents';
 
+export interface TraceNumbersSectionConfig {
+  apiSourceType: 'main' | 'secondary';
+  secondaryApiId?: string;
+  apiSpecId?: string;
+  apiSpecEndpointId?: string;
+  pathParameterField: string;
+  labelField: string;
+  valueField: string;
+  colorMappings: Record<string, string>;
+}
+
 export interface TrackTraceTemplateSection {
   id: string;
   templateId: string;
   sectionType: TrackTraceTemplateSectionType;
   displayOrder: number;
   isEnabled: boolean;
-  config: Record<string, unknown>;
+  config: Record<string, unknown> | TraceNumbersSectionConfig;
   createdAt: string;
   updatedAt: string;
 }

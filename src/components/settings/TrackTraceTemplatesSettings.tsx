@@ -4,7 +4,7 @@ import { Plus, Trash2, CreditCard as Edit2, GripVertical, AlertCircle, Save, Sea
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import type { User, TrackTraceTemplate, TrackTraceTemplateField, TrackTraceTemplateDefaultField, TrackTraceFilterPreset, TrackTraceFilterPresetDefaultField, TrackTraceFilterValue, TrackTraceOrderByOption, SecondaryApiConfig, ApiSpec, ApiSpecEndpoint, ApiEndpointField, TrackTraceValueMapping, TrackTraceTemplateSection, TrackTraceTemplateSectionType } from '../../types';
+import type { User, TrackTraceTemplate, TrackTraceTemplateField, TrackTraceTemplateDefaultField, TrackTraceFilterPreset, TrackTraceFilterPresetDefaultField, TrackTraceFilterValue, TrackTraceOrderByOption, SecondaryApiConfig, ApiSpec, ApiSpecEndpoint, ApiEndpointField, TrackTraceValueMapping, TrackTraceTemplateSection, TrackTraceTemplateSectionType, TraceNumbersSectionConfig } from '../../types';
 import { supabase } from '../../lib/supabase';
 import Select from '../common/Select';
 import { FormSkeleton } from '../common/Skeleton';
@@ -84,9 +84,11 @@ interface SortableSectionItemProps {
   };
   label: string;
   onToggleEnabled: (id: string) => void;
+  onConfigure?: (id: string) => void;
+  hasConfig?: boolean;
 }
 
-function SortableSectionItem({ section, label, onToggleEnabled }: SortableSectionItemProps) {
+function SortableSectionItem({ section, label, onToggleEnabled, onConfigure, hasConfig }: SortableSectionItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: section.id });
 
   const style = {
@@ -124,6 +126,15 @@ function SortableSectionItem({ section, label, onToggleEnabled }: SortableSectio
         </div>
       </div>
       <div className="flex items-center space-x-3">
+        {hasConfig && onConfigure && (
+          <button
+            onClick={() => onConfigure(section.id)}
+            className="p-1.5 text-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 rounded"
+            title="Configure section"
+          >
+            <Settings className="h-4 w-4" />
+          </button>
+        )}
         <label className="flex items-center space-x-2 cursor-pointer">
           <input
             type="checkbox"
@@ -175,6 +186,9 @@ export default function TrackTraceTemplatesSettings({ currentUser }: TrackTraceT
   const [editingPresetDefaultFields, setEditingPresetDefaultFields] = useState<TrackTraceFilterPresetDefaultField[]>([]);
 
   const [templateSections, setTemplateSections] = useState<TrackTraceTemplateSection[]>([]);
+  const [showTraceNumbersConfigModal, setShowTraceNumbersConfigModal] = useState(false);
+  const [editingTraceNumbersSection, setEditingTraceNumbersSection] = useState<TrackTraceTemplateSection | null>(null);
+  const [traceNumbersApiEndpoints, setTraceNumbersApiEndpoints] = useState<ApiSpecEndpoint[]>([]);
 
   const [expandedSections, setExpandedSections] = useState({
     api: false,
@@ -1045,6 +1059,67 @@ export default function TrackTraceTemplatesSettings({ currentUser }: TrackTraceT
     }
   };
 
+  const handleConfigureSection = (sectionId: string) => {
+    const section = templateSections.find(s => s.id === sectionId);
+    if (!section) return;
+
+    if (section.sectionType === 'trace_numbers') {
+      setEditingTraceNumbersSection(section);
+      const config = section.config as TraceNumbersSectionConfig;
+      if (config?.apiSpecId) {
+        loadTraceNumbersEndpoints(config.apiSpecId);
+      }
+      setShowTraceNumbersConfigModal(true);
+    }
+  };
+
+  const loadTraceNumbersEndpoints = async (specId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('api_spec_endpoints')
+        .select('*')
+        .eq('api_spec_id', specId)
+        .order('path');
+
+      if (error) throw error;
+      setTraceNumbersApiEndpoints(data || []);
+    } catch (err) {
+      console.error('Failed to load trace numbers endpoints:', err);
+    }
+  };
+
+  const handleSaveTraceNumbersConfig = async (config: TraceNumbersSectionConfig) => {
+    if (!editingTraceNumbersSection) return;
+
+    try {
+      setSaving(true);
+      setError(null);
+
+      const { error } = await supabase
+        .from('track_trace_template_sections')
+        .update({
+          config,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', editingTraceNumbersSection.id);
+
+      if (error) throw error;
+
+      setTemplateSections(prev =>
+        prev.map(s => s.id === editingTraceNumbersSection.id ? { ...s, config } : s)
+      );
+
+      setShowTraceNumbersConfigModal(false);
+      setEditingTraceNumbersSection(null);
+      setSuccessMessage('Trace Numbers configuration saved successfully');
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to save configuration');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const buildPreviewUrl = (): string => {
     if (!template) return '';
 
@@ -1887,6 +1962,8 @@ export default function TrackTraceTemplatesSettings({ currentUser }: TrackTraceT
                                 section={section}
                                 label={sectionTypeLabels[section.sectionType]}
                                 onToggleEnabled={handleToggleSectionEnabled}
+                                onConfigure={handleConfigureSection}
+                                hasConfig={section.sectionType === 'trace_numbers'}
                               />
                             ))}
                           </div>
@@ -2061,6 +2138,24 @@ export default function TrackTraceTemplatesSettings({ currentUser }: TrackTraceT
           filterPresets={filterPresets}
           secondaryApis={secondaryApis}
           onClose={() => setShowPreviewModal(false)}
+        />
+      )}
+
+      {showTraceNumbersConfigModal && editingTraceNumbersSection && (
+        <TraceNumbersConfigModal
+          section={editingTraceNumbersSection}
+          config={(editingTraceNumbersSection.config || {}) as TraceNumbersSectionConfig}
+          onSave={handleSaveTraceNumbersConfig}
+          onClose={() => {
+            setShowTraceNumbersConfigModal(false);
+            setEditingTraceNumbersSection(null);
+          }}
+          saving={saving}
+          secondaryApis={secondaryApis}
+          apiSpecs={apiSpecs}
+          apiEndpoints={traceNumbersApiEndpoints}
+          onSpecChange={loadTraceNumbersEndpoints}
+          selectFields={selectFields}
         />
       )}
     </div>
@@ -3603,6 +3698,360 @@ function TrackTracePreviewModal({
             className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
           >
             Close
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+interface TraceNumbersConfigModalProps {
+  section: TrackTraceTemplateSection;
+  config: TraceNumbersSectionConfig;
+  onSave: (config: TraceNumbersSectionConfig) => void;
+  onClose: () => void;
+  saving: boolean;
+  secondaryApis: SecondaryApiConfig[];
+  apiSpecs: ApiSpec[];
+  apiEndpoints: ApiSpecEndpoint[];
+  onSpecChange: (specId: string) => void;
+  selectFields: TrackTraceTemplateField[];
+}
+
+function TraceNumbersConfigModal({
+  config,
+  onSave,
+  onClose,
+  saving,
+  secondaryApis,
+  apiSpecs,
+  apiEndpoints,
+  onSpecChange,
+  selectFields
+}: TraceNumbersConfigModalProps) {
+  const [localConfig, setLocalConfig] = useState<TraceNumbersSectionConfig>({
+    apiSourceType: config.apiSourceType || 'main',
+    secondaryApiId: config.secondaryApiId || '',
+    apiSpecId: config.apiSpecId || '',
+    apiSpecEndpointId: config.apiSpecEndpointId || '',
+    pathParameterField: config.pathParameterField || '',
+    labelField: config.labelField || '',
+    valueField: config.valueField || '',
+    colorMappings: config.colorMappings || {}
+  });
+
+  const [newMappingLabel, setNewMappingLabel] = useState('');
+  const [newMappingColor, setNewMappingColor] = useState('blue');
+
+  const availableColors = [
+    { value: 'blue', label: 'Blue', className: 'bg-blue-100 text-blue-700 border-blue-200' },
+    { value: 'purple', label: 'Purple', className: 'bg-purple-100 text-purple-700 border-purple-200' },
+    { value: 'red', label: 'Red', className: 'bg-red-100 text-red-700 border-red-200' },
+    { value: 'green', label: 'Green', className: 'bg-green-100 text-green-700 border-green-200' },
+    { value: 'yellow', label: 'Yellow', className: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
+    { value: 'orange', label: 'Orange', className: 'bg-orange-100 text-orange-700 border-orange-200' },
+    { value: 'teal', label: 'Teal', className: 'bg-teal-100 text-teal-700 border-teal-200' },
+    { value: 'gray', label: 'Gray', className: 'bg-gray-100 text-gray-700 border-gray-200' }
+  ];
+
+  const filteredSpecs = apiSpecs.filter(spec => {
+    if (localConfig.apiSourceType === 'main') {
+      return !spec.secondary_api_id;
+    } else {
+      return spec.secondary_api_id === localConfig.secondaryApiId;
+    }
+  });
+
+  const handleAddColorMapping = () => {
+    if (!newMappingLabel.trim()) return;
+    setLocalConfig(prev => ({
+      ...prev,
+      colorMappings: {
+        ...prev.colorMappings,
+        [newMappingLabel.trim()]: newMappingColor
+      }
+    }));
+    setNewMappingLabel('');
+  };
+
+  const handleRemoveColorMapping = (label: string) => {
+    setLocalConfig(prev => {
+      const newMappings = { ...prev.colorMappings };
+      delete newMappings[label];
+      return { ...prev, colorMappings: newMappings };
+    });
+  };
+
+  const handleSpecChange = (specId: string) => {
+    setLocalConfig(prev => ({
+      ...prev,
+      apiSpecId: specId,
+      apiSpecEndpointId: ''
+    }));
+    if (specId) {
+      onSpecChange(specId);
+    }
+  };
+
+  return createPortal(
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+            Configure Trace Numbers Section
+          </h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            Configure the API endpoint and display settings for trace numbers
+          </p>
+        </div>
+
+        <div className="p-6 space-y-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              API Source
+            </label>
+            <div className="flex space-x-4">
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  name="apiSourceType"
+                  value="main"
+                  checked={localConfig.apiSourceType === 'main'}
+                  onChange={() => setLocalConfig(prev => ({
+                    ...prev,
+                    apiSourceType: 'main',
+                    secondaryApiId: '',
+                    apiSpecId: '',
+                    apiSpecEndpointId: ''
+                  }))}
+                  className="mr-2"
+                />
+                <span className="text-sm text-gray-700 dark:text-gray-300">Main API</span>
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  name="apiSourceType"
+                  value="secondary"
+                  checked={localConfig.apiSourceType === 'secondary'}
+                  onChange={() => setLocalConfig(prev => ({
+                    ...prev,
+                    apiSourceType: 'secondary',
+                    apiSpecId: '',
+                    apiSpecEndpointId: ''
+                  }))}
+                  className="mr-2"
+                />
+                <span className="text-sm text-gray-700 dark:text-gray-300">Secondary API</span>
+              </label>
+            </div>
+          </div>
+
+          {localConfig.apiSourceType === 'secondary' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Secondary API
+              </label>
+              <Select
+                value={localConfig.secondaryApiId || '__none__'}
+                onValueChange={(value) => setLocalConfig(prev => ({
+                  ...prev,
+                  secondaryApiId: value === '__none__' ? '' : value,
+                  apiSpecId: '',
+                  apiSpecEndpointId: ''
+                }))}
+                options={[
+                  { value: '__none__', label: 'Select Secondary API...' },
+                  ...secondaryApis.map(api => ({ value: api.id!, label: api.name }))
+                ]}
+              />
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              API Specification
+            </label>
+            <Select
+              value={localConfig.apiSpecId || '__none__'}
+              onValueChange={(value) => handleSpecChange(value === '__none__' ? '' : value)}
+              options={[
+                { value: '__none__', label: 'Select API Spec...' },
+                ...filteredSpecs.map(spec => ({ value: spec.id, label: spec.name }))
+              ]}
+            />
+          </div>
+
+          {localConfig.apiSpecId && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                API Endpoint
+              </label>
+              <Select
+                value={localConfig.apiSpecEndpointId || '__none__'}
+                onValueChange={(value) => setLocalConfig(prev => ({
+                  ...prev,
+                  apiSpecEndpointId: value === '__none__' ? '' : value
+                }))}
+                options={[
+                  { value: '__none__', label: 'Select Endpoint...' },
+                  ...apiEndpoints
+                    .filter(ep => ep.method === 'GET')
+                    .map(ep => ({
+                      value: ep.id,
+                      label: `GET ${ep.path}${ep.summary ? ` - ${ep.summary}` : ''}`
+                    }))
+                ]}
+              />
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Path Parameter Field
+            </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+              Select which field from the main search results to use as the path parameter (e.g., orderId)
+            </p>
+            <Select
+              value={localConfig.pathParameterField || '__none__'}
+              onValueChange={(value) => setLocalConfig(prev => ({
+                ...prev,
+                pathParameterField: value === '__none__' ? '' : value
+              }))}
+              options={[
+                { value: '__none__', label: 'Select Field...' },
+                ...selectFields
+                  .filter(f => f.isEnabled)
+                  .map(f => ({
+                    value: f.apiFieldPath || f.fieldName,
+                    label: `${f.displayLabel} (${f.apiFieldPath || f.fieldName})`
+                  }))
+              ]}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Label Field
+              </label>
+              <input
+                type="text"
+                value={localConfig.labelField}
+                onChange={(e) => setLocalConfig(prev => ({ ...prev, labelField: e.target.value }))}
+                placeholder="e.g., traceType"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                API response field for the badge label
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Value Field
+              </label>
+              <input
+                type="text"
+                value={localConfig.valueField}
+                onChange={(e) => setLocalConfig(prev => ({ ...prev, valueField: e.target.value }))}
+                placeholder="e.g., traceNumber"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                API response field for the trace number value
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Color Mappings
+            </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+              Map label values to badge colors (e.g., BOL = blue, PO = purple)
+            </p>
+
+            {Object.keys(localConfig.colorMappings).length > 0 && (
+              <div className="space-y-2 mb-4">
+                {Object.entries(localConfig.colorMappings).map(([label, color]) => {
+                  const colorConfig = availableColors.find(c => c.value === color);
+                  return (
+                    <div key={label} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                      <div className="flex items-center space-x-3">
+                        <span className={`px-2 py-1 text-xs font-medium rounded border ${colorConfig?.className || 'bg-gray-100 text-gray-700 border-gray-200'}`}>
+                          {label}
+                        </span>
+                        <span className="text-sm text-gray-600 dark:text-gray-400">
+                          {colorConfig?.label || color}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => handleRemoveColorMapping(label)}
+                        className="p-1 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 rounded"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="flex items-end space-x-2">
+              <div className="flex-1">
+                <input
+                  type="text"
+                  value={newMappingLabel}
+                  onChange={(e) => setNewMappingLabel(e.target.value)}
+                  placeholder="Label value (e.g., BOL)"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="w-32">
+                <Select
+                  value={newMappingColor}
+                  onValueChange={setNewMappingColor}
+                  options={availableColors.map(c => ({ value: c.value, label: c.label }))}
+                />
+              </div>
+              <button
+                onClick={handleAddColorMapping}
+                disabled={!newMappingLabel.trim()}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
+          <button
+            onClick={onClose}
+            disabled={saving}
+            className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onSave(localConfig)}
+            disabled={saving}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center"
+          >
+            {saving ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4 mr-2" />
+                Save Configuration
+              </>
+            )}
           </button>
         </div>
       </div>
