@@ -1963,9 +1963,16 @@ function TemplateFieldEditModal({ field, onChange, onSave, onClose, saving, endp
               API Field (from Spec)
             </label>
             {(() => {
-              const useEndpointFields = ['query', 'path', 'header'].includes(field.parameterType || '');
+              const isODataType = ['$filter', '$select', '$orderBy'].includes(field.parameterType || '');
+              const isStandardParamType = ['query', 'path', 'header'].includes(field.parameterType || '');
+              const useEndpointFields = isODataType || isStandardParamType;
               const filteredEndpointFields = useEndpointFields
-                ? endpointFields.filter(f => f.field_path?.startsWith(`[${field.parameterType}]`))
+                ? endpointFields.filter(f => {
+                    if (isODataType) {
+                      return f.field_path && !f.field_path.startsWith('[query]') && !f.field_path.startsWith('[path]') && !f.field_path.startsWith('[header]');
+                    }
+                    return f.field_path?.startsWith(`[${field.parameterType}]`);
+                  })
                 : [];
               const hasOptions = useEndpointFields ? filteredEndpointFields.length > 0 : schemaFieldPaths.length > 0;
 
