@@ -4,7 +4,7 @@ import { Plus, Trash2, CreditCard as Edit2, GripVertical, AlertCircle, Save, Sea
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import type { User, TrackTraceTemplate, TrackTraceTemplateField, TrackTraceTemplateDefaultField, TrackTraceFilterPreset, TrackTraceFilterPresetDefaultField, TrackTraceFilterValue, TrackTraceOrderByOption, SecondaryApiConfig, ApiSpec, ApiSpecEndpoint, ApiEndpointField, TrackTraceValueMapping } from '../../types';
+import type { User, TrackTraceTemplate, TrackTraceTemplateField, TrackTraceTemplateDefaultField, TrackTraceFilterPreset, TrackTraceFilterPresetDefaultField, TrackTraceFilterValue, TrackTraceOrderByOption, SecondaryApiConfig, ApiSpec, ApiSpecEndpoint, ApiEndpointField, TrackTraceValueMapping, TrackTraceTemplateSection, TrackTraceTemplateSectionType } from '../../types';
 import { supabase } from '../../lib/supabase';
 import Select from '../common/Select';
 import { FormSkeleton } from '../common/Skeleton';
@@ -75,6 +75,69 @@ function SortableColumnItem({ field, onEdit, onDelete }: SortableColumnItemProps
   );
 }
 
+interface SortableSectionItemProps {
+  section: {
+    id: string;
+    sectionType: string;
+    displayOrder: number;
+    isEnabled: boolean;
+  };
+  label: string;
+  onToggleEnabled: (id: string) => void;
+}
+
+function SortableSectionItem({ section, label, onToggleEnabled }: SortableSectionItemProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: section.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg"
+    >
+      <div className="flex items-center space-x-3">
+        <button
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing touch-none"
+        >
+          <GripVertical className="h-4 w-4 text-gray-400" />
+        </button>
+        <div className="flex items-center space-x-2">
+          <span className="font-medium text-sm text-gray-900 dark:text-gray-100">
+            {label}
+          </span>
+          <span className="text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded">
+            #{section.displayOrder}
+          </span>
+          {!section.isEnabled && (
+            <span className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-600 text-gray-500 rounded">
+              Hidden
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="flex items-center space-x-3">
+        <label className="flex items-center space-x-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={section.isEnabled}
+            onChange={() => onToggleEnabled(section.id)}
+            className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+          />
+          <span className="text-xs text-gray-600 dark:text-gray-400">Show</span>
+        </label>
+      </div>
+    </div>
+  );
+}
+
 interface TrackTraceTemplatesSettingsProps {
   currentUser: User;
 }
@@ -111,13 +174,16 @@ export default function TrackTraceTemplatesSettings({ currentUser }: TrackTraceT
   const [editingFilterPreset, setEditingFilterPreset] = useState<TrackTraceFilterPreset | null>(null);
   const [editingPresetDefaultFields, setEditingPresetDefaultFields] = useState<TrackTraceFilterPresetDefaultField[]>([]);
 
+  const [templateSections, setTemplateSections] = useState<TrackTraceTemplateSection[]>([]);
+
   const [expandedSections, setExpandedSections] = useState({
     api: false,
     options: false,
     filters: false,
     columns: false,
     defaultFields: false,
-    filterPresets: false
+    filterPresets: false,
+    pageSections: false
   });
 
   const [deleteTarget, setDeleteTarget] = useState<{
@@ -183,6 +249,7 @@ export default function TrackTraceTemplatesSettings({ currentUser }: TrackTraceT
       setFields([]);
       setDefaultFields([]);
       setFilterPresets([]);
+      setTemplateSections([]);
     }
   }, [selectedTemplateId]);
 
@@ -354,6 +421,26 @@ export default function TrackTraceTemplatesSettings({ currentUser }: TrackTraceT
           };
         });
         setFilterPresets(mappedFilterPresets);
+
+        const { data: sectionsData, error: sectionsError } = await supabase
+          .from('track_trace_template_sections')
+          .select('*')
+          .eq('template_id', templateData.id)
+          .order('display_order');
+
+        if (sectionsError) throw sectionsError;
+
+        const mappedSections: TrackTraceTemplateSection[] = (sectionsData || []).map((s: any) => ({
+          id: s.id,
+          templateId: s.template_id,
+          sectionType: s.section_type,
+          displayOrder: s.display_order,
+          isEnabled: s.is_enabled,
+          config: s.config || {},
+          createdAt: s.created_at,
+          updatedAt: s.updated_at
+        }));
+        setTemplateSections(mappedSections);
       }
     } catch (err: any) {
       setError(err.message || 'Failed to load template');
@@ -891,6 +978,71 @@ export default function TrackTraceTemplatesSettings({ currentUser }: TrackTraceT
 
   const toggleSection = (section: keyof typeof expandedSections) => {
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
+  };
+
+  const sectionTypeLabels: Record<TrackTraceTemplateSectionType, string> = {
+    shipment_summary: 'Shipment Summary',
+    shipment_timeline: 'Shipment Timeline',
+    route_summary: 'Route Summary',
+    trace_numbers: 'Trace Numbers',
+    barcode_details: 'Barcode Details',
+    documents: 'Documents'
+  };
+
+  const handleSectionReorder = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = templateSections.findIndex(s => s.id === active.id);
+    const newIndex = templateSections.findIndex(s => s.id === over.id);
+
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reorderedSections = arrayMove(templateSections, oldIndex, newIndex);
+    const updatedSections = reorderedSections.map((section, index) => ({
+      ...section,
+      displayOrder: index + 1
+    }));
+
+    setTemplateSections(updatedSections);
+
+    try {
+      const updates = updatedSections.map(section =>
+        supabase
+          .from('track_trace_template_sections')
+          .update({ display_order: section.displayOrder, updated_at: new Date().toISOString() })
+          .eq('id', section.id)
+      );
+      await Promise.all(updates);
+    } catch (err) {
+      console.error('Failed to save section order:', err);
+      setError('Failed to save section order');
+    }
+  };
+
+  const handleToggleSectionEnabled = async (sectionId: string) => {
+    const section = templateSections.find(s => s.id === sectionId);
+    if (!section) return;
+
+    const newEnabled = !section.isEnabled;
+    setTemplateSections(prev =>
+      prev.map(s => s.id === sectionId ? { ...s, isEnabled: newEnabled } : s)
+    );
+
+    try {
+      const { error } = await supabase
+        .from('track_trace_template_sections')
+        .update({ is_enabled: newEnabled, updated_at: new Date().toISOString() })
+        .eq('id', sectionId);
+
+      if (error) throw error;
+    } catch (err) {
+      console.error('Failed to toggle section:', err);
+      setError('Failed to toggle section');
+      setTemplateSections(prev =>
+        prev.map(s => s.id === sectionId ? { ...s, isEnabled: !newEnabled } : s)
+      );
+    }
   };
 
   const buildPreviewUrl = (): string => {
@@ -1689,6 +1841,57 @@ export default function TrackTraceTemplatesSettings({ currentUser }: TrackTraceT
                           </div>
                         ))}
                       </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                <button
+                  onClick={() => toggleSection('pageSections')}
+                  className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  <div className="flex items-center space-x-3">
+                    <Settings className="h-5 w-5 text-gray-500" />
+                    <span className="font-medium text-gray-900 dark:text-gray-100">
+                      Page Sections ({templateSections.filter(s => s.isEnabled).length}/{templateSections.length} visible)
+                    </span>
+                  </div>
+                  {expandedSections.pageSections ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+                </button>
+
+                {expandedSections.pageSections && (
+                  <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                      Configure which sections appear on the shipment details page and their display order. Drag to reorder sections.
+                    </p>
+
+                    {templateSections.length === 0 ? (
+                      <p className="text-sm text-gray-500 dark:text-gray-400 italic text-center py-4">
+                        No page sections configured for this template.
+                      </p>
+                    ) : (
+                      <DndContext
+                        sensors={sensors}
+                        collisionDetection={closestCenter}
+                        onDragEnd={handleSectionReorder}
+                      >
+                        <SortableContext
+                          items={templateSections.map(s => s.id)}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          <div className="space-y-2">
+                            {templateSections.map(section => (
+                              <SortableSectionItem
+                                key={section.id}
+                                section={section}
+                                label={sectionTypeLabels[section.sectionType]}
+                                onToggleEnabled={handleToggleSectionEnabled}
+                              />
+                            ))}
+                          </div>
+                        </SortableContext>
+                      </DndContext>
                     )}
                   </div>
                 )}

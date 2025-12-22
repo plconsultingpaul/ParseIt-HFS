@@ -965,6 +965,25 @@ export interface TrackTraceFilterPresetDefaultField {
   updatedAt: string;
 }
 
+export type TrackTraceTemplateSectionType =
+  | 'shipment_summary'
+  | 'shipment_timeline'
+  | 'route_summary'
+  | 'trace_numbers'
+  | 'barcode_details'
+  | 'documents';
+
+export interface TrackTraceTemplateSection {
+  id: string;
+  templateId: string;
+  sectionType: TrackTraceTemplateSectionType;
+  displayOrder: number;
+  isEnabled: boolean;
+  config: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface OrderEntryTemplate {
   id: string;
   name: string;
