@@ -1794,6 +1794,7 @@ export default function TrackTraceTemplatesSettings({ currentUser }: TrackTraceT
           saving={saving}
           endpointFields={endpointFields}
           schemaFieldPaths={schemaFieldPaths}
+          noSpecSelected={!template.apiSpecId}
         />
       )}
 
@@ -1871,9 +1872,10 @@ interface TemplateFieldEditModalProps {
   saving: boolean;
   endpointFields: ApiEndpointField[];
   schemaFieldPaths: string[];
+  noSpecSelected: boolean;
 }
 
-function TemplateFieldEditModal({ field, onChange, onSave, onClose, saving, endpointFields, schemaFieldPaths }: TemplateFieldEditModalProps) {
+function TemplateFieldEditModal({ field, onChange, onSave, onClose, saving, endpointFields, schemaFieldPaths, noSpecSelected }: TemplateFieldEditModalProps) {
   const formatDisplayLabel = (fieldName: string): string => {
     return fieldName
       .replace(/([A-Z])/g, ' $1')
@@ -1963,7 +1965,6 @@ function TemplateFieldEditModal({ field, onChange, onSave, onClose, saving, endp
               API Field (from Spec)
             </label>
             {(() => {
-              const noSpecSelected = !template?.apiSpecId;
 
               if (noSpecSelected) {
                 return (
