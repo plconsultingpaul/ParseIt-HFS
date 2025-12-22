@@ -1963,6 +1963,26 @@ function TemplateFieldEditModal({ field, onChange, onSave, onClose, saving, endp
               API Field (from Spec)
             </label>
             {(() => {
+              const noSpecSelected = !template?.apiSpecId;
+
+              if (noSpecSelected) {
+                return (
+                  <Select
+                    value={field.apiFieldPath || '__none__'}
+                    onValueChange={(value) => {
+                      onChange({
+                        ...field,
+                        apiFieldPath: value === '__none__' ? undefined : value,
+                        fieldName: value !== '__none__' ? value : field.fieldName
+                      });
+                    }}
+                    options={[
+                      { value: '__none__', label: 'Manual entry' }
+                    ]}
+                  />
+                );
+              }
+
               const isODataType = ['$filter', '$select', '$orderBy'].includes(field.parameterType || '');
               const isStandardParamType = ['query', 'path', 'header'].includes(field.parameterType || '');
               const useEndpointFields = isODataType || isStandardParamType;
