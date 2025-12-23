@@ -165,7 +165,22 @@ export default function ShipmentDetailsPage({ currentUser }: ShipmentDetailsPage
       }
 
       const data = await proxyResponse.json();
-      const result = Array.isArray(data) ? data[0] : (data.value?.[0] || data.data?.[0] || data);
+      console.log('[ShipmentDetailsPage] Raw proxy response:', JSON.stringify(data, null, 2));
+
+      let result;
+      if (Array.isArray(data)) {
+        result = data[0];
+      } else if (data.value && Array.isArray(data.value)) {
+        result = data.value[0];
+      } else if (data.data && Array.isArray(data.data)) {
+        result = data.data[0];
+      } else if (data['0']) {
+        result = data['0'];
+      } else {
+        result = data;
+      }
+
+      console.log('[ShipmentDetailsPage] Extracted result:', JSON.stringify(result, null, 2));
 
       const mappedTraceNumbers: TraceNumber[] = (config.fieldMappings || [])
         .map((mapping) => {

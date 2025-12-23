@@ -6,11 +6,13 @@
 
 The Trace Numbers section on the Shipment Details page was showing "No trace numbers found" even when the API endpoint was properly configured with field mappings.
 
-## Root Cause
+## Root Causes
 
+### Issue 1: CORS Blocking Direct API Calls
 The `fetchTraceNumbers` function in `ShipmentDetailsPage.tsx` was making **direct browser-to-API calls** using `fetch()`. This failed silently due to **CORS restrictions** - external APIs don't allow direct browser requests.
 
-Meanwhile, `TrackTracePage.tsx` correctly uses the `track-trace-proxy` edge function for all API calls.
+### Issue 2: Proxy Response Format Not Handled
+The `track-trace-proxy` edge function wraps API responses with `{ ...data, _requestUrl }`. When the API returns an array like `[{...}]`, the spread converts it to `{"0": {...}, "_requestUrl": "..."}`. The original extraction code didn't handle this format.
 
 ## Solution
 
@@ -65,6 +67,25 @@ const proxyResponse = await fetch(`${supabaseUrl}/functions/v1/track-trace-proxy
     queryString: ''
   })
 });
+```
+
+### Fix 2: Response Extraction
+
+Added proper handling for the proxy response format:
+
+```javascript
+let result;
+if (Array.isArray(data)) {
+  result = data[0];
+} else if (data.value && Array.isArray(data.value)) {
+  result = data.value[0];
+} else if (data.data && Array.isArray(data.data)) {
+  result = data.data[0];
+} else if (data['0']) {
+  result = data['0'];  // Handle spread array from proxy
+} else {
+  result = data;
+}
 ```
 
 ## Testing
