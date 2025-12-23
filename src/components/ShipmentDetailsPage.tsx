@@ -21,6 +21,13 @@ export default function ShipmentDetailsPage({ currentUser }: ShipmentDetailsPage
   const templateId = searchParams.get('templateId');
   const navigate = useNavigate();
 
+  console.log('[ShipmentDetailsPage] Component loaded:', {
+    orderId,
+    templateId,
+    currentUser: currentUser?.username,
+    role: currentUser?.role
+  });
+
   const [traceNumbers, setTraceNumbers] = useState<TraceNumber[]>([]);
   const [traceNumbersLoading, setTraceNumbersLoading] = useState(false);
   const [traceNumbersSection, setTraceNumbersSection] = useState<TrackTraceTemplateSection | null>(null);
@@ -35,13 +42,22 @@ export default function ShipmentDetailsPage({ currentUser }: ShipmentDetailsPage
   };
 
   useEffect(() => {
+    console.log('[ShipmentDetailsPage] useEffect triggered:', { templateId, orderId });
     if (templateId && orderId) {
+      console.log('[ShipmentDetailsPage] Calling loadTemplateSections...');
       loadTemplateSections();
+    } else {
+      console.log('[ShipmentDetailsPage] Missing templateId or orderId - not loading sections');
     }
   }, [templateId, orderId]);
 
   const loadTemplateSections = async () => {
-    if (!templateId) return;
+    if (!templateId) {
+      console.log('[ShipmentDetailsPage] loadTemplateSections called but no templateId');
+      return;
+    }
+
+    console.log('[ShipmentDetailsPage] Loading template sections for templateId:', templateId);
 
     try {
       const { data: sectionsData, error: sectionsError } = await supabase
@@ -50,6 +66,12 @@ export default function ShipmentDetailsPage({ currentUser }: ShipmentDetailsPage
         .eq('template_id', templateId)
         .eq('is_enabled', true)
         .order('display_order');
+
+      console.log('[ShipmentDetailsPage] Sections query result:', {
+        sectionsData,
+        error: sectionsError,
+        count: sectionsData?.length
+      });
 
       if (sectionsError) throw sectionsError;
 
@@ -64,23 +86,40 @@ export default function ShipmentDetailsPage({ currentUser }: ShipmentDetailsPage
         updatedAt: s.updated_at
       }));
 
+      console.log('[ShipmentDetailsPage] Mapped sections:', mappedSections.map(s => s.sectionType));
       setEnabledSections(mappedSections);
 
       const traceNumbersSection = mappedSections.find(s => s.sectionType === 'trace_numbers');
       if (traceNumbersSection) {
+        console.log('[ShipmentDetailsPage] Found trace numbers section:', traceNumbersSection);
         setTraceNumbersSection(traceNumbersSection);
         const config = traceNumbersSection.config as TraceNumbersSectionConfig;
+        console.log('[ShipmentDetailsPage] Trace numbers config:', config);
         if (config.apiSpecEndpointId && config.fieldMappings && config.fieldMappings.length > 0) {
+          console.log('[ShipmentDetailsPage] Fetching trace numbers...');
           await fetchTraceNumbers(config);
+        } else {
+          console.log('[ShipmentDetailsPage] Not fetching trace numbers:', {
+            hasEndpoint: !!config.apiSpecEndpointId,
+            hasFieldMappings: !!config.fieldMappings,
+            mappingsLength: config.fieldMappings?.length
+          });
         }
+      } else {
+        console.log('[ShipmentDetailsPage] No trace numbers section found');
       }
     } catch (err) {
-      console.error('Failed to load template sections:', err);
+      console.error('[ShipmentDetailsPage] Failed to load template sections:', err);
     }
   };
 
   const fetchTraceNumbers = async (config: TraceNumbersSectionConfig) => {
-    if (!orderId) return;
+    if (!orderId) {
+      console.log('[ShipmentDetailsPage] fetchTraceNumbers called but no orderId');
+      return;
+    }
+
+    console.log('[ShipmentDetailsPage] fetchTraceNumbers called with config:', config);
 
     try {
       setTraceNumbersLoading(true);
@@ -172,6 +211,7 @@ export default function ShipmentDetailsPage({ currentUser }: ShipmentDetailsPage
         })
         .filter((item): item is TraceNumber => item !== null && item.value !== '');
 
+      console.log('[ShipmentDetailsPage] Mapped trace numbers:', mappedTraceNumbers);
       setTraceNumbers(mappedTraceNumbers);
     } catch (err) {
       console.error('Failed to fetch trace numbers:', err);
@@ -335,6 +375,8 @@ export default function ShipmentDetailsPage({ currentUser }: ShipmentDetailsPage
         return null;
     }
   };
+
+  console.log('[ShipmentDetailsPage] Rendering with enabledSections:', enabledSections.length, enabledSections.map(s => s.sectionType));
 
   return (
     <div className="space-y-8 animate-fade-in">
