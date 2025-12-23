@@ -120,7 +120,6 @@ export default function ShipmentDetailsPage({ currentUser }: ShipmentDetailsPage
       if (!baseUrl) return;
 
       let apiPath = endpointData.path;
-      apiPath = apiPath.replace(`{${config.pathParameterField}}`, orderId);
       apiPath = apiPath.replace(/{[^}]+}/g, orderId);
 
       const normalizedBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
@@ -141,14 +140,19 @@ export default function ShipmentDetailsPage({ currentUser }: ShipmentDetailsPage
       }
 
       const data = await response.json();
-      const results = Array.isArray(data) ? data : (data.value || data.data || [data]);
+      const result = Array.isArray(data) ? data[0] : (data.value?.[0] || data.data?.[0] || data);
 
-      const mappedTraceNumbers: TraceNumber[] = results.map((item: any) => {
-        const label = item[config.labelField] || 'Unknown';
-        const value = item[config.valueField] || '';
-        const color = config.colorMappings[label] || 'gray';
-        return { label, value, color };
-      });
+      const mappedTraceNumbers: TraceNumber[] = (config.fieldMappings || [])
+        .map((mapping) => {
+          const value = result?.[mapping.valueField] || '';
+          if (!value) return null;
+          return {
+            label: mapping.label,
+            value,
+            color: mapping.color || 'gray'
+          };
+        })
+        .filter((item): item is TraceNumber => item !== null && item.value !== '');
 
       setTraceNumbers(mappedTraceNumbers);
     } catch (err) {

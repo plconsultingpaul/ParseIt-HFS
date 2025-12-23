@@ -4,7 +4,7 @@ import { Plus, Trash2, CreditCard as Edit2, GripVertical, AlertCircle, Save, Sea
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import type { User, TrackTraceTemplate, TrackTraceTemplateField, TrackTraceTemplateDefaultField, TrackTraceFilterPreset, TrackTraceFilterPresetDefaultField, TrackTraceFilterValue, TrackTraceOrderByOption, SecondaryApiConfig, ApiSpec, ApiSpecEndpoint, ApiEndpointField, TrackTraceValueMapping, TrackTraceTemplateSection, TrackTraceTemplateSectionType, TraceNumbersSectionConfig } from '../../types';
+import type { User, TrackTraceTemplate, TrackTraceTemplateField, TrackTraceTemplateDefaultField, TrackTraceFilterPreset, TrackTraceFilterPresetDefaultField, TrackTraceFilterValue, TrackTraceOrderByOption, SecondaryApiConfig, ApiSpec, ApiSpecEndpoint, ApiEndpointField, TrackTraceValueMapping, TrackTraceTemplateSection, TrackTraceTemplateSectionType, TraceNumbersSectionConfig, TraceNumberFieldMapping } from '../../types';
 import { supabase } from '../../lib/supabase';
 import Select from '../common/Select';
 import { FormSkeleton } from '../common/Skeleton';
@@ -2143,7 +2143,6 @@ export default function TrackTraceTemplatesSettings({ currentUser }: TrackTraceT
 
       {showTraceNumbersConfigModal && editingTraceNumbersSection && (
         <TraceNumbersConfigModal
-          section={editingTraceNumbersSection}
           config={(editingTraceNumbersSection.config || {}) as TraceNumbersSectionConfig}
           onSave={handleSaveTraceNumbersConfig}
           onClose={() => {
@@ -2155,7 +2154,6 @@ export default function TrackTraceTemplatesSettings({ currentUser }: TrackTraceT
           apiSpecs={apiSpecs}
           apiEndpoints={traceNumbersApiEndpoints}
           onSpecChange={loadTraceNumbersEndpoints}
-          selectFields={selectFields}
         />
       )}
     </div>
@@ -3707,7 +3705,6 @@ function TrackTracePreviewModal({
 }
 
 interface TraceNumbersConfigModalProps {
-  section: TrackTraceTemplateSection;
   config: TraceNumbersSectionConfig;
   onSave: (config: TraceNumbersSectionConfig) => void;
   onClose: () => void;
@@ -3716,7 +3713,6 @@ interface TraceNumbersConfigModalProps {
   apiSpecs: ApiSpec[];
   apiEndpoints: ApiSpecEndpoint[];
   onSpecChange: (specId: string) => void;
-  selectFields: TrackTraceTemplateField[];
 }
 
 function TraceNumbersConfigModal({
@@ -3727,21 +3723,18 @@ function TraceNumbersConfigModal({
   secondaryApis,
   apiSpecs,
   apiEndpoints,
-  onSpecChange,
-  selectFields
+  onSpecChange
 }: TraceNumbersConfigModalProps) {
   const [localConfig, setLocalConfig] = useState<TraceNumbersSectionConfig>({
     apiSourceType: config.apiSourceType || 'main',
     secondaryApiId: config.secondaryApiId || '',
     apiSpecId: config.apiSpecId || '',
     apiSpecEndpointId: config.apiSpecEndpointId || '',
-    pathParameterField: config.pathParameterField || '',
-    labelField: config.labelField || '',
-    valueField: config.valueField || '',
-    colorMappings: config.colorMappings || {}
+    fieldMappings: config.fieldMappings || []
   });
 
   const [newMappingLabel, setNewMappingLabel] = useState('');
+  const [newMappingValueField, setNewMappingValueField] = useState('');
   const [newMappingColor, setNewMappingColor] = useState('blue');
 
   const availableColors = [
@@ -3763,24 +3756,27 @@ function TraceNumbersConfigModal({
     }
   });
 
-  const handleAddColorMapping = () => {
-    if (!newMappingLabel.trim()) return;
+  const handleAddFieldMapping = () => {
+    if (!newMappingLabel.trim() || !newMappingValueField.trim()) return;
+    const newMapping: TraceNumberFieldMapping = {
+      label: newMappingLabel.trim(),
+      valueField: newMappingValueField.trim(),
+      color: newMappingColor
+    };
     setLocalConfig(prev => ({
       ...prev,
-      colorMappings: {
-        ...prev.colorMappings,
-        [newMappingLabel.trim()]: newMappingColor
-      }
+      fieldMappings: [...prev.fieldMappings, newMapping]
     }));
     setNewMappingLabel('');
+    setNewMappingValueField('');
+    setNewMappingColor('blue');
   };
 
-  const handleRemoveColorMapping = (label: string) => {
-    setLocalConfig(prev => {
-      const newMappings = { ...prev.colorMappings };
-      delete newMappings[label];
-      return { ...prev, colorMappings: newMappings };
-    });
+  const handleRemoveFieldMapping = (index: number) => {
+    setLocalConfig(prev => ({
+      ...prev,
+      fieldMappings: prev.fieldMappings.filter((_, i) => i !== index)
+    }));
   };
 
   const handleSpecChange = (specId: string) => {
@@ -3909,87 +3905,28 @@ function TraceNumbersConfigModal({
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Path Parameter Field
-            </label>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-              Select which field from the main search results to use as the path parameter (e.g., orderId)
-            </p>
-            <Select
-              value={localConfig.pathParameterField || '__none__'}
-              onValueChange={(value) => setLocalConfig(prev => ({
-                ...prev,
-                pathParameterField: value === '__none__' ? '' : value
-              }))}
-              options={[
-                { value: '__none__', label: 'Select Field...' },
-                ...selectFields
-                  .filter(f => f.isEnabled)
-                  .map(f => ({
-                    value: f.apiFieldPath || f.fieldName,
-                    label: `${f.displayLabel} (${f.apiFieldPath || f.fieldName})`
-                  }))
-              ]}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Label Field
-              </label>
-              <input
-                type="text"
-                value={localConfig.labelField}
-                onChange={(e) => setLocalConfig(prev => ({ ...prev, labelField: e.target.value }))}
-                placeholder="e.g., traceType"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
-              />
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                API response field for the badge label
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Value Field
-              </label>
-              <input
-                type="text"
-                value={localConfig.valueField}
-                onChange={(e) => setLocalConfig(prev => ({ ...prev, valueField: e.target.value }))}
-                placeholder="e.g., traceNumber"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
-              />
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                API response field for the trace number value
-              </p>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Color Mappings
+              Field Mappings
             </label>
             <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-              Map label values to badge colors (e.g., BOL = blue, PO = purple)
+              Define the trace number fields to display. Each mapping specifies a label, the API field containing the value, and the badge color.
             </p>
 
-            {Object.keys(localConfig.colorMappings).length > 0 && (
+            {localConfig.fieldMappings.length > 0 && (
               <div className="space-y-2 mb-4">
-                {Object.entries(localConfig.colorMappings).map(([label, color]) => {
-                  const colorConfig = availableColors.find(c => c.value === color);
+                {localConfig.fieldMappings.map((mapping, index) => {
+                  const colorConfig = availableColors.find(c => c.value === mapping.color);
                   return (
-                    <div key={label} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                      <div className="flex items-center space-x-3">
+                    <div key={index} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                      <div className="flex items-center space-x-4">
                         <span className={`px-2 py-1 text-xs font-medium rounded border ${colorConfig?.className || 'bg-gray-100 text-gray-700 border-gray-200'}`}>
-                          {label}
+                          {mapping.label}
                         </span>
                         <span className="text-sm text-gray-600 dark:text-gray-400">
-                          {colorConfig?.label || color}
+                          {mapping.valueField}
                         </span>
                       </div>
                       <button
-                        onClick={() => handleRemoveColorMapping(label)}
+                        onClick={() => handleRemoveFieldMapping(index)}
                         className="p-1 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 rounded"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -4000,30 +3937,44 @@ function TraceNumbersConfigModal({
               </div>
             )}
 
-            <div className="flex items-end space-x-2">
-              <div className="flex-1">
+            <div className="grid grid-cols-12 gap-2 items-end">
+              <div className="col-span-3">
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Label</label>
                 <input
                   type="text"
                   value={newMappingLabel}
                   onChange={(e) => setNewMappingLabel(e.target.value)}
-                  placeholder="Label value (e.g., BOL)"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g., BOL"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 text-sm"
                 />
               </div>
-              <div className="w-32">
+              <div className="col-span-5">
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Value Field</label>
+                <input
+                  type="text"
+                  value={newMappingValueField}
+                  onChange={(e) => setNewMappingValueField(e.target.value)}
+                  placeholder="e.g., bolNumber"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+              </div>
+              <div className="col-span-3">
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Color</label>
                 <Select
                   value={newMappingColor}
                   onValueChange={setNewMappingColor}
                   options={availableColors.map(c => ({ value: c.value, label: c.label }))}
                 />
               </div>
-              <button
-                onClick={handleAddColorMapping}
-                disabled={!newMappingLabel.trim()}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Plus className="h-4 w-4" />
-              </button>
+              <div className="col-span-1">
+                <button
+                  onClick={handleAddFieldMapping}
+                  disabled={!newMappingLabel.trim() || !newMappingValueField.trim()}
+                  className="w-full px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Plus className="h-4 w-4 mx-auto" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
