@@ -8,6 +8,7 @@ interface TraceNumber {
   label: string;
   value: string;
   color: string;
+  displayType?: 'header' | 'detail';
 }
 
 interface ShipmentDetailsPageProps {
@@ -144,12 +145,23 @@ export default function ShipmentDetailsPage({ currentUser }: ShipmentDetailsPage
 
       const mappedTraceNumbers: TraceNumber[] = (config.fieldMappings || [])
         .map((mapping) => {
-          const value = result?.[mapping.valueField] || '';
+          let value = result?.[mapping.valueField] || '';
           if (!value) return null;
+
+          if (mapping.valueMappings && mapping.valueMappings.length > 0) {
+            const matchedMapping = mapping.valueMappings.find(
+              vm => vm.sourceValue === value || vm.sourceValue === String(value)
+            );
+            if (matchedMapping) {
+              value = matchedMapping.displayValue;
+            }
+          }
+
           return {
             label: mapping.label,
             value,
-            color: mapping.color || 'gray'
+            color: mapping.color || 'gray',
+            displayType: mapping.displayType || 'detail'
           };
         })
         .filter((item): item is TraceNumber => item !== null && item.value !== '');
@@ -252,19 +264,28 @@ export default function ShipmentDetailsPage({ currentUser }: ShipmentDetailsPage
             </div>
           ) : traceNumbers.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {traceNumbers.map((trace, index) => (
-                <div
-                  key={index}
-                  className="p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl"
-                >
-                  <span className={`inline-block px-3 py-1 text-xs font-semibold rounded-full border mb-2 ${getColorClasses(trace.color)}`}>
-                    {trace.label}
-                  </span>
-                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                    {trace.value}
-                  </p>
-                </div>
-              ))}
+              {traceNumbers.map((trace, index) => {
+                const isHeader = trace.displayType === 'header';
+                return (
+                  <div
+                    key={index}
+                    className="p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl"
+                  >
+                    {isHeader ? (
+                      <span className={`inline-block px-3 py-1 text-xs font-semibold rounded-full border mb-2 ${getColorClasses(trace.color)}`}>
+                        {trace.label}
+                      </span>
+                    ) : (
+                      <span className="inline-block px-3 py-1 text-xs font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                        {trace.label}
+                      </span>
+                    )}
+                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                      {trace.value}
+                    </p>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div className="text-center py-8 text-gray-500 dark:text-gray-400">

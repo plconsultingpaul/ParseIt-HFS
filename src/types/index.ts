@@ -977,6 +977,8 @@ export interface TraceNumberFieldMapping {
   label: string;
   valueField: string;
   color: string;
+  displayType: 'header' | 'detail';
+  valueMappings?: TrackTraceValueMapping[];
 }
 
 export interface TraceNumbersSectionConfig {

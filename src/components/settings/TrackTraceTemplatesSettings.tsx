@@ -3736,6 +3736,10 @@ function TraceNumbersConfigModal({
   const [newMappingLabel, setNewMappingLabel] = useState('');
   const [newMappingValueField, setNewMappingValueField] = useState('');
   const [newMappingColor, setNewMappingColor] = useState('blue');
+  const [newMappingDisplayType, setNewMappingDisplayType] = useState<'header' | 'detail'>('detail');
+  const [editingMappingIndex, setEditingMappingIndex] = useState<number | null>(null);
+  const [editingValueMappings, setEditingValueMappings] = useState<TrackTraceValueMapping[]>([]);
+  const [showValueMappingsModal, setShowValueMappingsModal] = useState(false);
 
   const availableColors = [
     { value: 'blue', label: 'Blue', className: 'bg-blue-100 text-blue-700 border-blue-200' },
@@ -3758,24 +3762,75 @@ function TraceNumbersConfigModal({
 
   const handleAddFieldMapping = () => {
     if (!newMappingLabel.trim() || !newMappingValueField.trim()) return;
+
+    let updatedMappings = [...localConfig.fieldMappings];
+
+    if (newMappingDisplayType === 'header') {
+      updatedMappings = updatedMappings.map(m => ({ ...m, displayType: 'detail' as const }));
+    }
+
     const newMapping: TraceNumberFieldMapping = {
       label: newMappingLabel.trim(),
       valueField: newMappingValueField.trim(),
-      color: newMappingColor
+      color: newMappingColor,
+      displayType: newMappingDisplayType,
+      valueMappings: []
     };
+
     setLocalConfig(prev => ({
       ...prev,
-      fieldMappings: [...prev.fieldMappings, newMapping]
+      fieldMappings: [...updatedMappings, newMapping]
     }));
     setNewMappingLabel('');
     setNewMappingValueField('');
     setNewMappingColor('blue');
+    setNewMappingDisplayType('detail');
   };
 
   const handleRemoveFieldMapping = (index: number) => {
     setLocalConfig(prev => ({
       ...prev,
       fieldMappings: prev.fieldMappings.filter((_, i) => i !== index)
+    }));
+  };
+
+  const handleEditValueMappings = (index: number) => {
+    const mapping = localConfig.fieldMappings[index];
+    setEditingMappingIndex(index);
+    setEditingValueMappings(mapping.valueMappings || []);
+    setShowValueMappingsModal(true);
+  };
+
+  const handleSaveValueMappings = () => {
+    if (editingMappingIndex === null) return;
+
+    setLocalConfig(prev => ({
+      ...prev,
+      fieldMappings: prev.fieldMappings.map((m, i) =>
+        i === editingMappingIndex
+          ? { ...m, valueMappings: editingValueMappings }
+          : m
+      )
+    }));
+    setShowValueMappingsModal(false);
+    setEditingMappingIndex(null);
+    setEditingValueMappings([]);
+  };
+
+  const handleToggleDisplayType = (index: number) => {
+    const currentMapping = localConfig.fieldMappings[index];
+    const newDisplayType = currentMapping.displayType === 'header' ? 'detail' : 'header';
+
+    setLocalConfig(prev => ({
+      ...prev,
+      fieldMappings: prev.fieldMappings.map((m, i) => {
+        if (i === index) {
+          return { ...m, displayType: newDisplayType };
+        } else if (newDisplayType === 'header') {
+          return { ...m, displayType: 'detail' as const };
+        }
+        return m;
+      })
     }));
   };
 
@@ -3915,15 +3970,40 @@ function TraceNumbersConfigModal({
               <div className="space-y-2 mb-4">
                 {localConfig.fieldMappings.map((mapping, index) => {
                   const colorConfig = availableColors.find(c => c.value === mapping.color);
+                  const displayType = mapping.displayType || 'detail';
                   return (
                     <div key={index} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                      <div className="flex items-center space-x-4">
-                        <span className={`px-2 py-1 text-xs font-medium rounded border ${colorConfig?.className || 'bg-gray-100 text-gray-700 border-gray-200'}`}>
-                          {mapping.label}
-                        </span>
+                      <div className="flex items-center space-x-3 flex-1">
+                        {displayType === 'header' ? (
+                          <span className={`px-2 py-1 text-xs font-medium rounded border ${colorConfig?.className || 'bg-gray-100 text-gray-700 border-gray-200'}`}>
+                            {mapping.label}
+                          </span>
+                        ) : (
+                          <span className="px-2 py-1 text-xs font-medium text-gray-900 dark:text-gray-100">
+                            {mapping.label}
+                          </span>
+                        )}
                         <span className="text-sm text-gray-600 dark:text-gray-400">
                           {mapping.valueField}
                         </span>
+                        <button
+                          onClick={() => handleToggleDisplayType(index)}
+                          className={`px-2 py-1 text-xs rounded border transition-colors ${
+                            displayType === 'header'
+                              ? 'bg-orange-100 text-orange-700 border-orange-200 hover:bg-orange-200'
+                              : 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200'
+                          }`}
+                        >
+                          {displayType === 'header' ? 'Header (Color)' : 'Detail (Text)'}
+                        </button>
+                        <button
+                          onClick={() => handleEditValueMappings(index)}
+                          className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                        >
+                          {mapping.valueMappings && mapping.valueMappings.length > 0
+                            ? `${mapping.valueMappings.length} mappings`
+                            : 'Add mappings'}
+                        </button>
                       </div>
                       <button
                         onClick={() => handleRemoveFieldMapping(index)}
@@ -3937,44 +4017,62 @@ function TraceNumbersConfigModal({
               </div>
             )}
 
-            <div className="grid grid-cols-12 gap-2 items-end">
-              <div className="col-span-3">
-                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Label</label>
-                <input
-                  type="text"
-                  value={newMappingLabel}
-                  onChange={(e) => setNewMappingLabel(e.target.value)}
-                  placeholder="e.g., BOL"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 text-sm"
-                />
+            <div className="space-y-3">
+              <div className="grid grid-cols-12 gap-2 items-end">
+                <div className="col-span-3">
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Label</label>
+                  <input
+                    type="text"
+                    value={newMappingLabel}
+                    onChange={(e) => setNewMappingLabel(e.target.value)}
+                    placeholder="e.g., BOL"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 text-sm"
+                  />
+                </div>
+                <div className="col-span-4">
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Value Field</label>
+                  <input
+                    type="text"
+                    value={newMappingValueField}
+                    onChange={(e) => setNewMappingValueField(e.target.value)}
+                    placeholder="e.g., bolNumber"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 text-sm"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Color</label>
+                  <Select
+                    value={newMappingColor}
+                    onValueChange={setNewMappingColor}
+                    options={availableColors.map(c => ({ value: c.value, label: c.label }))}
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Display</label>
+                  <Select
+                    value={newMappingDisplayType}
+                    onValueChange={(value) => setNewMappingDisplayType(value as 'header' | 'detail')}
+                    options={[
+                      { value: 'header', label: 'Header' },
+                      { value: 'detail', label: 'Detail' }
+                    ]}
+                  />
+                </div>
+                <div className="col-span-1">
+                  <button
+                    onClick={handleAddFieldMapping}
+                    disabled={!newMappingLabel.trim() || !newMappingValueField.trim()}
+                    className="w-full px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Plus className="h-4 w-4 mx-auto" />
+                  </button>
+                </div>
               </div>
-              <div className="col-span-5">
-                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Value Field</label>
-                <input
-                  type="text"
-                  value={newMappingValueField}
-                  onChange={(e) => setNewMappingValueField(e.target.value)}
-                  placeholder="e.g., bolNumber"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 text-sm"
-                />
-              </div>
-              <div className="col-span-3">
-                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Color</label>
-                <Select
-                  value={newMappingColor}
-                  onValueChange={setNewMappingColor}
-                  options={availableColors.map(c => ({ value: c.value, label: c.label }))}
-                />
-              </div>
-              <div className="col-span-1">
-                <button
-                  onClick={handleAddFieldMapping}
-                  disabled={!newMappingLabel.trim() || !newMappingValueField.trim()}
-                  className="w-full px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Plus className="h-4 w-4 mx-auto" />
-                </button>
-              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Header: Displays with the selected color badge. Only one field can be set as Header.
+                <br />
+                Detail: Displays as plain black text.
+              </p>
             </div>
           </div>
         </div>
@@ -4006,6 +4104,100 @@ function TraceNumbersConfigModal({
           </button>
         </div>
       </div>
+
+      {showValueMappingsModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+              <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Value Mappings
+              </h4>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Map source values to display values (e.g., B → BOL, P → PO)
+              </p>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {editingValueMappings.length > 0 && (
+                <div className="space-y-2 mb-4">
+                  {editingValueMappings.map((mapping, idx) => (
+                    <div key={idx} className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                      <span className="text-sm text-gray-700 dark:text-gray-300 flex-1">
+                        {mapping.sourceValue} → {mapping.displayValue}
+                      </span>
+                      <button
+                        onClick={() => setEditingValueMappings(prev => prev.filter((_, i) => i !== idx))}
+                        className="p-1 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 rounded"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="grid grid-cols-12 gap-2 items-end">
+                <div className="col-span-5">
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Source Value</label>
+                  <input
+                    type="text"
+                    id="sourceValue"
+                    placeholder="e.g., B"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 text-sm"
+                  />
+                </div>
+                <div className="col-span-5">
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Display Value</label>
+                  <input
+                    type="text"
+                    id="displayValue"
+                    placeholder="e.g., BOL"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 text-sm"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <button
+                    onClick={() => {
+                      const sourceInput = document.getElementById('sourceValue') as HTMLInputElement;
+                      const displayInput = document.getElementById('displayValue') as HTMLInputElement;
+                      if (sourceInput.value.trim() && displayInput.value.trim()) {
+                        setEditingValueMappings(prev => [...prev, {
+                          sourceValue: sourceInput.value.trim(),
+                          displayValue: displayInput.value.trim()
+                        }]);
+                        sourceInput.value = '';
+                        displayInput.value = '';
+                      }
+                    }}
+                    className="w-full px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  >
+                    <Plus className="h-4 w-4 mx-auto" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowValueMappingsModal(false);
+                  setEditingMappingIndex(null);
+                  setEditingValueMappings([]);
+                }}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveValueMappings}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Save Mappings
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>,
     document.body
   );
