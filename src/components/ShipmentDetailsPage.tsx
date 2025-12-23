@@ -295,21 +295,24 @@ export default function ShipmentDetailsPage({ currentUser }: ShipmentDetailsPage
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {traceNumbers.map((trace, index) => {
                   const isHeader = trace.displayType === 'header';
+                  const hasLabel = trace.label && trace.label.trim() !== '';
                   return (
                     <div
                       key={index}
                       className="p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl"
                     >
-                      {isHeader ? (
-                        <span className={`inline-block px-3 py-1 text-xs font-semibold rounded-full border mb-2 ${getColorClasses(trace.color)}`}>
-                          {trace.label}
-                        </span>
-                      ) : (
-                        <span className="inline-block px-3 py-1 text-xs font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                          {trace.label}
-                        </span>
+                      {hasLabel && (
+                        isHeader ? (
+                          <span className={`inline-block px-3 py-1 text-xs font-semibold rounded-full border mb-2 ${getColorClasses(trace.color)}`}>
+                            {trace.label}
+                          </span>
+                        ) : (
+                          <span className="inline-block px-3 py-1 text-xs font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                            {trace.label}
+                          </span>
+                        )
                       )}
-                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                      <p className={`text-sm font-medium text-gray-900 dark:text-gray-100 ${!hasLabel && isHeader ? getColorClasses(trace.color) + ' inline-block px-3 py-1 rounded-full border' : ''}`}>
                         {trace.value}
                       </p>
                     </div>

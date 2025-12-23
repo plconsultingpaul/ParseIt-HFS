@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Trash2, CreditCard as Edit2, GripVertical, AlertCircle, Save, Search, Filter, Columns2 as Columns, Settings, ChevronDown, ChevronRight, Copy, FileText, Lock, Eye, Loader2, ExternalLink, Zap } from 'lucide-react';
+import { Plus, Trash2, CreditCard as Edit2, GripVertical, AlertCircle, Save, Search, Filter, Columns2 as Columns, Settings, ChevronDown, ChevronRight, Copy, FileText, Lock, Eye, Loader2, ExternalLink, Zap, Pencil, X } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -3759,6 +3759,7 @@ function TraceNumbersConfigModal({
   const [newMappingLabel, setNewMappingLabel] = useState('');
   const [newMappingValueField, setNewMappingValueField] = useState('');
   const [newMappingDisplayType, setNewMappingDisplayType] = useState<'header' | 'detail'>('detail');
+  const [editingFieldMappingIndex, setEditingFieldMappingIndex] = useState<number | null>(null);
   const [editingMappingIndex, setEditingMappingIndex] = useState<number | null>(null);
   const [editingValueMappings, setEditingValueMappings] = useState<TrackTraceValueMapping[]>([]);
   const [showValueMappingsModal, setShowValueMappingsModal] = useState(false);
@@ -3784,28 +3785,59 @@ function TraceNumbersConfigModal({
   });
 
   const handleAddFieldMapping = () => {
-    if (!newMappingLabel.trim() || !newMappingValueField.trim()) return;
+    if (!newMappingValueField.trim()) return;
 
     let updatedMappings = [...localConfig.fieldMappings];
 
     if (newMappingDisplayType === 'header') {
-      updatedMappings = updatedMappings.map(m => ({ ...m, displayType: 'detail' as const }));
+      updatedMappings = updatedMappings.map((m, i) =>
+        (editingFieldMappingIndex !== null && i === editingFieldMappingIndex)
+          ? m
+          : { ...m, displayType: 'detail' as const }
+      );
     }
 
     const newMapping: TraceNumberFieldMapping = {
       label: newMappingLabel.trim(),
       valueField: newMappingValueField.trim(),
       displayType: newMappingDisplayType,
-      valueMappings: []
+      valueMappings: editingFieldMappingIndex !== null
+        ? localConfig.fieldMappings[editingFieldMappingIndex]?.valueMappings || []
+        : []
     };
 
-    setLocalConfig(prev => ({
-      ...prev,
-      fieldMappings: [...updatedMappings, newMapping]
-    }));
+    if (editingFieldMappingIndex !== null) {
+      updatedMappings[editingFieldMappingIndex] = newMapping;
+      setLocalConfig(prev => ({
+        ...prev,
+        fieldMappings: updatedMappings
+      }));
+    } else {
+      setLocalConfig(prev => ({
+        ...prev,
+        fieldMappings: [...updatedMappings, newMapping]
+      }));
+    }
+
     setNewMappingLabel('');
     setNewMappingValueField('');
     setNewMappingDisplayType('detail');
+    setEditingFieldMappingIndex(null);
+  };
+
+  const handleEditFieldMapping = (index: number) => {
+    const mapping = localConfig.fieldMappings[index];
+    setNewMappingLabel(mapping.label || '');
+    setNewMappingValueField(mapping.valueField);
+    setNewMappingDisplayType(mapping.displayType || 'detail');
+    setEditingFieldMappingIndex(index);
+  };
+
+  const handleCancelEditFieldMapping = () => {
+    setNewMappingLabel('');
+    setNewMappingValueField('');
+    setNewMappingDisplayType('detail');
+    setEditingFieldMappingIndex(null);
   };
 
   const handleRemoveFieldMapping = (index: number) => {
@@ -3991,12 +4023,19 @@ function TraceNumbersConfigModal({
               <div className="space-y-2 mb-4">
                 {localConfig.fieldMappings.map((mapping, index) => {
                   const displayType = mapping.displayType || 'detail';
+                  const isBeingEdited = editingFieldMappingIndex === index;
                   return (
-                    <div key={index} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                    <div key={index} className={`flex items-center justify-between p-3 rounded-lg ${isBeingEdited ? 'bg-blue-50 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700' : 'bg-gray-50 dark:bg-gray-700/50'}`}>
                       <div className="flex items-center space-x-3 flex-1">
-                        <span className="px-2 py-1 text-xs font-medium text-gray-900 dark:text-gray-100">
-                          {mapping.label}
-                        </span>
+                        {mapping.label ? (
+                          <span className="px-2 py-1 text-xs font-medium text-gray-900 dark:text-gray-100">
+                            {mapping.label}
+                          </span>
+                        ) : (
+                          <span className="px-2 py-1 text-xs italic text-gray-400 dark:text-gray-500">
+                            (no label)
+                          </span>
+                        )}
                         <span className="text-sm text-gray-600 dark:text-gray-400">
                           {mapping.valueField}
                         </span>
@@ -4019,12 +4058,21 @@ function TraceNumbersConfigModal({
                             : 'Add mappings'}
                         </button>
                       </div>
-                      <button
-                        onClick={() => handleRemoveFieldMapping(index)}
-                        className="p-1 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 rounded"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      <div className="flex items-center space-x-1">
+                        <button
+                          onClick={() => handleEditFieldMapping(index)}
+                          className="p-1 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:hover:bg-gray-600 rounded"
+                          title="Edit field mapping"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleRemoveFieldMapping(index)}
+                          className="p-1 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 rounded"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
@@ -4032,9 +4080,22 @@ function TraceNumbersConfigModal({
             )}
 
             <div className="space-y-3">
+              {editingFieldMappingIndex !== null && (
+                <div className="flex items-center justify-between px-3 py-2 bg-blue-50 dark:bg-blue-900/30 rounded-lg border border-blue-200 dark:border-blue-700">
+                  <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                    Editing field mapping
+                  </span>
+                  <button
+                    onClick={handleCancelEditFieldMapping}
+                    className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
               <div className="grid grid-cols-12 gap-2 items-end">
                 <div className="col-span-3">
-                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Label</label>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Label (optional)</label>
                   <input
                     type="text"
                     value={newMappingLabel}
@@ -4067,17 +4128,26 @@ function TraceNumbersConfigModal({
                 <div className="col-span-1">
                   <button
                     onClick={handleAddFieldMapping}
-                    disabled={!newMappingLabel.trim() || !newMappingValueField.trim()}
-                    className="w-full px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={!newMappingValueField.trim()}
+                    className={`w-full px-3 py-2 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed ${
+                      editingFieldMappingIndex !== null
+                        ? 'bg-green-600 hover:bg-green-700'
+                        : 'bg-blue-600 hover:bg-blue-700'
+                    }`}
+                    title={editingFieldMappingIndex !== null ? 'Update field mapping' : 'Add field mapping'}
                   >
-                    <Plus className="h-4 w-4 mx-auto" />
+                    {editingFieldMappingIndex !== null ? (
+                      <Save className="h-4 w-4 mx-auto" />
+                    ) : (
+                      <Plus className="h-4 w-4 mx-auto" />
+                    )}
                   </button>
                 </div>
               </div>
               <p className="text-xs text-gray-500 dark:text-gray-400">
                 Header: Displays with colored badge (color set in value mappings). Only one field can be set as Header.
                 <br />
-                Detail: Displays as plain black text.
+                Detail: Displays as plain black text. Label is optional - leave blank to show only the value.
               </p>
             </div>
           </div>
