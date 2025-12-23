@@ -316,10 +316,17 @@ Deno.serve(async (req: Request) => {
     const initEndTime = performance.now();
     console.log(`[EdgeFunction] Gemini initialized with model ${modelName} in ${((initEndTime - initStartTime) / 1000).toFixed(3)}s`);
 
-    const fieldDescriptions = requestData.fieldMappings
+    const aiFieldDescriptions = requestData.fieldMappings
       .filter(m => m.type === 'ai')
       .map(m => `- ${m.fieldName}: ${m.value || 'extract this field'}`)
       .join('\n');
+
+    const mappedFieldDescriptions = requestData.fieldMappings
+      .filter(m => m.type === 'mapped')
+      .map(m => `- ${m.fieldName}: Look in the region at coordinates ${m.value} (use these coordinates as a hint to locate the field)`)
+      .join('\n');
+
+    const fieldDescriptions = [aiFieldDescriptions, mappedFieldDescriptions].filter(Boolean).join('\n');
 
     const hardcodedFields = requestData.fieldMappings
       .filter(m => m.type === 'hardcoded')

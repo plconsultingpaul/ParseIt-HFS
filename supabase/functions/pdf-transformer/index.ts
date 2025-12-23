@@ -505,7 +505,7 @@ serve(async (req: Request) => {
                                   mapping.dataType === 'integer' ? ' (format as integer)' :
                                   mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' :
                                   mapping.dataType === 'boolean' ? ' (format as boolean: respond with ONLY "True" or "False" in proper case - capital T or F, lowercase remaining letters)' : ''
-              fieldMappingInstructions += `- "${mapping.fieldName}": Extract data from PDF coordinates ${mapping.value}${dataTypeNote}\n`
+              fieldMappingInstructions += `- "${mapping.fieldName}": Look in the region at coordinates ${mapping.value} (use these coordinates as a hint to locate the field)${dataTypeNote}\n`
             } else {
               // AI type
               const dataTypeNote = mapping.dataType === 'string' ? ' (format as UPPER CASE string)' :
