@@ -854,6 +854,7 @@ export interface TrackTraceConfig {
   defaultOrderBy?: string;
   defaultOrderDirection: 'asc' | 'desc';
   isEnabled: boolean;
+  orderIdFieldName?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -893,6 +894,7 @@ export interface TrackTraceTemplate {
   defaultOrderDirection: 'asc' | 'desc';
   isActive: boolean;
   showUrl: boolean;
+  orderIdFieldName?: string;
   createdAt: string;
   updatedAt: string;
 }

@@ -279,8 +279,8 @@ export default function TrackTracePage({ currentUser }: TrackTracePageProps) {
   };
 
   const handleViewRow = (row: any) => {
-    const firstSelectField = selectFields[0];
-    const orderId = firstSelectField ? row[firstSelectField.fieldName] : null;
+    const orderIdFieldName = config?.orderIdFieldName;
+    const orderId = orderIdFieldName ? row[orderIdFieldName] : null;
 
     if (orderId) {
       const stateToSave = {
@@ -426,6 +426,7 @@ export default function TrackTracePage({ currentUser }: TrackTracePageProps) {
             defaultOrderBy: templateData.default_order_by,
             defaultOrderDirection: templateData.default_order_direction,
             isEnabled: true,
+            orderIdFieldName: templateData.order_id_field_name,
             createdAt: templateData.created_at,
             updatedAt: templateData.updated_at
           };

@@ -296,6 +296,8 @@ export default function TrackTraceTemplatesSettings({ currentUser }: TrackTraceT
         defaultOrderBy: t.default_order_by,
         defaultOrderDirection: t.default_order_direction,
         isActive: t.is_active,
+        showUrl: t.show_url,
+        orderIdFieldName: t.order_id_field_name,
         createdAt: t.created_at,
         updatedAt: t.updated_at
       }));
@@ -339,6 +341,7 @@ export default function TrackTraceTemplatesSettings({ currentUser }: TrackTraceT
           defaultOrderDirection: templateData.default_order_direction,
           isActive: templateData.is_active,
           showUrl: templateData.show_url || false,
+          orderIdFieldName: templateData.order_id_field_name,
           createdAt: templateData.created_at,
           updatedAt: templateData.updated_at
         };
@@ -556,6 +559,7 @@ export default function TrackTraceTemplatesSettings({ currentUser }: TrackTraceT
         default_order_direction: template.defaultOrderDirection,
         is_active: template.isActive,
         show_url: template.showUrl,
+        order_id_field_name: template.orderIdFieldName || null,
         updated_at: new Date().toISOString()
       };
 
@@ -1447,6 +1451,25 @@ export default function TrackTraceTemplatesSettings({ currentUser }: TrackTraceT
                           className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
                         />
                       </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Order ID Field Name
+                        <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
+                          (Field used for navigation to shipment details)
+                        </span>
+                      </label>
+                      <input
+                        type="text"
+                        value={template.orderIdFieldName || ''}
+                        onChange={(e) => setTemplate({ ...template, orderIdFieldName: e.target.value })}
+                        placeholder="orderId"
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        This field does not need to be displayed in the grid
+                      </p>
                     </div>
 
                     <div className="flex items-center mt-4">
