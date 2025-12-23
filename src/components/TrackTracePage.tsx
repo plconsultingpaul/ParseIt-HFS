@@ -149,7 +149,11 @@ export default function TrackTracePage({ currentUser }: TrackTracePageProps) {
 
       if (selectFields.length > 0) {
         const selectParam = selectFields[0].parameterType === '$select' ? '$select' : 'select';
-        queryParts.push(`${selectParam}=${selectFields.map(f => f.fieldName).join(',')}`);
+        const fieldNames = selectFields.map(f => f.fieldName);
+        if (config?.orderIdFieldName && !fieldNames.includes(config.orderIdFieldName)) {
+          fieldNames.push(config.orderIdFieldName);
+        }
+        queryParts.push(`${selectParam}=${fieldNames.join(',')}`);
       }
 
       queryParts.push('limit=10000');
@@ -863,7 +867,11 @@ export default function TrackTracePage({ currentUser }: TrackTracePageProps) {
 
       if (selectFields.length > 0) {
         const selectParam = selectFields[0].parameterType === '$select' ? '$select' : 'select';
-        queryParts.push(`${selectParam}=${selectFields.map(f => f.fieldName).join(',')}`);
+        const fieldNames = selectFields.map(f => f.fieldName);
+        if (config?.orderIdFieldName && !fieldNames.includes(config.orderIdFieldName)) {
+          fieldNames.push(config.orderIdFieldName);
+        }
+        queryParts.push(`${selectParam}=${fieldNames.join(',')}`);
       }
 
       queryParts.push(`limit=${recordsPerPage}`);
@@ -1150,7 +1158,11 @@ export default function TrackTracePage({ currentUser }: TrackTracePageProps) {
 
       if (selectFields.length > 0) {
         const selectParam = selectFields[0].parameterType === '$select' ? '$select' : 'select';
-        queryParts.push(`${selectParam}=${selectFields.map(f => f.fieldName).join(',')}`);
+        const fieldNames = selectFields.map(f => f.fieldName);
+        if (config?.orderIdFieldName && !fieldNames.includes(config.orderIdFieldName)) {
+          fieldNames.push(config.orderIdFieldName);
+        }
+        queryParts.push(`${selectParam}=${fieldNames.join(',')}`);
       }
 
       queryParts.push(`limit=${recordsPerPage}`);
