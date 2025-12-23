@@ -655,16 +655,19 @@ function AppContent() {
       } />
 
       <Route path="/client/shipment/:orderId" element={
-        <ClientPortalRoute
-          isAuthenticated={isAuthenticated}
-          user={user}
-          companyBranding={companyBranding}
-          onLogout={logout}
-          currentPage="track-trace"
-          requiredAccess="trackTrace"
-        >
-          <ShipmentDetailsPage currentUser={user} />
-        </ClientPortalRoute>
+        <>
+          {console.log('[AppRouter] /client/shipment/:orderId route matched!')}
+          <ClientPortalRoute
+            isAuthenticated={isAuthenticated}
+            user={user}
+            companyBranding={companyBranding}
+            onLogout={logout}
+            currentPage="shipment-details"
+            requiredAccess="trackTrace"
+          >
+            <ShipmentDetailsPage currentUser={user} />
+          </ClientPortalRoute>
+        </>
       } />
 
       <Route path="/client/order-entry" element={
