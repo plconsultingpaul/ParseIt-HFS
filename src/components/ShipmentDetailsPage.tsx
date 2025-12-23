@@ -148,19 +148,21 @@ export default function ShipmentDetailsPage({ currentUser }: ShipmentDetailsPage
           let value = result?.[mapping.valueField] || '';
           if (!value) return null;
 
+          let color = 'gray';
           if (mapping.valueMappings && mapping.valueMappings.length > 0) {
             const matchedMapping = mapping.valueMappings.find(
               vm => vm.sourceValue === value || vm.sourceValue === String(value)
             );
             if (matchedMapping) {
               value = matchedMapping.displayValue;
+              color = matchedMapping.color || 'gray';
             }
           }
 
           return {
             label: mapping.label,
             value,
-            color: mapping.color || 'gray',
+            color,
             displayType: mapping.displayType || 'detail'
           };
         })

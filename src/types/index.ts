@@ -900,6 +900,7 @@ export interface TrackTraceTemplate {
 export interface TrackTraceValueMapping {
   sourceValue: string;
   displayValue: string;
+  color: string;
 }
 
 export interface TrackTraceTemplateField {
@@ -976,7 +977,6 @@ export type TrackTraceTemplateSectionType =
 export interface TraceNumberFieldMapping {
   label: string;
   valueField: string;
-  color: string;
   displayType: 'header' | 'detail';
   valueMappings?: TrackTraceValueMapping[];
 }
