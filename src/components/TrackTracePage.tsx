@@ -282,6 +282,13 @@ export default function TrackTracePage({ currentUser }: TrackTracePageProps) {
     const orderIdFieldName = config?.orderIdFieldName;
     const orderId = orderIdFieldName ? row[orderIdFieldName] : null;
 
+    console.log('[handleViewRow] Debug:', {
+      orderIdFieldName,
+      orderId,
+      rowKeys: Object.keys(row),
+      rowData: row
+    });
+
     if (orderId) {
       const stateToSave = {
         filterValues,
