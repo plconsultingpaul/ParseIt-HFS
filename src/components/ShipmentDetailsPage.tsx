@@ -176,19 +176,28 @@ export default function ShipmentDetailsPage({ currentUser }: ShipmentDetailsPage
       const detailMapping = fieldMappings.find(m => m.displayType === 'detail' || !m.displayType);
 
       const mappedTraceNumbers: TraceNumberCard[] = [];
+      const hasHeaderValueMappings = headerMapping && headerMapping.valueMappings && headerMapping.valueMappings.length > 0;
+
       for (const traceItem of traceNumbersArray) {
-        let headerValue = headerMapping ? (traceItem?.[headerMapping.valueField] || '') : '';
+        const rawHeaderValue = headerMapping ? (traceItem?.[headerMapping.valueField] || '') : '';
+        let headerValue = rawHeaderValue;
         let headerColor = 'gray';
         let headerLabel = headerMapping?.label || '';
+        let headerMappingFound = false;
 
-        if (headerMapping && headerValue && headerMapping.valueMappings?.length > 0) {
+        if (headerMapping && rawHeaderValue && headerMapping.valueMappings?.length > 0) {
           const matchedMapping = headerMapping.valueMappings.find(
-            vm => vm.sourceValue === headerValue || vm.sourceValue === String(headerValue)
+            vm => vm.sourceValue === rawHeaderValue || vm.sourceValue === String(rawHeaderValue)
           );
           if (matchedMapping) {
             headerValue = matchedMapping.displayValue;
             headerColor = matchedMapping.color || 'gray';
+            headerMappingFound = true;
           }
+        }
+
+        if (hasHeaderValueMappings && !headerMappingFound) {
+          continue;
         }
 
         const detailValue = detailMapping ? (traceItem?.[detailMapping.valueField] || '') : '';
