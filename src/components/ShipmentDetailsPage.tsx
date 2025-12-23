@@ -135,55 +135,36 @@ export default function ShipmentDetailsPage({ currentUser }: ShipmentDetailsPage
         return;
       }
 
-      let baseUrl = '';
-      let authToken = '';
-
-      if (config.apiSourceType === 'secondary' && config.secondaryApiId) {
-        const { data: secondaryApi } = await supabase
-          .from('secondary_api_configs')
-          .select('base_url, auth_token')
-          .eq('id', config.secondaryApiId)
-          .maybeSingle();
-
-        if (secondaryApi) {
-          baseUrl = secondaryApi.base_url;
-          authToken = secondaryApi.auth_token;
-        }
-      } else {
-        const { data: apiSettings } = await supabase
-          .from('api_settings')
-          .select('path, password')
-          .maybeSingle();
-
-        if (apiSettings) {
-          baseUrl = apiSettings.path;
-          authToken = apiSettings.password;
-        }
-      }
-
-      if (!baseUrl) return;
-
       let apiPath = endpointData.path;
       apiPath = apiPath.replace(/{[^}]+}/g, orderId);
 
-      const normalizedBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-      const normalizedPath = apiPath.startsWith('/') ? apiPath : `/${apiPath}`;
-      const fullUrl = normalizedBase + normalizedPath;
+      console.log('[ShipmentDetailsPage] Calling proxy with apiPath:', apiPath);
 
-      const response = await fetch(fullUrl, {
-        method: 'GET',
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+      const proxyResponse = await fetch(`${supabaseUrl}/functions/v1/track-trace-proxy`, {
+        method: 'POST',
         headers: {
-          'Authorization': `Bearer ${authToken}`,
-          'Content-Type': 'application/json'
-        }
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseAnonKey}`,
+          'apikey': supabaseAnonKey
+        },
+        body: JSON.stringify({
+          apiSourceType: config.apiSourceType || 'main',
+          secondaryApiId: config.secondaryApiId || '',
+          apiPath,
+          httpMethod: 'GET',
+          queryString: ''
+        })
       });
 
-      if (!response.ok) {
-        console.error('Failed to fetch trace numbers:', response.status);
+      if (!proxyResponse.ok) {
+        console.error('Failed to fetch trace numbers:', proxyResponse.status);
         return;
       }
 
-      const data = await response.json();
+      const data = await proxyResponse.json();
       const result = Array.isArray(data) ? data[0] : (data.value?.[0] || data.data?.[0] || data);
 
       const mappedTraceNumbers: TraceNumber[] = (config.fieldMappings || [])
