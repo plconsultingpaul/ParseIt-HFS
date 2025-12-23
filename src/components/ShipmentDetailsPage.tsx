@@ -70,7 +70,7 @@ export default function ShipmentDetailsPage({ currentUser }: ShipmentDetailsPage
       if (traceNumbersSection) {
         setTraceNumbersSection(traceNumbersSection);
         const config = traceNumbersSection.config as TraceNumbersSectionConfig;
-        if (config.apiSpecEndpointId && config.pathParameterField) {
+        if (config.apiSpecEndpointId && config.fieldMappings && config.fieldMappings.length > 0) {
           await fetchTraceNumbers(config);
         }
       }
