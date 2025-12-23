@@ -167,25 +167,14 @@ export default function ShipmentDetailsPage({ currentUser }: ShipmentDetailsPage
       const data = await proxyResponse.json();
       console.log('[ShipmentDetailsPage] Raw proxy response:', JSON.stringify(data, null, 2));
 
-      let result;
-      if (Array.isArray(data)) {
-        result = data[0];
-      } else if (data.value && Array.isArray(data.value)) {
-        result = data.value[0];
-      } else if (data.data && Array.isArray(data.data)) {
-        result = data.data[0];
-      } else if (data['0']) {
-        result = data['0'];
-      } else {
-        result = data;
-      }
+      const traceNumbersArray = data.traceNumbers || [];
+      console.log('[ShipmentDetailsPage] Trace numbers array:', traceNumbersArray);
 
-      console.log('[ShipmentDetailsPage] Extracted result:', JSON.stringify(result, null, 2));
-
-      const mappedTraceNumbers: TraceNumber[] = (config.fieldMappings || [])
-        .map((mapping) => {
-          let value = result?.[mapping.valueField] || '';
-          if (!value) return null;
+      const mappedTraceNumbers: TraceNumber[] = [];
+      for (const traceItem of traceNumbersArray) {
+        for (const mapping of (config.fieldMappings || [])) {
+          let value = traceItem?.[mapping.valueField] || '';
+          if (!value) continue;
 
           let color = 'gray';
           if (mapping.valueMappings && mapping.valueMappings.length > 0) {
@@ -198,14 +187,14 @@ export default function ShipmentDetailsPage({ currentUser }: ShipmentDetailsPage
             }
           }
 
-          return {
+          mappedTraceNumbers.push({
             label: mapping.label,
             value,
             color,
             displayType: mapping.displayType || 'detail'
-          };
-        })
-        .filter((item): item is TraceNumber => item !== null && item.value !== '');
+          });
+        }
+      }
 
       console.log('[ShipmentDetailsPage] Mapped trace numbers:', mappedTraceNumbers);
       setTraceNumbers(mappedTraceNumbers);
