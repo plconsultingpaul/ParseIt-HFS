@@ -9,9 +9,10 @@ interface DropdownFieldProps {
   onChange: (value: string) => void;
   onBlur?: () => void;
   showIcon?: boolean;
+  formData?: Record<string, unknown>;
 }
 
-export default function DropdownField({ field, value, error, onChange, onBlur, showIcon = true }: DropdownFieldProps) {
+export default function DropdownField({ field, value, error, onChange, onBlur, showIcon = true, formData }: DropdownFieldProps) {
   return (
     <FieldSelect
       field={field}
@@ -20,6 +21,7 @@ export default function DropdownField({ field, value, error, onChange, onBlur, s
       onChange={onChange}
       onBlur={onBlur}
       showIcon={showIcon}
+      formData={formData}
     />
   );
 }
