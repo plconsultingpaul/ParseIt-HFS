@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { FileText, RefreshCw, GitBranch } from 'lucide-react';
+import { FileText, RefreshCw, GitBranch, Play } from 'lucide-react';
 import type { ExtractionType, TransformationType, ExtractionWorkflow, WorkflowStep, ApiConfig, User } from '../types';
 import ExtractionTypesSettings from './settings/ExtractionTypesSettings';
 import TransformationTypesSettings from './settings/TransformationTypesSettings';
+import ExecuteSetupSettings from './settings/ExecuteSetupSettings';
 import WorkflowSettings from './settings/WorkflowSettings';
 
 interface TypeSetupPageProps {
@@ -20,7 +21,7 @@ interface TypeSetupPageProps {
   onDeleteTransformationType: (id: string) => Promise<void>;
 }
 
-type TypeSetupTab = 'extraction' | 'transformation' | 'workflows';
+type TypeSetupTab = 'extraction' | 'transformation' | 'execute' | 'workflows';
 
 export default function TypeSetupPage({
   extractionTypes,
@@ -40,6 +41,7 @@ export default function TypeSetupPage({
   const tabs = [
     ...(currentUser.permissions.extractionTypes ? [{ id: 'extraction' as TypeSetupTab, label: 'Extraction Types', icon: FileText, description: 'Manage PDF extraction templates' }] : []),
     ...(currentUser.permissions.transformationTypes ? [{ id: 'transformation' as TypeSetupTab, label: 'Transformation Types', icon: RefreshCw, description: 'Manage PDF transformation and renaming' }] : []),
+    ...(currentUser.permissions.workflowManagement ? [{ id: 'execute' as TypeSetupTab, label: 'Execute Setup', icon: Play, description: 'Configure execute buttons and parameters' }] : []),
     ...(currentUser.permissions.workflowManagement ? [{ id: 'workflows' as TypeSetupTab, label: 'Workflows', icon: GitBranch, description: 'Create multi-step processes' }] : [])
   ];
 
@@ -62,6 +64,10 @@ export default function TypeSetupPage({
             onUpdateTransformationTypes={onUpdateTransformationTypes}
             onDeleteTransformationType={onDeleteTransformationType}
           />
+        ) : <PermissionDenied />;
+      case 'execute':
+        return currentUser.permissions.workflowManagement ? (
+          <ExecuteSetupSettings />
         ) : <PermissionDenied />;
       case 'workflows':
         return currentUser.permissions.workflowManagement ? (
