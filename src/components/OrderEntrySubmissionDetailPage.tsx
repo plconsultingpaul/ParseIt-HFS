@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Download, RefreshCw, FileText, Code, Workflow, AlertTriangle, CheckCircle2, Clock, User, Calendar } from 'lucide-react';
+import { ArrowLeft, Download, RefreshCw, FileText, Code, Workflow, AlertTriangle, CheckCircle2, Clock, User, Calendar, Layers, ArrowRight, GitCompare } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import type { User as UserType, OrderEntryField } from '../types';
 import StatusBadge from './common/StatusBadge';
@@ -24,6 +24,7 @@ interface SubmissionDetail {
   username: string;
   submission_status: string;
   submission_data: any;
+  raw_form_data: any;
   api_response: any;
   api_status_code: number;
   error_message: string | null;
@@ -31,6 +32,16 @@ interface SubmissionDetail {
   pdf_filename: string | null;
   pdf_storage_path: string | null;
   workflow_execution_log_id: string | null;
+  extraction_type_id: string | null;
+  extraction_type_name: string | null;
+}
+
+interface FieldMapping {
+  fieldName: string;
+  type: string;
+  value: string;
+  dataType?: string;
+  removeIfNull?: boolean;
 }
 
 interface WorkflowExecution {
@@ -67,15 +78,16 @@ export default function OrderEntrySubmissionDetailPage({ currentUser }: OrderEnt
   const [workflowExecution, setWorkflowExecution] = useState<WorkflowExecution | null>(null);
   const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'data' | 'api' | 'workflow' | 'pdf'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'data' | 'mapping' | 'api' | 'workflow' | 'pdf'>('overview');
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [fieldMappings, setFieldMappings] = useState<FieldMapping[]>([]);
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [resubmitting, setResubmitting] = useState(false);
   const [fields, setFields] = useState<OrderEntryField[]>([]);
 
   useEffect(() => {
-    if (!currentUser.is_admin) {
+    if (!currentUser.isAdmin) {
       return;
     }
     if (submissionId) {
@@ -96,8 +108,11 @@ export default function OrderEntrySubmissionDetailPage({ currentUser }: OrderEnt
               username
             ),
             order_entry_pdfs (
-              filename,
+              original_filename,
               storage_path
+            ),
+            extraction_types (
+              name
             )
           `)
           .eq('id', submissionId)
@@ -129,22 +144,49 @@ export default function OrderEntrySubmissionDetailPage({ currentUser }: OrderEnt
         username: submissionData.users?.username || 'Unknown',
         submission_status: submissionData.submission_status,
         submission_data: submissionData.submission_data,
+        raw_form_data: submissionData.raw_form_data,
         api_response: submissionData.api_response,
         api_status_code: submissionData.api_status_code,
         error_message: submissionData.error_message,
         pdf_id: submissionData.pdf_id,
-        pdf_filename: submissionData.order_entry_pdfs?.filename || null,
+        pdf_filename: submissionData.order_entry_pdfs?.original_filename || null,
         pdf_storage_path: submissionData.order_entry_pdfs?.storage_path || null,
-        workflow_execution_log_id: submissionData.workflow_execution_log_id
+        workflow_execution_log_id: submissionData.workflow_execution_log_id,
+        extraction_type_id: submissionData.extraction_type_id || null,
+        extraction_type_name: submissionData.extraction_types?.name || null
       };
 
       setSubmission(detail);
 
+      if (detail.extraction_type_id) {
+        const { data: extractionTypeData } = await supabase
+          .from('extraction_types')
+          .select('field_mappings')
+          .eq('id', detail.extraction_type_id)
+          .maybeSingle();
+
+        if (extractionTypeData?.field_mappings) {
+          let mappings = extractionTypeData.field_mappings;
+          if (typeof mappings === 'string') {
+            try {
+              mappings = JSON.parse(mappings);
+            } catch {
+              mappings = [];
+            }
+          }
+          setFieldMappings(Array.isArray(mappings) ? mappings : []);
+        }
+      }
+
       if (detail.pdf_storage_path) {
-        const { data } = supabase.storage
-          .from('order-entry-pdfs')
-          .getPublicUrl(detail.pdf_storage_path);
-        setPdfUrl(data.publicUrl);
+        if (detail.pdf_storage_path.startsWith('http')) {
+          setPdfUrl(detail.pdf_storage_path);
+        } else {
+          const { data } = supabase.storage
+            .from('order-entry-pdfs')
+            .getPublicUrl(detail.pdf_storage_path);
+          setPdfUrl(data.publicUrl);
+        }
       }
 
       if (detail.workflow_execution_log_id) {
@@ -272,7 +314,7 @@ export default function OrderEntrySubmissionDetailPage({ currentUser }: OrderEnt
     return `${(ms / 60000).toFixed(2)}m`;
   };
 
-  if (!currentUser.is_admin) {
+  if (!currentUser.isAdmin) {
     return null;
   }
 
@@ -335,7 +377,7 @@ export default function OrderEntrySubmissionDetailPage({ currentUser }: OrderEnt
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
           <div>
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Status</p>
             <StatusBadge status={submission.submission_status} type="submission" size="lg" />
@@ -350,6 +392,15 @@ export default function OrderEntrySubmissionDetailPage({ currentUser }: OrderEnt
               <User className="h-4 w-4 text-gray-400 mr-2" />
               <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
                 {submission.username}
+              </span>
+            </div>
+          </div>
+          <div>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Extraction Type</p>
+            <div className="flex items-center mt-1">
+              <Layers className="h-4 w-4 text-gray-400 mr-2" />
+              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                {submission.extraction_type_name || 'Direct Submission'}
               </span>
             </div>
           </div>
@@ -401,6 +452,19 @@ export default function OrderEntrySubmissionDetailPage({ currentUser }: OrderEnt
               <FileText className="h-4 w-4 inline mr-1" />
               Submission Data
             </button>
+            {submission.extraction_type_id && (
+              <button
+                onClick={() => setActiveTab('mapping')}
+                className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'mapping'
+                    ? 'border-purple-500 text-purple-600 dark:text-purple-400'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+                }`}
+              >
+                <GitCompare className="h-4 w-4 inline mr-1" />
+                Data Mapping
+              </button>
+            )}
             <button
               onClick={() => setActiveTab('api')}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
@@ -541,7 +605,7 @@ export default function OrderEntrySubmissionDetailPage({ currentUser }: OrderEnt
 
           {activeTab === 'data' && (
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Submission Data</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Submission Data (Mapped Output)</h3>
               {submission.submission_data && typeof submission.submission_data === 'object' ? (
                 <div className="space-y-3">
                   {Object.entries(submission.submission_data).map(([key, value]) => {
@@ -572,6 +636,110 @@ export default function OrderEntrySubmissionDetailPage({ currentUser }: OrderEnt
                 </div>
               ) : (
                 <p className="text-gray-500 dark:text-gray-400">No submission data available</p>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'mapping' && submission.extraction_type_id && (
+            <div className="space-y-6">
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
+                <div className="flex items-center">
+                  <GitCompare className="h-5 w-5 text-blue-600 dark:text-blue-400 mr-2" />
+                  <p className="text-sm text-blue-800 dark:text-blue-200">
+                    This view shows how form data was transformed through the Extraction Type field mappings.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                  <h4 className="text-md font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
+                    <FileText className="h-5 w-5 mr-2 text-gray-500" />
+                    Raw Form Data (Input)
+                  </h4>
+                  {submission.raw_form_data ? (
+                    <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 max-h-[500px] overflow-y-auto">
+                      <JsonViewer data={submission.raw_form_data} name="raw_form_data" defaultExpanded={true} />
+                    </div>
+                  ) : (
+                    <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+                      <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                        Raw form data not available. This submission may have been created before this feature was added.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <h4 className="text-md font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
+                    <Code className="h-5 w-5 mr-2 text-gray-500" />
+                    Mapped Data (Output)
+                  </h4>
+                  {submission.submission_data ? (
+                    <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 max-h-[500px] overflow-y-auto">
+                      <JsonViewer data={submission.submission_data} name="submission_data" defaultExpanded={true} />
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 dark:text-gray-400">No mapped data available</p>
+                  )}
+                </div>
+              </div>
+
+              {fieldMappings.length > 0 && (
+                <div>
+                  <h4 className="text-md font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
+                    <Layers className="h-5 w-5 mr-2 text-gray-500" />
+                    Field Mappings Applied ({fieldMappings.length})
+                  </h4>
+                  <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg overflow-hidden">
+                    <table className="w-full">
+                      <thead className="bg-gray-100 dark:bg-gray-800">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Target Field</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Type</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Source/Value</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Data Type</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                        {fieldMappings.map((mapping, index) => (
+                          <tr key={index} className="hover:bg-gray-100 dark:hover:bg-gray-800/50">
+                            <td className="px-4 py-3 text-sm font-mono text-gray-900 dark:text-gray-100">
+                              {mapping.fieldName}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`text-xs px-2 py-1 rounded ${
+                                mapping.type === 'order_entry'
+                                  ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                                  : mapping.type === 'hardcoded'
+                                  ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
+                                  : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                              }`}>
+                                {mapping.type}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300 font-mono">
+                              {mapping.value || '-'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                              {mapping.dataType || 'string'}
+                              {mapping.removeIfNull && (
+                                <span className="ml-2 text-xs text-orange-600 dark:text-orange-400">(remove if null)</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {fieldMappings.length === 0 && (
+                <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-6 text-center">
+                  <Layers className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                  <p className="text-gray-600 dark:text-gray-400">No field mappings found for this extraction type.</p>
+                </div>
               )}
             </div>
           )}
