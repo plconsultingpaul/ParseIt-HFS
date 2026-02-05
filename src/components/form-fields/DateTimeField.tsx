@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { Calendar, Clock } from 'lucide-react';
@@ -15,6 +15,8 @@ interface DateTimeFieldProps {
 }
 
 export default function DateTimeField({ field, value, error, onChange, onBlur, showIcon = true }: DateTimeFieldProps) {
+  const datePickerRef = useRef<DatePicker>(null);
+
   const parseDate = (dateString: string): Date | null => {
     if (!dateString) return null;
     const date = new Date(dateString);
@@ -28,15 +30,20 @@ export default function DateTimeField({ field, value, error, onChange, onBlur, s
     const day = String(date.getDate()).padStart(2, '0');
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${year}-${month}-${day}T${hours}:${minutes}`;
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
   };
 
   const selectedDate = parseDate(value);
 
   const handleDateChange = (date: Date | null) => {
-    onChange(formatDate(date));
+    const formattedValue = formatDate(date);
+    onChange(formattedValue);
+  };
+
+  const handleCalendarClose = () => {
     if (onBlur) {
-      setTimeout(onBlur, 0);
+      onBlur();
     }
   };
 
@@ -51,8 +58,10 @@ export default function DateTimeField({ field, value, error, onChange, onBlur, s
       )}
       <div className="relative datetime-picker-wrapper">
         <DatePicker
+          ref={datePickerRef}
           selected={selectedDate}
           onChange={handleDateChange}
+          onCalendarClose={handleCalendarClose}
           showTimeSelect
           timeFormat="h:mm aa"
           timeIntervals={15}
@@ -68,6 +77,8 @@ export default function DateTimeField({ field, value, error, onChange, onBlur, s
           todayButton="Today"
           isClearable
           showPopperArrow={false}
+          portalId="datepicker-portal"
+          shouldCloseOnSelect={false}
         />
         <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
         <Clock className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
