@@ -601,32 +601,26 @@ export default function PageProcessorCard({
   const getStepStatus = (step: WorkflowStep) => {
     if (!pageState.workflowExecutionLog) return 'pending';
 
-    // First check if we have actual step logs for this step
     const stepLog = workflowStepLogs.find(log => log.stepId === step.id);
     if (stepLog) {
-      // Use the actual logged status
       if (stepLog.status === 'completed') return 'completed';
       if (stepLog.status === 'failed') return 'failed';
       if (stepLog.status === 'running') return 'running';
       if (stepLog.status === 'skipped') return 'skipped';
     }
 
-    // Fallback to old logic if step logs aren't loaded yet
+    if (workflowStepLogs.length > 0) {
+      return 'skipped';
+    }
+
     const currentStepId = pageState.workflowExecutionLog.currentStepId;
     const isCurrentStep = step.id === currentStepId;
     const status = pageState.workflowExecutionLog.status;
 
-    // If workflow is completed but we don't have a step log, check if step was executed
     if (status === 'completed') {
-      // If there's no step log for this step when workflow is completed, it was skipped
-      if (workflowStepLogs.length > 0) {
-        return 'skipped';
-      }
-      // If step logs haven't loaded yet, assume completed (old behavior)
       return 'completed';
     }
 
-    // If this is the current step
     if (isCurrentStep) {
       if (status === 'failed') {
         return 'failed';
@@ -636,7 +630,6 @@ export default function PageProcessorCard({
       }
     }
 
-    // If there's a current step, check if this step was already passed
     if (currentStepId) {
       const currentStep = workflowSteps.find(s => s.id === currentStepId);
       if (currentStep && currentStep.stepOrder > step.stepOrder) {
@@ -663,18 +656,7 @@ export default function PageProcessorCard({
   };
 
   const getStepStatusIcon = (status: string, stepOrder: number) => {
-    switch (status) {
-      case 'completed':
-        return '✓';
-      case 'running':
-        return '⟳';
-      case 'failed':
-        return '✗';
-      case 'skipped':
-        return '⊘';
-      default:
-        return stepOrder.toString();
-    }
+    return stepOrder.toString();
   };
 
   // Determine status for the status button
@@ -831,24 +813,28 @@ export default function PageProcessorCard({
                 {currentWorkflowSteps.length} step{currentWorkflowSteps.length !== 1 ? 's' : ''}
               </span>
             </div>
-            <div className="flex items-center space-x-2 flex-wrap">
-              {currentWorkflowSteps.map((step, index) => {
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {currentWorkflowSteps.map((step) => {
                 const status = getStepStatus(step);
-                const isLastStep = index === currentWorkflowSteps.length - 1;
-                
+                const stepLog = workflowStepLogs.find(log => log.stepId === step.id);
+                const userResponse = stepLog?.userResponse;
+
                 return (
-                  <div key={step.id} className="flex items-center">
+                  <div key={step.id} className="flex items-center gap-2">
                     <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-200 ${getStepStatusColor(status)}`}
+                      className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-200 flex-shrink-0 ${getStepStatusColor(status)}`}
                       title={`Step ${step.stepOrder}: ${step.stepName} (${status})`}
                     >
                       {getStepStatusIcon(status, step.stepOrder)}
                     </div>
-                    {!isLastStep && (
-                      <div className={`w-6 h-0.5 mx-1 transition-colors duration-200 ${
-                        status === 'completed' ? 'bg-green-300' : 'bg-gray-300'
-                      }`} />
-                    )}
+                    <span className={`text-sm truncate ${
+                      status === 'completed' ? 'text-green-600 dark:text-green-400' :
+                      status === 'failed' ? 'text-red-600 dark:text-red-400' :
+                      status === 'skipped' ? 'text-gray-500 dark:text-gray-400' :
+                      'text-gray-600 dark:text-gray-300'
+                    }`} title={userResponse || step.stepName}>
+                      {userResponse || step.stepName}
+                    </span>
                   </div>
                 );
               })}
