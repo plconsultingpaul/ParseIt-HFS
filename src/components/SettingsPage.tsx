@@ -40,6 +40,8 @@ interface SettingsPageProps {
   updateUserExtractionTypes: (userId: string, extractionTypeIds: string[]) => Promise<{ success: boolean; message: string }>;
   getUserTransformationTypes: (userId: string) => Promise<string[]>;
   updateUserTransformationTypes: (userId: string, transformationTypeIds: string[]) => Promise<{ success: boolean; message: string }>;
+  getUserExecuteCategories: (userId: string) => Promise<string[]>;
+  updateUserExecuteCategories: (userId: string, categoryIds: string[]) => Promise<{ success: boolean; message: string }>;
   onUpdateExtractionTypes: (types: ExtractionType[]) => Promise<void>;
   onDeleteExtractionType: (id: string) => Promise<void>;
   onUpdateTransformationTypes: (types: TransformationType[]) => Promise<void>;
@@ -83,6 +85,8 @@ export default function SettingsPage({
   updateUserExtractionTypes,
   getUserTransformationTypes,
   updateUserTransformationTypes,
+  getUserExecuteCategories,
+  updateUserExecuteCategories,
   onUpdateExtractionTypes,
   onDeleteExtractionType,
   onUpdateTransformationTypes,
@@ -158,6 +162,8 @@ export default function SettingsPage({
             transformationTypes={transformationTypes}
             getUserTransformationTypes={getUserTransformationTypes}
             updateUserTransformationTypes={updateUserTransformationTypes}
+            getUserExecuteCategories={getUserExecuteCategories}
+            updateUserExecuteCategories={updateUserExecuteCategories}
           />
         ) : <PermissionDenied />;
       case 'branding':
