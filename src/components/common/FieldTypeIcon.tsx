@@ -1,5 +1,5 @@
 import React from 'react';
-import { Type, Hash, Calendar, Clock, Phone, ChevronDown, Upload, CheckSquare, List, MapPin, LucideIcon } from 'lucide-react';
+import { Type, Hash, Calendar, Clock, Phone, ChevronDown, Upload, CheckSquare, List, MapPin, Mail, LucideIcon } from 'lucide-react';
 
 interface FieldTypeIconProps {
   fieldType: string;
@@ -15,12 +15,14 @@ const sizeClasses = {
 
 const iconColorClasses = {
   text: 'text-blue-500 dark:text-blue-400',
+  email: 'text-sky-500 dark:text-sky-400',
   number: 'text-green-500 dark:text-green-400',
   date: 'text-purple-500 dark:text-purple-400',
   datetime: 'text-amber-500 dark:text-amber-400',
   phone: 'text-purple-500 dark:text-purple-400',
   zip: 'text-cyan-500 dark:text-cyan-400',
   postal_code: 'text-teal-500 dark:text-teal-400',
+  zip_postal: 'text-emerald-500 dark:text-emerald-400',
   province: 'text-blue-600 dark:text-blue-500',
   state: 'text-green-600 dark:text-green-500',
   dropdown: 'text-orange-500 dark:text-orange-400',
@@ -34,6 +36,8 @@ export default function FieldTypeIcon({ fieldType, className = '', size = 'md' }
     switch (fieldType.toLowerCase()) {
       case 'text':
         return { Icon: Type, colorClass: iconColorClasses.text, label: 'Text Field' };
+      case 'email':
+        return { Icon: Mail, colorClass: iconColorClasses.email, label: 'Email Field' };
       case 'number':
         return { Icon: Hash, colorClass: iconColorClasses.number, label: 'Number Field' };
       case 'date':
@@ -46,6 +50,8 @@ export default function FieldTypeIcon({ fieldType, className = '', size = 'md' }
         return { Icon: MapPin, colorClass: iconColorClasses.zip, label: 'Zip Code Field' };
       case 'postal_code':
         return { Icon: MapPin, colorClass: iconColorClasses.postal_code, label: 'Postal Code Field' };
+      case 'zip_postal':
+        return { Icon: MapPin, colorClass: iconColorClasses.zip_postal, label: 'Zip/Postal Code Field' };
       case 'province':
         return { Icon: MapPin, colorClass: iconColorClasses.province, label: 'Province Field' };
       case 'state':
@@ -80,6 +86,8 @@ export function FieldTypeBadge({ fieldType }: { fieldType: string }) {
     switch (fieldType.toLowerCase()) {
       case 'text':
         return 'Text';
+      case 'email':
+        return 'Email';
       case 'number':
         return 'Number';
       case 'date':
@@ -92,6 +100,8 @@ export function FieldTypeBadge({ fieldType }: { fieldType: string }) {
         return 'Zip Code';
       case 'postal_code':
         return 'Postal Code';
+      case 'zip_postal':
+        return 'Zip/Postal';
       case 'province':
         return 'Province';
       case 'state':
@@ -113,6 +123,8 @@ export function FieldTypeBadge({ fieldType }: { fieldType: string }) {
     switch (fieldType.toLowerCase()) {
       case 'text':
         return 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300';
+      case 'email':
+        return 'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300';
       case 'number':
         return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300';
       case 'date':
@@ -125,6 +137,8 @@ export function FieldTypeBadge({ fieldType }: { fieldType: string }) {
         return 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300';
       case 'postal_code':
         return 'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300';
+      case 'zip_postal':
+        return 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300';
       case 'province':
         return 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300';
       case 'state':
