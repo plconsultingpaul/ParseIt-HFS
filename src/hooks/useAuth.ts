@@ -179,7 +179,7 @@ export function useAuth() {
 
           const { data, error } = await supabase
             .from('users')
-            .select('id, username, name, email, is_admin, is_active, permissions, role, preferred_upload_mode, current_zone, client_id, is_client_admin, has_order_entry_access, has_rate_quote_access, has_address_book_access, has_track_trace_access, has_invoice_access')
+            .select('id, username, name, email, is_admin, is_active, permissions, role, preferred_upload_mode, current_zone, client_id, is_client_admin, has_order_entry_access, has_rate_quote_access, has_address_book_access, has_track_trace_access, has_invoice_access, has_execute_setup_access')
             .eq('id', user.id)
             .eq('is_active', true);
 
@@ -216,7 +216,8 @@ export function useAuth() {
               hasRateQuoteAccess: userData.has_rate_quote_access || false,
               hasAddressBookAccess: userData.has_address_book_access || false,
               hasTrackTraceAccess: userData.has_track_trace_access || false,
-              hasInvoiceAccess: userData.has_invoice_access || false
+              hasInvoiceAccess: userData.has_invoice_access || false,
+              hasExecuteSetupAccess: userData.has_execute_setup_access || false
             };
 
             console.log('[useAuth] Session validation - constructed validatedUser:', {
@@ -252,9 +253,8 @@ export function useAuth() {
     validateUserFromStorage();
   }, [handleLogout]);
 
-  const login = async (username: string, password: string): Promise<{ success: boolean; message?: string }> => {
+  const login = async (username: string, password: string, loginType?: 'admin' | 'client'): Promise<{ success: boolean; message?: string }> => {
     try {
-      // First verify the password using the RPC function
       const { data: rpcData, error: rpcError } = await supabase.rpc('verify_password', {
         username_input: username,
         password_input: password
@@ -265,13 +265,19 @@ export function useAuth() {
       }
 
       if (rpcData.success) {
-        // Get the complete user data directly from the users table to ensure we have all fields
-        const { data: userData, error: userError } = await supabase
+        let query = supabase
           .from('users')
-          .select('id, username, name, email, is_admin, is_active, permissions, role, preferred_upload_mode, current_zone, client_id, is_client_admin, has_order_entry_access, has_rate_quote_access, has_address_book_access, has_track_trace_access, has_invoice_access')
+          .select('id, username, name, email, is_admin, is_active, permissions, role, preferred_upload_mode, current_zone, client_id, is_client_admin, has_order_entry_access, has_rate_quote_access, has_address_book_access, has_track_trace_access, has_invoice_access, has_execute_setup_access')
           .eq('username', username)
-          .eq('is_active', true)
-          .single();
+          .eq('is_active', true);
+
+        if (loginType === 'client') {
+          query = query.eq('role', 'client');
+        } else if (loginType === 'admin') {
+          query = query.neq('role', 'client');
+        }
+
+        const { data: userData, error: userError } = await query.single();
 
         if (userError || !userData) {
           console.error('Failed to fetch complete user data:', userError);
@@ -312,7 +318,8 @@ export function useAuth() {
           hasRateQuoteAccess: userData.has_rate_quote_access || false,
           hasAddressBookAccess: userData.has_address_book_access || false,
           hasTrackTraceAccess: userData.has_track_trace_access || false,
-          hasInvoiceAccess: userData.has_invoice_access || false
+          hasInvoiceAccess: userData.has_invoice_access || false,
+          hasExecuteSetupAccess: userData.has_execute_setup_access || false
         };
 
         console.log('Final user object created during login:', user);
@@ -660,6 +667,57 @@ export function useAuth() {
     }
   };
 
+  const getUserExecuteCategories = async (userId: string): Promise<string[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('user_execute_category_access')
+        .select('category_id')
+        .eq('user_id', userId);
+
+      if (error) throw error;
+
+      return (data || []).map(item => item.category_id);
+    } catch (error) {
+      console.error('Get user execute categories error:', error);
+      return [];
+    }
+  };
+
+  const updateUserExecuteCategories = async (userId: string, categoryIds: string[]): Promise<{ success: boolean; message: string }> => {
+    try {
+      const { error: deleteError } = await supabase
+        .from('user_execute_category_access')
+        .delete()
+        .eq('user_id', userId);
+
+      if (deleteError) throw deleteError;
+
+      if (categoryIds.length > 0) {
+        const mappings = categoryIds.map(categoryId => ({
+          user_id: userId,
+          category_id: categoryId
+        }));
+
+        const { error: insertError } = await supabase
+          .from('user_execute_category_access')
+          .insert(mappings);
+
+        if (insertError) throw insertError;
+      }
+
+      return {
+        success: true,
+        message: 'Execute category permissions updated successfully'
+      };
+    } catch (error) {
+      console.error('Update user execute categories error:', error);
+      return {
+        success: false,
+        message: 'Failed to update execute category permissions'
+      };
+    }
+  };
+
   return {
     ...authState,
     loading,
@@ -675,7 +733,9 @@ export function useAuth() {
     getUserExtractionTypes,
     updateUserExtractionTypes,
     getUserTransformationTypes,
-    updateUserTransformationTypes
+    updateUserTransformationTypes,
+    getUserExecuteCategories,
+    updateUserExecuteCategories
   };
 }
 
@@ -691,10 +751,11 @@ function getDefaultPermissions(isAdmin: boolean): UserPermissions {
       processedEmails: true,
       extractionLogs: true,
       userManagement: true,
-      workflowManagement: true
+      workflowManagement: true,
+      executeSetup: true
     };
   }
-  
+
   return {
     extractionTypes: false,
     transformationTypes: false,
@@ -705,6 +766,7 @@ function getDefaultPermissions(isAdmin: boolean): UserPermissions {
     processedEmails: false,
     extractionLogs: false,
     userManagement: false,
-    workflowManagement: false
+    workflowManagement: false,
+    executeSetup: false
   };
 }
