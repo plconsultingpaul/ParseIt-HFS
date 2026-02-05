@@ -177,7 +177,7 @@ export interface ArrayEntryField {
   fieldType: 'hardcoded' | 'extracted' | 'mapped';
   hardcodedValue?: string;
   extractionInstruction?: string;
-  dataType?: 'string' | 'number' | 'integer' | 'datetime';
+  dataType?: 'string' | 'number' | 'integer' | 'datetime' | 'boolean';
 }
 
 export interface ArrayEntryConditionRule {
@@ -437,7 +437,8 @@ PROVINCE AND STATE FORMATTING RULES:
             const dataTypeNote = field.dataType === 'string' ? ' (UPPER CASE string)' :
                                 field.dataType === 'number' ? ' (number)' :
                                 field.dataType === 'integer' ? ' (integer)' :
-                                field.dataType === 'datetime' ? ' (datetime yyyy-MM-ddThh:mm:ss)' : '';
+                                field.dataType === 'datetime' ? ' (datetime yyyy-MM-ddThh:mm:ss)' :
+                                field.dataType === 'boolean' ? ' (boolean: use "True" or "False" as string)' : '';
             if (field.fieldType === 'hardcoded') {
               arrayEntryExtractionInstructions += `    - "${field.fieldName}": Always "${field.hardcodedValue}"${dataTypeNote}\n`;
             } else {
@@ -1082,6 +1083,8 @@ Please provide only the ${outputFormat} output without any additional explanatio
                       value = parseFloat(String(value)) || 0;
                     } else if (field.dataType === 'integer') {
                       value = parseInt(String(value)) || 0;
+                    } else if (field.dataType === 'boolean') {
+                      value = normalizeBooleanValue(value);
                     } else if (field.dataType === 'string' && value) {
                       value = String(value).toUpperCase();
                     }
@@ -1156,6 +1159,8 @@ Please provide only the ${outputFormat} output without any additional explanatio
                       value = parseFloat(value) || 0;
                     } else if (field.dataType === 'integer') {
                       value = parseInt(value) || 0;
+                    } else if (field.dataType === 'boolean') {
+                      value = normalizeBooleanValue(value);
                     } else if (field.dataType === 'string') {
                       value = String(value).toUpperCase();
                     }
@@ -1174,6 +1179,8 @@ Please provide only the ${outputFormat} output without any additional explanatio
                       value = parseFloat(value) || 0;
                     } else if (field.dataType === 'integer') {
                       value = parseInt(value) || 0;
+                    } else if (field.dataType === 'boolean') {
+                      value = normalizeBooleanValue(value);
                     } else if (field.dataType === 'string' && value) {
                       value = String(value).toUpperCase();
                     }
