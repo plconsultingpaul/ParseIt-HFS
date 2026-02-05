@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Trash2, Save, FileText, Code, Database, Map, Brain, Copy, Split, AlertTriangle, FunctionSquare } from 'lucide-react';
-import type { ExtractionType, FieldMapping, ArraySplitConfig, FieldMappingFunction } from '../../types';
+import { Plus, Trash2, Save, FileText, Code, Database, Map, Brain, Copy, Split, AlertTriangle, FunctionSquare, CheckCircle, XCircle, Layers, Download, Upload, ChevronDown, ChevronRight, Filter, RefreshCw } from 'lucide-react';
+import type { ExtractionType, FieldMapping, ArraySplitConfig, FieldMappingFunction, ArrayEntryConfig, ArrayEntryField, ArrayEntryConditions, ArrayEntryConditionRule } from '../../types';
 import { useSupabaseData } from '../../hooks/useSupabaseData';
 import MappingPage from '../MappingPage';
 import { supabase } from '../../lib/supabase';
 import Select from '../common/Select';
 import { FieldMappingFunctionsManager } from './FieldMappingFunctionsManager';
 import { fieldMappingFunctionService } from '../../services/fieldMappingFunctionService';
+import { exportExtractionType, importExtractionType, ExportedExtractionType } from '../../services/typeService';
 
 interface ExtractionTypesSettingsProps {
   extractionTypes: ExtractionType[];
@@ -59,10 +60,29 @@ export default function ExtractionTypesSettings({
   });
   const [showJsonErrorModal, setShowJsonErrorModal] = useState(false);
   const [jsonErrorMessage, setJsonErrorMessage] = useState('');
+  const [jsonValidationResult, setJsonValidationResult] = useState<{ valid: boolean; message: string } | null>(null);
   const [notificationTemplates, setNotificationTemplates] = useState<Array<{ id: string; template_name: string; template_type: string }>>([]);
   const [showFunctionsModal, setShowFunctionsModal] = useState(false);
   const [availableFunctions, setAvailableFunctions] = useState<FieldMappingFunction[]>([]);
   const pendingSelectionRef = useRef<{ id?: string; name?: string } | null>(null);
+  const [showArrayEntryModal, setShowArrayEntryModal] = useState(false);
+  const [editingArrayEntry, setEditingArrayEntry] = useState<ArrayEntryConfig | null>(null);
+  const [arrayEntryForm, setArrayEntryForm] = useState<Partial<ArrayEntryConfig>>({
+    targetArrayField: '',
+    entryOrder: 1,
+    isEnabled: true,
+    fields: [],
+    conditions: undefined,
+    isRepeating: false,
+    repeatInstruction: ''
+  });
+  const [showConditionsSection, setShowConditionsSection] = useState(false);
+  const [conditionFieldSelectorOpen, setConditionFieldSelectorOpen] = useState<number | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importError, setImportError] = useState('');
+  const [importSuccess, setImportSuccess] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchNotificationTemplates();
@@ -107,6 +127,75 @@ export default function ExtractionTypesSettings({
     setShowAddModal(true);
     setNewTypeName('');
     setNameError('');
+  };
+
+  const handleExport = async () => {
+    const selectedType = localExtractionTypes[selectedTypeIndex];
+    if (!selectedType || selectedType.id.startsWith('temp-')) {
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      const exportData = await exportExtractionType(selectedType);
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '_').split('.')[0];
+      const safeName = selectedType.name.replace(/[^a-zA-Z0-9]/g, '_');
+      link.href = url;
+      link.download = `${timestamp}_Extract_${safeName}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Export failed:', error);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    setImportError('');
+    setImportSuccess('');
+
+    try {
+      const text = await file.text();
+      const exportData: ExportedExtractionType = JSON.parse(text);
+
+      if (exportData.exportType !== 'extraction' || !exportData.exportVersion) {
+        throw new Error('Invalid export file format');
+      }
+
+      const result = await importExtractionType(exportData);
+
+      if (result.success) {
+        setImportSuccess(`Successfully imported "${exportData.typeName}"${exportData.relatedData.functions.length > 0 ? ` with ${exportData.relatedData.functions.length} function(s)` : ''}`);
+        setTimeout(() => setImportSuccess(''), 5000);
+        await refreshData();
+      } else {
+        setImportError(result.error || 'Import failed');
+        setTimeout(() => setImportError(''), 5000);
+      }
+    } catch (error: any) {
+      console.error('Import failed:', error);
+      setImportError(error.message || 'Failed to import file');
+      setTimeout(() => setImportError(''), 5000);
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
   };
 
   const handleCopyTypeClick = () => {
@@ -205,42 +294,18 @@ export default function ExtractionTypesSettings({
   };
 
   const handleSaveNewType = async (updatedTypes: ExtractionType[], newTypeIndex: number) => {
-    console.log('=== EXTRACTION TYPE SAVE DEBUG START ===');
-    console.log('handleSaveNewType called with:');
-    console.log('- updatedTypes length:', updatedTypes.length);
-    console.log('- newTypeIndex:', newTypeIndex);
-    console.log('- updatedTypes:', updatedTypes.map(t => ({ id: t.id, name: t.name, isTemp: t.id.startsWith('temp-') })));
-    
     try {
-      console.log('Calling onUpdateExtractionTypes...');
       await onUpdateExtractionTypes(updatedTypes);
-      console.log('✅ onUpdateExtractionTypes completed successfully');
-
-      console.log('Refreshing data to sync local state with database...');
       await refreshData();
-      console.log('✅ Data refresh completed');
-
-      // Select the new type and close modal
-      console.log('Setting selectedTypeIndex to:', newTypeIndex);
       setSelectedTypeIndex(newTypeIndex);
-      console.log('Closing modal and clearing form...');
       setShowAddModal(false);
       setNewTypeName('');
       setNameError('');
-
-      // Show success message
-      console.log('Showing success message...');
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
-      console.log('=== EXTRACTION TYPE SAVE DEBUG SUCCESS ===');
     } catch (error) {
-      console.log('=== EXTRACTION TYPE SAVE DEBUG ERROR ===');
       console.error('Failed to save new extraction type:', error);
-      console.error('Error type:', error?.constructor?.name);
-      console.error('Error message:', error?.message);
-      console.error('Error details:', error);
       setNameError('Failed to save extraction type. Please try again.');
-      console.log('=== EXTRACTION TYPE SAVE DEBUG ERROR END ===');
     }
   };
 
@@ -398,9 +463,12 @@ export default function ExtractionTypesSettings({
         }
       }
 
-      // Update the extraction type with the generated mappings
+      // Update the extraction type with the generated mappings (merge, don't replace)
       const updated = [...localExtractionTypes];
-      updated[typeIndex].fieldMappings = fieldMappings;
+      const existingMappings = extractionType.fieldMappings || [];
+      const existingFieldNames = new Set(existingMappings.map(m => m.fieldName));
+      const newMappings = fieldMappings.filter(m => !existingFieldNames.has(m.fieldName));
+      updated[typeIndex].fieldMappings = [...existingMappings, ...newMappings];
       setLocalExtractionTypes(updated);
 
       // Automatically save the changes to persist the field mappings
@@ -419,6 +487,24 @@ export default function ExtractionTypesSettings({
       setJsonErrorMessage('Invalid JSON template. Please check the JSON syntax.');
       setShowJsonErrorModal(true);
     }
+  };
+
+  const handleCheckJson = () => {
+    const currentType = localExtractionTypes[selectedTypeIndex];
+    if (!currentType?.formatTemplate) {
+      setJsonValidationResult({ valid: false, message: 'No JSON template to validate' });
+      return;
+    }
+
+    try {
+      JSON.parse(currentType.formatTemplate);
+      setJsonValidationResult({ valid: true, message: 'Valid JSON format' });
+    } catch (error) {
+      const errorMessage = error instanceof SyntaxError ? error.message : 'Invalid JSON format';
+      setJsonValidationResult({ valid: false, message: errorMessage });
+    }
+
+    setTimeout(() => setJsonValidationResult(null), 5000);
   };
 
   const handleSave = async () => {
@@ -516,6 +602,174 @@ export default function ExtractionTypesSettings({
       } catch (error) {
         console.error('Failed to delete array split config:', error);
         alert('Failed to delete array split configuration. Please try again.');
+      }
+    }
+  };
+
+  const handleAddArrayEntryClick = () => {
+    const currentType = localExtractionTypes[selectedTypeIndex];
+    const existingEntries = currentType.arrayEntryConfigs || [];
+    const nextOrder = existingEntries.length > 0
+      ? Math.max(...existingEntries.map(e => e.entryOrder)) + 1
+      : 1;
+
+    setEditingArrayEntry(null);
+    setArrayEntryForm({
+      targetArrayField: '',
+      entryOrder: nextOrder,
+      isEnabled: true,
+      fields: [],
+      conditions: undefined,
+      isRepeating: false,
+      repeatInstruction: ''
+    });
+    setShowConditionsSection(false);
+    setShowArrayEntryModal(true);
+  };
+
+  const handleEditArrayEntry = (entry: ArrayEntryConfig) => {
+    setEditingArrayEntry(entry);
+    setArrayEntryForm({
+      ...entry,
+      fields: [...entry.fields],
+      conditions: entry.conditions ? { ...entry.conditions, rules: [...entry.conditions.rules] } : undefined,
+      isRepeating: entry.isRepeating || false,
+      repeatInstruction: entry.repeatInstruction || ''
+    });
+    setShowConditionsSection(entry.conditions?.enabled || false);
+    setShowArrayEntryModal(true);
+  };
+
+  const handleCopyArrayEntry = (entry: ArrayEntryConfig) => {
+    const currentType = localExtractionTypes[selectedTypeIndex];
+    const existingEntries = currentType.arrayEntryConfigs || [];
+    const nextOrder = existingEntries.length > 0
+      ? Math.max(...existingEntries.map(e => e.entryOrder)) + 1
+      : 1;
+
+    setEditingArrayEntry(null);
+    setArrayEntryForm({
+      targetArrayField: entry.targetArrayField,
+      entryOrder: nextOrder,
+      isEnabled: true,
+      fields: entry.fields.map(f => ({ ...f })),
+      conditions: entry.conditions ? { ...entry.conditions, rules: entry.conditions.rules.map(r => ({ ...r })) } : undefined,
+      isRepeating: entry.isRepeating || false,
+      repeatInstruction: entry.repeatInstruction || ''
+    });
+    setShowConditionsSection(entry.conditions?.enabled || false);
+    setShowArrayEntryModal(true);
+  };
+
+  const handleAddArrayEntryField = () => {
+    const currentFields = arrayEntryForm.fields || [];
+    const nextOrder = currentFields.length > 0
+      ? Math.max(...currentFields.map(f => f.fieldOrder)) + 1
+      : 1;
+
+    setArrayEntryForm({
+      ...arrayEntryForm,
+      fields: [
+        ...currentFields,
+        {
+          id: `temp-${Date.now()}`,
+          fieldName: '',
+          fieldType: 'hardcoded',
+          hardcodedValue: '',
+          extractionInstruction: '',
+          dataType: 'string',
+          fieldOrder: nextOrder
+        }
+      ]
+    });
+  };
+
+  const handleUpdateArrayEntryField = (fieldIndex: number, field: keyof ArrayEntryField, value: any) => {
+    const updatedFields = [...(arrayEntryForm.fields || [])];
+    updatedFields[fieldIndex] = { ...updatedFields[fieldIndex], [field]: value };
+    setArrayEntryForm({ ...arrayEntryForm, fields: updatedFields });
+  };
+
+  const handleRemoveArrayEntryField = (fieldIndex: number) => {
+    const updatedFields = (arrayEntryForm.fields || []).filter((_, i) => i !== fieldIndex);
+    setArrayEntryForm({ ...arrayEntryForm, fields: updatedFields });
+  };
+
+  const handleSaveArrayEntry = async () => {
+    if (!arrayEntryForm.targetArrayField) {
+      alert('Please enter a target array field');
+      return;
+    }
+
+    if (!arrayEntryForm.fields || arrayEntryForm.fields.length === 0) {
+      alert('Please add at least one field');
+      return;
+    }
+
+    const hasInvalidFields = arrayEntryForm.fields.some(f => !f.fieldName);
+    if (hasInvalidFields) {
+      alert('All fields must have a field name');
+      return;
+    }
+
+    const updated = [...localExtractionTypes];
+    const currentType = updated[selectedTypeIndex];
+
+    if (!currentType.arrayEntryConfigs) {
+      currentType.arrayEntryConfigs = [];
+    }
+
+    if (editingArrayEntry) {
+      const index = currentType.arrayEntryConfigs.findIndex(e => e.id === editingArrayEntry.id);
+      if (index !== -1) {
+        currentType.arrayEntryConfigs[index] = {
+          ...editingArrayEntry,
+          ...arrayEntryForm,
+          fields: arrayEntryForm.fields || []
+        } as ArrayEntryConfig;
+      }
+    } else {
+      currentType.arrayEntryConfigs.push({
+        id: `temp-${Date.now()}`,
+        extractionTypeId: currentType.id,
+        targetArrayField: arrayEntryForm.targetArrayField!,
+        entryOrder: arrayEntryForm.entryOrder || 1,
+        isEnabled: arrayEntryForm.isEnabled !== false,
+        fields: arrayEntryForm.fields || [],
+        isRepeating: arrayEntryForm.isRepeating || false,
+        repeatInstruction: arrayEntryForm.repeatInstruction || ''
+      });
+    }
+
+    setLocalExtractionTypes(updated);
+    setShowArrayEntryModal(false);
+
+    try {
+      await onUpdateExtractionTypes(updated);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (error) {
+      console.error('Failed to save array entry config:', error);
+      alert('Failed to save array entry configuration. Please try again.');
+    }
+  };
+
+  const handleDeleteArrayEntry = async (entryId: string) => {
+    const updated = [...localExtractionTypes];
+    const currentType = updated[selectedTypeIndex];
+
+    if (currentType.arrayEntryConfigs) {
+      currentType.arrayEntryConfigs = currentType.arrayEntryConfigs.filter(e => e.id !== entryId);
+      setLocalExtractionTypes(updated);
+
+      try {
+        await onUpdateExtractionTypes(updated);
+        await refreshData();
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+      } catch (error) {
+        console.error('Failed to delete array entry config:', error);
+        alert('Failed to delete array entry configuration. Please try again.');
       }
     }
   };
@@ -861,6 +1115,511 @@ export default function ExtractionTypesSettings({
         document.body
       )}
 
+      {/* Array Entry Builder Modal */}
+      {showArrayEntryModal && createPortal(
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 pt-10 overflow-y-auto">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-4xl w-full mx-4 my-8 shadow-2xl">
+            <div className="text-center mb-6">
+              <div className="bg-emerald-100 dark:bg-emerald-900/50 p-3 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                <Layers className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+                {editingArrayEntry ? 'Edit Array Entry' : 'Add Array Entry'}
+              </h3>
+              <p className="text-gray-600 dark:text-gray-400">
+                Define an array entry with hardcoded and extracted field values
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Target Array Field
+                  </label>
+                  <input
+                    type="text"
+                    value={arrayEntryForm.targetArrayField || ''}
+                    onChange={(e) => setArrayEntryForm({ ...arrayEntryForm, targetArrayField: e.target.value })}
+                    placeholder="e.g., traceNumbers"
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    The array field in your JSON template
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Entry Order
+                  </label>
+                  <input
+                    type="number"
+                    value={arrayEntryForm.entryOrder || 1}
+                    onChange={(e) => setArrayEntryForm({ ...arrayEntryForm, entryOrder: parseInt(e.target.value) || 1 })}
+                    min="1"
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Position in the array (1, 2, 3...)
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={arrayEntryForm.isEnabled !== false}
+                    onChange={(e) => setArrayEntryForm({ ...arrayEntryForm, isEnabled: e.target.checked })}
+                    className="w-4 h-4 text-emerald-600 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-emerald-500 focus:ring-2"
+                  />
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Entry Enabled
+                  </span>
+                </label>
+
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={arrayEntryForm.isRepeating || false}
+                    onChange={(e) => setArrayEntryForm({ ...arrayEntryForm, isRepeating: e.target.checked })}
+                    className="w-4 h-4 text-blue-600 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 focus:ring-2"
+                  />
+                  <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                    Repeating Entry
+                  </span>
+                </label>
+              </div>
+
+              {arrayEntryForm.isRepeating && (
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
+                  <div className="flex items-start space-x-3">
+                    <RefreshCw className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <h4 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-1">
+                        Repeating Entry Mode
+                      </h4>
+                      <p className="text-xs text-blue-700 dark:text-blue-300 mb-3">
+                        AI will find ALL matching rows in the PDF and create one array entry for each. The field templates below will be applied to each row found.
+                      </p>
+                      <label className="block text-sm font-medium text-blue-800 dark:text-blue-200 mb-1">
+                        Row Identification Instruction
+                      </label>
+                      <textarea
+                        value={arrayEntryForm.repeatInstruction || ''}
+                        onChange={(e) => setArrayEntryForm({ ...arrayEntryForm, repeatInstruction: e.target.value })}
+                        placeholder="e.g., Find all line items in the table where QTY >= 1. Each row has QTY, Description, Weight columns."
+                        rows={3}
+                        className="w-full px-3 py-2 border border-blue-300 dark:border-blue-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                      />
+                      <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                        Describe how to identify each row to extract (table structure, filtering criteria, etc.)
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Entry Fields
+                  </label>
+                  <button
+                    onClick={handleAddArrayEntryField}
+                    className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors duration-200 flex items-center space-x-1"
+                  >
+                    <Plus className="h-3 w-3" />
+                    <span>Add Field</span>
+                  </button>
+                </div>
+
+                {(arrayEntryForm.fields || []).length === 0 ? (
+                  <div className="text-center py-6 text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700/50 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
+                    <Layers className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">No fields defined yet</p>
+                    <p className="text-xs mt-1">Click "Add Field" to define field values</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-64 overflow-y-auto">
+                    {(arrayEntryForm.fields || []).map((field, fieldIndex) => (
+                      <div
+                        key={field.id || fieldIndex}
+                        className={`p-3 rounded-lg border-2 ${
+                          field.fieldType === 'hardcoded'
+                            ? 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700'
+                            : 'bg-orange-50 dark:bg-orange-900/20 border-orange-300 dark:border-orange-700'
+                        }`}
+                      >
+                        <div className="grid grid-cols-[1fr_100px_1.2fr_100px_70px_40px_40px] gap-2 items-end">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                              Field Name
+                            </label>
+                            <input
+                              type="text"
+                              value={field.fieldName}
+                              onChange={(e) => handleUpdateArrayEntryField(fieldIndex, 'fieldName', e.target.value)}
+                              placeholder="e.g., traceType"
+                              className="w-full px-2 py-1 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                              Type
+                            </label>
+                            <select
+                              value={field.fieldType}
+                              onChange={(e) => handleUpdateArrayEntryField(fieldIndex, 'fieldType', e.target.value as 'hardcoded' | 'extracted' | 'mapped')}
+                              className="w-full px-2 py-1 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600"
+                            >
+                              <option value="hardcoded">Hardcoded</option>
+                              <option value="extracted">AI</option>
+                              <option value="mapped">Mapped</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                              {field.fieldType === 'hardcoded' ? 'Value' : field.fieldType === 'mapped' ? 'PDF Coordinates' : 'Extraction Instruction'}
+                            </label>
+                            {field.fieldType === 'hardcoded' ? (
+                              <input
+                                type="text"
+                                value={field.hardcodedValue || ''}
+                                onChange={(e) => handleUpdateArrayEntryField(fieldIndex, 'hardcodedValue', e.target.value)}
+                                placeholder="e.g., PRO"
+                                className="w-full px-2 py-1 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600"
+                              />
+                            ) : (
+                              <input
+                                type="text"
+                                value={field.extractionInstruction || ''}
+                                onChange={(e) => handleUpdateArrayEntryField(fieldIndex, 'extractionInstruction', e.target.value)}
+                                placeholder={field.fieldType === 'mapped' ? 'e.g., (100, 200, 150, 30)' : 'e.g., Extract PRO number from top right'}
+                                className="w-full px-2 py-1 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600"
+                              />
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                              Data Type
+                            </label>
+                            <select
+                              value={field.dataType || 'string'}
+                              onChange={(e) => handleUpdateArrayEntryField(fieldIndex, 'dataType', e.target.value)}
+                              className="w-full px-2 py-1 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600"
+                            >
+                              <option value="string">String</option>
+                              <option value="number">Number</option>
+                              <option value="integer">Integer</option>
+                              <option value="boolean">Boolean</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                              Max Len
+                            </label>
+                            {(field.dataType || 'string') === 'string' ? (
+                              <input
+                                type="number"
+                                value={field.maxLength || ''}
+                                onChange={(e) => handleUpdateArrayEntryField(fieldIndex, 'maxLength', e.target.value ? parseInt(e.target.value) : undefined)}
+                                className="w-full px-2 py-1 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600"
+                                placeholder="40"
+                                min="1"
+                              />
+                            ) : (
+                              <div className="px-2 py-1 text-xs text-gray-400 dark:text-gray-500 italic">N/A</div>
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                              RIN
+                            </label>
+                            <div className="flex justify-center pt-1">
+                              <input
+                                type="checkbox"
+                                checked={field.removeIfNull || false}
+                                onChange={(e) => handleUpdateArrayEntryField(fieldIndex, 'removeIfNull', e.target.checked)}
+                                className="w-4 h-4 text-emerald-600 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-emerald-500 focus:ring-2"
+                                title="Remove if Null - removes field from output if value is empty"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex justify-center">
+                            <button
+                              onClick={() => handleRemoveArrayEntryField(fieldIndex)}
+                              className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900 rounded transition-colors duration-200"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Conditional Logic Section */}
+              <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setShowConditionsSection(!showConditionsSection)}
+                  className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700/50 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                >
+                  <div className="flex items-center space-x-2">
+                    <Filter className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                    <span className="font-medium text-gray-900 dark:text-gray-100">Conditional Logic</span>
+                    {arrayEntryForm.conditions?.enabled && arrayEntryForm.conditions.rules.length > 0 && (
+                      <span className="text-xs bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-full">
+                        {arrayEntryForm.conditions.rules.length} rule{arrayEntryForm.conditions.rules.length !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </div>
+                  {showConditionsSection ? (
+                    <ChevronDown className="h-4 w-4 text-gray-500" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-gray-500" />
+                  )}
+                </button>
+
+                {showConditionsSection && (
+                  <div className="p-4 space-y-4 bg-white dark:bg-gray-800">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={arrayEntryForm.conditions?.enabled || false}
+                            onChange={(e) => {
+                              const enabled = e.target.checked;
+                              setArrayEntryForm({
+                                ...arrayEntryForm,
+                                conditions: enabled
+                                  ? { enabled: true, logic: 'AND', rules: arrayEntryForm.conditions?.rules || [] }
+                                  : { ...arrayEntryForm.conditions, enabled: false, logic: arrayEntryForm.conditions?.logic || 'AND', rules: arrayEntryForm.conditions?.rules || [] }
+                              });
+                            }}
+                            className="sr-only peer"
+                          />
+                          <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-amber-300 dark:peer-focus:ring-amber-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-600 peer-checked:bg-amber-500"></div>
+                        </label>
+                        <span className="text-sm text-gray-700 dark:text-gray-300">
+                          Only include this entry when conditions are met
+                        </span>
+                      </div>
+                    </div>
+
+                    {arrayEntryForm.conditions?.enabled && (
+                      <>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-sm text-gray-600 dark:text-gray-400">Match</span>
+                          <select
+                            value={arrayEntryForm.conditions?.logic || 'AND'}
+                            onChange={(e) => {
+                              setArrayEntryForm({
+                                ...arrayEntryForm,
+                                conditions: {
+                                  ...arrayEntryForm.conditions!,
+                                  logic: e.target.value as 'AND' | 'OR'
+                                }
+                              });
+                            }}
+                            className="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                          >
+                            <option value="AND">ALL</option>
+                            <option value="OR">ANY</option>
+                          </select>
+                          <span className="text-sm text-gray-600 dark:text-gray-400">of the following conditions</span>
+                        </div>
+
+                        <div className="space-y-2">
+                          {(arrayEntryForm.conditions?.rules || []).map((rule, ruleIndex) => (
+                            <div key={ruleIndex} className="flex items-center space-x-2 bg-gray-50 dark:bg-gray-700/50 p-2 rounded-lg">
+                              <div className="flex-1 flex items-center space-x-1 relative">
+                                <input
+                                  type="text"
+                                  value={rule.fieldPath}
+                                  onChange={(e) => {
+                                    const newRules = [...(arrayEntryForm.conditions?.rules || [])];
+                                    newRules[ruleIndex] = { ...rule, fieldPath: e.target.value };
+                                    setArrayEntryForm({
+                                      ...arrayEntryForm,
+                                      conditions: { ...arrayEntryForm.conditions!, rules: newRules }
+                                    });
+                                  }}
+                                  placeholder="e.g., details.dangerousGoods"
+                                  className="flex-1 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                                />
+                                <button
+                                  type="button"
+                                  data-condition-field-btn={ruleIndex}
+                                  onClick={() => setConditionFieldSelectorOpen(conditionFieldSelectorOpen === ruleIndex ? null : ruleIndex)}
+                                  className="px-2 py-1.5 text-sm font-mono border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-colors"
+                                  title="Select from field mappings"
+                                >
+                                  {'{'}  {'}'}
+                                </button>
+                                {conditionFieldSelectorOpen === ruleIndex && createPortal(
+                                  <div
+                                    className="fixed w-64 max-h-48 overflow-y-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg"
+                                    style={{
+                                      zIndex: 99999,
+                                      top: (document.querySelector(`[data-condition-field-btn="${ruleIndex}"]`)?.getBoundingClientRect().bottom ?? 0) + 4,
+                                      left: document.querySelector(`[data-condition-field-btn="${ruleIndex}"]`)?.getBoundingClientRect().left ?? 0
+                                    }}
+                                  >
+                                    {(selectedType?.fieldMappings || []).filter(m => m.fieldName).length > 0 ? (
+                                      (selectedType?.fieldMappings || []).filter(m => m.fieldName).map((mapping, mIndex) => (
+                                        <button
+                                          key={mIndex}
+                                          type="button"
+                                          onClick={() => {
+                                            const newRules = [...(arrayEntryForm.conditions?.rules || [])];
+                                            newRules[ruleIndex] = { ...rule, fieldPath: mapping.fieldName };
+                                            setArrayEntryForm({
+                                              ...arrayEntryForm,
+                                              conditions: { ...arrayEntryForm.conditions!, rules: newRules }
+                                            });
+                                            setConditionFieldSelectorOpen(null);
+                                          }}
+                                          className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center justify-between"
+                                        >
+                                          <span className="font-mono text-gray-900 dark:text-gray-100">{mapping.fieldName}</span>
+                                          {mapping.dataType && (
+                                            <span className="text-xs text-gray-500 dark:text-gray-400">{mapping.dataType}</span>
+                                          )}
+                                        </button>
+                                      ))
+                                    ) : (
+                                      <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+                                        No field mappings defined
+                                      </div>
+                                    )}
+                                  </div>,
+                                  document.body
+                                )}
+                              </div>
+                              <select
+                                value={rule.operator}
+                                onChange={(e) => {
+                                  const newRules = [...(arrayEntryForm.conditions?.rules || [])];
+                                  newRules[ruleIndex] = { ...rule, operator: e.target.value as ArrayEntryConditionRule['operator'] };
+                                  setArrayEntryForm({
+                                    ...arrayEntryForm,
+                                    conditions: { ...arrayEntryForm.conditions!, rules: newRules }
+                                  });
+                                }}
+                                className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                              >
+                                <option value="equals">equals</option>
+                                <option value="notEquals">not equals</option>
+                                <option value="contains">contains</option>
+                                <option value="notContains">not contains</option>
+                                <option value="greaterThan">greater than</option>
+                                <option value="lessThan">less than</option>
+                                <option value="greaterThanOrEqual">greater or equal</option>
+                                <option value="lessThanOrEqual">less or equal</option>
+                                <option value="isEmpty">is empty</option>
+                                <option value="isNotEmpty">is not empty</option>
+                              </select>
+                              {rule.operator !== 'isEmpty' && rule.operator !== 'isNotEmpty' && (
+                                <input
+                                  type="text"
+                                  value={rule.value}
+                                  onChange={(e) => {
+                                    const newRules = [...(arrayEntryForm.conditions?.rules || [])];
+                                    newRules[ruleIndex] = { ...rule, value: e.target.value };
+                                    setArrayEntryForm({
+                                      ...arrayEntryForm,
+                                      conditions: { ...arrayEntryForm.conditions!, rules: newRules }
+                                    });
+                                  }}
+                                  placeholder="Value"
+                                  className="w-32 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                                />
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newRules = (arrayEntryForm.conditions?.rules || []).filter((_, i) => i !== ruleIndex);
+                                  setArrayEntryForm({
+                                    ...arrayEntryForm,
+                                    conditions: { ...arrayEntryForm.conditions!, rules: newRules }
+                                  });
+                                }}
+                                className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/30 rounded"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newRule: ArrayEntryConditionRule = {
+                              fieldPath: '',
+                              operator: 'equals',
+                              value: ''
+                            };
+                            setArrayEntryForm({
+                              ...arrayEntryForm,
+                              conditions: {
+                                ...arrayEntryForm.conditions!,
+                                rules: [...(arrayEntryForm.conditions?.rules || []), newRule]
+                              }
+                            });
+                          }}
+                          className="flex items-center space-x-1 text-sm text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300"
+                        >
+                          <Plus className="h-4 w-4" />
+                          <span>Add Condition</span>
+                        </button>
+
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          Use field mapping names like <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">details.dangerousGoods</code> or <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">shipper.clientID</code>
+                        </p>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 rounded-lg p-4">
+                <h4 className="font-semibold text-emerald-800 dark:text-emerald-300 mb-2">Example Usage</h4>
+                <p className="text-sm text-emerald-700 dark:text-emerald-400">
+                  For a traceNumbers array, you might create 3 entries:
+                </p>
+                <ul className="text-xs text-emerald-600 dark:text-emerald-400 mt-2 space-y-1 list-disc list-inside">
+                  <li>Entry 1: traceType="PRO" (hardcoded), traceNumber extracted from header</li>
+                  <li>Entry 2: traceType="BOL" (hardcoded), traceNumber extracted from shipper section</li>
+                  <li>Entry 3: traceType="PO" (hardcoded), traceNumber extracted from order details</li>
+                </ul>
+              </div>
+
+              <div className="flex space-x-3">
+                <button
+                  onClick={handleSaveArrayEntry}
+                  className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg transition-colors duration-200"
+                >
+                  {editingArrayEntry ? 'Update Entry' : 'Add Entry'}
+                </button>
+                <button
+                  onClick={() => setShowArrayEntryModal(false)}
+                  className="flex-1 px-4 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-semibold rounded-lg transition-colors duration-200"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
       {/* JSON Error Modal */}
       {showJsonErrorModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 pt-20">
@@ -956,6 +1715,31 @@ export default function ExtractionTypesSettings({
               <span>Copy Type</span>
             </button>
           )}
+          {localExtractionTypes.length > 0 && localExtractionTypes[selectedTypeIndex] && !localExtractionTypes[selectedTypeIndex].id.startsWith('temp-') && (
+            <button
+              onClick={handleExport}
+              disabled={isExporting}
+              className="px-4 py-2 bg-teal-600 hover:bg-teal-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
+            >
+              <Download className="h-4 w-4" />
+              <span>{isExporting ? 'Exporting...' : 'Export'}</span>
+            </button>
+          )}
+          <button
+            onClick={handleImportClick}
+            disabled={isImporting}
+            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
+          >
+            <Upload className="h-4 w-4" />
+            <span>{isImporting ? 'Importing...' : 'Import'}</span>
+          </button>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleImportFile}
+            accept=".json"
+            className="hidden"
+          />
           <button
             onClick={handleAddTypeClick}
             className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
@@ -981,6 +1765,26 @@ export default function ExtractionTypesSettings({
             <span className="font-semibold text-green-800">Success!</span>
           </div>
           <p className="text-green-700 text-sm mt-1">Extraction types saved successfully!</p>
+        </div>
+      )}
+
+      {importSuccess && (
+        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg p-4">
+          <div className="flex items-center space-x-2">
+            <CheckCircle className="h-4 w-4 text-green-500" />
+            <span className="font-semibold text-green-800 dark:text-green-300">Import Successful!</span>
+          </div>
+          <p className="text-green-700 dark:text-green-400 text-sm mt-1">{importSuccess}</p>
+        </div>
+      )}
+
+      {importError && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-4">
+          <div className="flex items-center space-x-2">
+            <XCircle className="h-4 w-4 text-red-500" />
+            <span className="font-semibold text-red-800 dark:text-red-300">Import Failed</span>
+          </div>
+          <p className="text-red-700 dark:text-red-400 text-sm mt-1">{importError}</p>
         </div>
       )}
 
@@ -1478,12 +2282,27 @@ export default function ExtractionTypesSettings({
 
             {selectedType.formatType !== 'CSV' && (
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  {selectedType.formatType === 'JSON' ? 'JSON Template' : 'XML Template'}
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {selectedType.formatType === 'JSON' ? 'JSON Template' : 'XML Template'}
+                  </label>
+                  {selectedType.formatType === 'JSON' && (
+                    <button
+                      type="button"
+                      onClick={handleCheckJson}
+                      className="px-3 py-1 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg transition-colors duration-200 flex items-center space-x-1"
+                    >
+                      <Code className="h-3.5 w-3.5" />
+                      <span>Check JSON</span>
+                    </button>
+                  )}
+                </div>
                 <textarea
                   value={selectedType.formatTemplate}
-                  onChange={(e) => updateExtractionType(selectedTypeIndex, 'formatTemplate', e.target.value)}
+                  onChange={(e) => {
+                    updateExtractionType(selectedTypeIndex, 'formatTemplate', e.target.value);
+                    setJsonValidationResult(null);
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 hover:border-purple-400 dark:hover:border-purple-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-vertical font-mono text-sm transition-colors duration-200"
                   rows={6}
                   placeholder={selectedType.formatType === 'JSON' ?
@@ -1491,6 +2310,16 @@ export default function ExtractionTypesSettings({
                     '<Trace>\n  <TraceType type="">\n    <Number>{{PARSE_IT_ID_PLACEHOLDER}}</Number>\n  </TraceType>\n</Trace>'
                   }
                 />
+                {selectedType.formatType === 'JSON' && jsonValidationResult && (
+                  <div className={`mt-2 flex items-center space-x-2 text-sm ${jsonValidationResult.valid ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                    {jsonValidationResult.valid ? (
+                      <CheckCircle className="h-4 w-4 flex-shrink-0" />
+                    ) : (
+                      <XCircle className="h-4 w-4 flex-shrink-0" />
+                    )}
+                    <span>{jsonValidationResult.message}</span>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1591,6 +2420,103 @@ export default function ExtractionTypesSettings({
               </div>
             )}
 
+            {/* Array Entry Builder Section - Only for JSON */}
+            {selectedType.formatType === 'JSON' && (
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <div className="flex items-center space-x-2">
+                      <Layers className="h-4 w-4 text-emerald-600" />
+                      <span>Array Entry Builder</span>
+                    </div>
+                  </label>
+                  <button
+                    onClick={handleAddArrayEntryClick}
+                    className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors duration-200 flex items-center space-x-1"
+                  >
+                    <Plus className="h-3 w-3" />
+                    <span>Add Entry</span>
+                  </button>
+                </div>
+
+                {selectedType.arrayEntryConfigs && selectedType.arrayEntryConfigs.length > 0 && (
+                  <div className="space-y-2">
+                    {selectedType.arrayEntryConfigs.map((entry) => (
+                      <div
+                        key={entry.id}
+                        className={`p-3 border rounded-lg ${entry.isEnabled ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-700' : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-600 opacity-60'}`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center space-x-2 mb-1">
+                              <span className="text-sm font-semibold text-emerald-900 dark:text-emerald-100">
+                                {entry.targetArrayField}{entry.isRepeating ? '[*]' : `[${entry.entryOrder}]`}
+                              </span>
+                              {entry.isRepeating && (
+                                <span className="text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 rounded flex items-center space-x-1">
+                                  <RefreshCw className="h-3 w-3" />
+                                  <span>Repeating</span>
+                                </span>
+                              )}
+                              {!entry.isEnabled && (
+                                <span className="text-xs px-2 py-0.5 bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 rounded">
+                                  Disabled
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {entry.fields.map((field, idx) => (
+                                <span
+                                  key={idx}
+                                  className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                                    field.fieldType === 'hardcoded'
+                                      ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
+                                      : 'bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300'
+                                  }`}
+                                >
+                                  {field.fieldName}: {field.fieldType === 'hardcoded' ? `"${field.hardcodedValue}"` : `"${field.extractionInstruction?.substring(0, 40)}${(field.extractionInstruction?.length || 0) > 40 ? '...' : ''}"`}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() => handleEditArrayEntry(entry)}
+                              className="p-1 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-100 dark:hover:bg-emerald-800 rounded transition-colors duration-200"
+                              title="Edit entry"
+                            >
+                              <FileText className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleCopyArrayEntry(entry)}
+                              className="p-1 text-blue-600 hover:text-blue-700 hover:bg-blue-100 dark:hover:bg-blue-800 rounded transition-colors duration-200"
+                              title="Copy entry"
+                            >
+                              <Copy className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteArrayEntry(entry.id!)}
+                              className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900 rounded transition-colors duration-200"
+                              title="Delete entry"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="mt-2 p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 rounded-lg">
+                  <p className="text-xs text-emerald-700 dark:text-emerald-400">
+                    <strong>Array Entry Builder</strong> lets you define multiple array entries with mixed hardcoded and extracted values.
+                    Each entry can have fields with fixed values or AI extraction instructions from different PDF locations.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {(selectedType.formatType === 'JSON' || selectedType.formatType === 'CSV') && (
               <div>
                 <div className="flex items-center justify-between mb-3">
@@ -1646,7 +2572,7 @@ export default function ExtractionTypesSettings({
                         ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-300 dark:border-indigo-700'
                         : 'bg-orange-50 dark:bg-orange-900/20 border-orange-300 dark:border-orange-700'
                     }`}>
-                      <div className="grid grid-cols-1 md:grid-cols-[minmax(120px,1fr)_120px_minmax(200px,2fr)_150px_80px_60px_60px_40px] gap-3 items-end">
+                      <div className="grid grid-cols-1 md:grid-cols-[minmax(120px,1fr)_120px_minmax(200px,2fr)_150px_80px_70px_60px_60px_40px] gap-3 items-end">
                         <div>
                           <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
                             Field Name
@@ -1672,7 +2598,7 @@ export default function ExtractionTypesSettings({
                             label="Type"
                             value={mapping.type}
                             onValueChange={(value) => {
-                              updateFieldMapping(selectedTypeIndex, mappingIndex, 'type', value as 'ai' | 'mapped' | 'hardcoded' | 'function');
+                              updateFieldMapping(selectedTypeIndex, mappingIndex, 'type', value as 'ai' | 'mapped' | 'hardcoded' | 'function' | 'order_entry');
                               if (value !== 'function') {
                                 updateFieldMapping(selectedTypeIndex, mappingIndex, 'functionId', undefined);
                               }
@@ -1681,14 +2607,15 @@ export default function ExtractionTypesSettings({
                               { value: 'ai', label: 'AI' },
                               { value: 'mapped', label: 'Mapped' },
                               { value: 'hardcoded', label: 'Hardcoded' },
-                              { value: 'function', label: 'Function' }
+                              { value: 'function', label: 'Function' },
+                              { value: 'order_entry', label: 'Order Entry' }
                             ]}
                             searchable={false}
                           />
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                            {mapping.type === 'hardcoded' ? 'Value' : mapping.type === 'mapped' ? 'PDF Coordinates' : mapping.type === 'function' ? 'Select Function' : 'Description'}
+                            {mapping.type === 'hardcoded' ? 'Value' : mapping.type === 'mapped' ? 'PDF Coordinates' : mapping.type === 'function' ? 'Select Function' : mapping.type === 'order_entry' ? 'Form Field Name' : 'Description'}
                           </label>
                           {mapping.type === 'function' ? (
                             <select
@@ -1718,6 +2645,7 @@ export default function ExtractionTypesSettings({
                               placeholder={
                                 mapping.type === 'hardcoded' ? 'Fixed value' :
                                 mapping.type === 'mapped' ? 'e.g., (100, 200, 150, 30)' :
+                                mapping.type === 'order_entry' ? 'e.g., shipper_name' :
                                 'What to extract'
                               }
                             />
@@ -1727,14 +2655,15 @@ export default function ExtractionTypesSettings({
                           <Select
                             label="Data Type"
                             value={mapping.dataType || 'string'}
-                            onValueChange={(value) => updateFieldMapping(selectedTypeIndex, mappingIndex, 'dataType', value as 'string' | 'number' | 'integer' | 'boolean')}
+                            onValueChange={(value) => updateFieldMapping(selectedTypeIndex, mappingIndex, 'dataType', value as 'string' | 'number' | 'integer' | 'boolean' | 'zip_postal')}
                             options={[
                               { value: 'string', label: 'String' },
                               { value: 'number', label: 'Number' },
                               { value: 'integer', label: 'Integer' },
                               { value: 'datetime', label: 'DateTime' },
                               { value: 'phone', label: 'Phone Number' },
-                              { value: 'boolean', label: 'Boolean' }
+                              { value: 'boolean', label: 'Boolean' },
+                              { value: 'zip_postal', label: 'Zip/Postal Code' }
                             ]}
                             searchable={false}
                           />
@@ -1755,6 +2684,26 @@ export default function ExtractionTypesSettings({
                           ) : (
                             <div className="px-2 py-1 text-xs text-gray-400 dark:text-gray-500 italic">
                               {(mapping.dataType === 'phone') ? 'Auto' : (mapping.dataType === 'boolean') ? 'True/False' : 'N/A'}
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <label className="block text-center text-xs font-medium text-gray-600 dark:text-gray-400 mb-1" title="Date Only">
+                            Date Only
+                          </label>
+                          {mapping.dataType === 'datetime' ? (
+                            <div className="flex items-center justify-center h-[34px]">
+                              <input
+                                type="checkbox"
+                                checked={mapping.dateOnly || false}
+                                onChange={(e) => updateFieldMapping(selectedTypeIndex, mappingIndex, 'dateOnly', e.target.checked)}
+                                className="w-4 h-4 text-blue-600 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 focus:ring-2"
+                                title="Show date only, time will be set to 00:00:00"
+                              />
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-center h-[34px] text-xs text-gray-400 dark:text-gray-500 italic">
+                              N/A
                             </div>
                           )}
                         </div>
