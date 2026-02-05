@@ -55,7 +55,9 @@ export default function App() {
     getUserExtractionTypes,
     updateUserExtractionTypes,
     getUserTransformationTypes,
-    updateUserTransformationTypes
+    updateUserTransformationTypes,
+    getUserExecuteCategories,
+    updateUserExecuteCategories
   } = useAuth();
   const [currentPage, setCurrentPage] = useState<'extract' | 'vendor-setup' | 'checkin-setup' | 'client-setup' | 'transform' | 'types' | 'settings' | 'logs' | 'order-entry' | 'order-submissions' | 'order-submission-detail' | 'rate-quote' | 'client-users' | 'address-book'>('extract');
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
@@ -525,6 +527,8 @@ export default function App() {
           updateUserExtractionTypes={updateUserExtractionTypes}
           getUserTransformationTypes={getUserTransformationTypes}
           updateUserTransformationTypes={updateUserTransformationTypes}
+          getUserExecuteCategories={getUserExecuteCategories}
+          updateUserExecuteCategories={updateUserExecuteCategories}
           onUpdateExtractionTypes={handleUpdateExtractionTypes}
           onDeleteExtractionType={handleDeleteExtractionType}
           onUpdateTransformationTypes={handleUpdateTransformationTypes}
