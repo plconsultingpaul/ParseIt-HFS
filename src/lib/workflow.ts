@@ -14,6 +14,7 @@ interface WorkflowExecutionRequest {
   extractionTypeFilename?: string;
   sessionId?: string;
   groupOrder?: number;
+  submitterEmail?: string;
 }
 
 export async function executeWorkflow(request: WorkflowExecutionRequest): Promise<any> {
@@ -63,7 +64,16 @@ export async function executeWorkflow(request: WorkflowExecutionRequest): Promis
   console.log('Using workflow processor:', processorEndpoint);
   console.log('Making request to workflow processor...');
 
-  const response = await fetch(`${supabaseUrl}/functions/v1/${processorEndpoint}`, {
+  const fullUrl = `${supabaseUrl}/functions/v1/${processorEndpoint}`;
+  console.log('=== FETCH URL DEBUG ===');
+  console.log('VITE_SUPABASE_URL value:', supabaseUrl);
+  console.log('VITE_SUPABASE_URL type:', typeof supabaseUrl);
+  console.log('VITE_SUPABASE_URL length:', supabaseUrl?.length);
+  console.log('processorEndpoint:', processorEndpoint);
+  console.log('Full URL being fetched:', fullUrl);
+  console.log('=== END URL DEBUG ===');
+
+  const response = await fetch(fullUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
