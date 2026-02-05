@@ -16,6 +16,7 @@ export interface WorkflowStepLog {
   errorMessage: string | null;
   inputData: any;
   outputData: any;
+  userResponse: string | null;
   createdAt: string;
 }
 
@@ -367,6 +368,7 @@ export async function fetchWorkflowStepLogs(): Promise<WorkflowStepLog[]> {
       errorMessage: log.error_message,
       inputData: log.input_data,
       outputData: log.output_data,
+      userResponse: log.user_response,
       createdAt: log.created_at
     }));
   } catch (error) {
@@ -400,6 +402,7 @@ export async function fetchWorkflowStepLogsByExecutionId(executionLogId: string)
       errorMessage: log.error_message,
       inputData: log.input_data,
       outputData: log.output_data,
+      userResponse: log.user_response,
       createdAt: log.created_at
     }));
   } catch (error) {
