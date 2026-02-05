@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, FileText, LogOut, User, HelpCircle, Menu, X, BarChart3, RefreshCw, Database, Building, Package, ClipboardCheck, Building2, DollarSign, Users as UsersIcon, BookUser, ClipboardList, Brain, MapPin, Receipt } from 'lucide-react';
+import { Settings, FileText, LogOut, User, HelpCircle, Menu, X, BarChart3, RefreshCw, Database, Building, Package, ClipboardCheck, Building2, DollarSign, Users as UsersIcon, BookUser, ClipboardList, Brain, MapPin, Receipt, Play } from 'lucide-react';
 import type { User as UserType } from '../types';
 import type { CompanyBranding } from '../types';
 import DarkModeToggle from './DarkModeToggle';
@@ -8,8 +8,8 @@ import { geminiConfigService } from '../services/geminiConfigService';
 
 interface LayoutProps {
   children: React.ReactNode;
-  currentPage: 'extract' | 'vendor-setup' | 'checkin-setup' | 'client-setup' | 'transform' | 'types' | 'settings' | 'logs' | 'order-entry' | 'order-submissions' | 'order-submission-detail' | 'rate-quote' | 'client-users' | 'address-book' | 'track-trace' | 'invoices';
-  onNavigate: (page: 'extract' | 'vendor-setup' | 'checkin-setup' | 'client-setup' | 'transform' | 'types' | 'settings' | 'logs' | 'order-entry' | 'order-submissions' | 'rate-quote' | 'client-users' | 'address-book' | 'track-trace' | 'invoices') => void;
+  currentPage: 'extract' | 'vendor-setup' | 'checkin-setup' | 'client-setup' | 'transform' | 'execute' | 'types' | 'settings' | 'logs' | 'order-entry' | 'order-submissions' | 'order-submission-detail' | 'rate-quote' | 'client-users' | 'address-book' | 'track-trace' | 'invoices';
+  onNavigate: (page: 'extract' | 'vendor-setup' | 'checkin-setup' | 'client-setup' | 'transform' | 'execute' | 'types' | 'settings' | 'logs' | 'order-entry' | 'order-submissions' | 'rate-quote' | 'client-users' | 'address-book' | 'track-trace' | 'invoices') => void;
   user: UserType;
   companyBranding?: CompanyBranding;
   onLogout: () => void;
@@ -138,6 +138,14 @@ export default function Layout({ children, currentPage, onNavigate, user, compan
       label: 'Transform',
       icon: RefreshCw,
       onClick: () => onNavigate('transform'),
+      requiresPermission: false,
+      roles: ['admin', 'user']
+    },
+    {
+      id: 'execute',
+      label: 'Execute',
+      icon: Play,
+      onClick: () => onNavigate('execute'),
       requiresPermission: false,
       roles: ['admin', 'user']
     },
@@ -440,6 +448,7 @@ export default function Layout({ children, currentPage, onNavigate, user, compan
                     {currentPage === 'checkin-setup' && 'Check-In Setup'}
                     {currentPage === 'client-setup' && 'Client Setup'}
                     {currentPage === 'transform' && 'Transform & Rename'}
+                    {currentPage === 'execute' && 'Execute'}
                     {currentPage === 'types' && 'Type Setup'}
                     {currentPage === 'settings' && 'Settings'}
                     {currentPage === 'logs' && 'Activity Logs'}
@@ -456,6 +465,7 @@ export default function Layout({ children, currentPage, onNavigate, user, compan
                     {currentPage === 'checkin-setup' && 'Configure driver check-in system and manage driver information'}
                     {currentPage === 'client-setup' && 'Manage client companies and their users'}
                     {currentPage === 'transform' && 'Extract data from PDFs to intelligently rename files'}
+                    {currentPage === 'execute' && 'Run configured actions with custom parameters'}
                     {currentPage === 'types' && 'Configure extraction types, transformation types, and workflows'}
                     {currentPage === 'settings' && 'Configure Parse-It settings and preferences'}
                     {currentPage === 'logs' && 'Monitor system activity and processing logs'}
