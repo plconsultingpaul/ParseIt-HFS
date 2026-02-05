@@ -26,6 +26,26 @@ interface Submission {
   workflow_status: string | null;
   pdf_id: string | null;
   error_message: string | null;
+  api_response: any;
+}
+
+function getBillNumber(apiResponse: any): string | null {
+  if (!apiResponse) return null;
+
+  try {
+    if (apiResponse.billNumber) return apiResponse.billNumber;
+    if (apiResponse.orders && Array.isArray(apiResponse.orders) && apiResponse.orders.length > 0) {
+      if (apiResponse.orders[0].billNumber) return apiResponse.orders[0].billNumber;
+    }
+    if (apiResponse.data?.orders && Array.isArray(apiResponse.data.orders) && apiResponse.data.orders.length > 0) {
+      if (apiResponse.data.orders[0].billNumber) return apiResponse.data.orders[0].billNumber;
+    }
+    if (apiResponse.result?.billNumber) return apiResponse.result.billNumber;
+  } catch {
+    return null;
+  }
+
+  return null;
 }
 
 interface Statistics {
@@ -91,7 +111,7 @@ export default function OrderEntrySubmissionsPage({ currentUser }: OrderEntrySub
   }, [statusFilter, dateRange, searchQuery, currentPage, itemsPerPage, initialLoadDone]);
 
   useEffect(() => {
-    if (!currentUser.is_admin || !initialLoadDone) {
+    if (!currentUser.isAdmin || !initialLoadDone) {
       return;
     }
     loadSubmissions();
@@ -161,6 +181,7 @@ export default function OrderEntrySubmissionsPage({ currentUser }: OrderEntrySub
           user_id,
           submission_status,
           api_status_code,
+          api_response,
           pdf_id,
           error_message,
           workflow_execution_log_id,
@@ -222,7 +243,8 @@ export default function OrderEntrySubmissionsPage({ currentUser }: OrderEntrySub
         api_status_code: item.api_status_code,
         workflow_status: item.workflow_execution_logs?.status || null,
         pdf_id: item.pdf_id,
-        error_message: item.error_message
+        error_message: item.error_message,
+        api_response: item.api_response
       }));
 
       setSubmissions(formattedSubmissions);
@@ -262,7 +284,7 @@ export default function OrderEntrySubmissionsPage({ currentUser }: OrderEntrySub
 
   const totalPages = Math.ceil(totalCount / itemsPerPage);
 
-  if (!currentUser.is_admin) {
+  if (!currentUser.isAdmin) {
     return null;
   }
 
@@ -419,6 +441,9 @@ export default function OrderEntrySubmissionsPage({ currentUser }: OrderEntrySub
                   User
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Bill #
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Submission ID
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -438,13 +463,13 @@ export default function OrderEntrySubmissionsPage({ currentUser }: OrderEntrySub
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12">
+                  <td colSpan={8} className="px-6 py-12">
                     <TableSkeleton rows={5} columns={6} />
                   </td>
                 </tr>
               ) : submissions.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12">
+                  <td colSpan={8} className="px-6 py-12">
                     {searchQuery || statusFilter !== 'all' || dateRange !== 'all' ? (
                       <NoSearchResultsEmptyState onClear={handleClearFilters} />
                     ) : (
@@ -472,6 +497,15 @@ export default function OrderEntrySubmissionsPage({ currentUser }: OrderEntrySub
                           </p>
                         </div>
                       </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {getBillNumber(submission.api_response) ? (
+                        <span className="text-sm font-mono font-semibold text-blue-600 dark:text-blue-400">
+                          {getBillNumber(submission.api_response)}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-gray-400 dark:text-gray-500">-</span>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center space-x-2">
