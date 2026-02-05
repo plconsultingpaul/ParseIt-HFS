@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { Upload, FileText, X, Loader, AlertCircle, CheckCircle, RefreshCw } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Upload, FileText, X, Loader, AlertCircle, CheckCircle, RefreshCw, Sparkles } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type { OrderEntryField } from '../../types';
 
@@ -12,6 +12,8 @@ interface PdfUploadSectionProps {
   onUploadError?: (error: string) => void;
   onExtractionStart?: () => void;
   onExtractionError?: (error: string) => void;
+  compact?: boolean;
+  resetTrigger?: number;
 }
 
 interface UploadedPdf {
@@ -31,7 +33,9 @@ export default function PdfUploadSection({
   onUploadStart,
   onUploadError,
   onExtractionStart,
-  onExtractionError
+  onExtractionError,
+  compact = false,
+  resetTrigger
 }: PdfUploadSectionProps) {
   const [uploadedPdf, setUploadedPdf] = useState<UploadedPdf | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -40,6 +44,19 @@ export default function PdfUploadSection({
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (resetTrigger !== undefined && resetTrigger > 0) {
+      setUploadedPdf(null);
+      setUploading(false);
+      setUploadProgress(0);
+      setExtracting(false);
+      setError(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  }, [resetTrigger]);
 
   const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -101,30 +118,67 @@ export default function PdfUploadSection({
     onExtractionStart?.();
 
     try {
+      console.log('[PDF Extraction Debug] Starting extraction...');
+      console.log('[PDF Extraction Debug] pdfId:', pdfId);
+      console.log('[PDF Extraction Debug] storageUrl:', storageUrl);
+      console.log('[PDF Extraction Debug] fields count:', fields?.length);
+      console.log('[PDF Extraction Debug] fields type:', typeof fields);
+      console.log('[PDF Extraction Debug] fields is array:', Array.isArray(fields));
+
+      if (fields && fields.length > 0) {
+        console.log('[PDF Extraction Debug] First field raw:', fields[0]);
+        console.log('[PDF Extraction Debug] First field keys:', Object.keys(fields[0]));
+      }
+
+      const cleanFields = fields.map(f => ({
+        id: String(f.id || ''),
+        fieldName: String(f.fieldName || ''),
+        fieldLabel: String(f.fieldLabel || ''),
+        fieldType: String(f.fieldType || 'text'),
+        aiExtractionInstructions: f.aiExtractionInstructions ? String(f.aiExtractionInstructions) : undefined
+      }));
+
+      console.log('[PDF Extraction Debug] cleanFields count:', cleanFields.length);
+      if (cleanFields.length > 0) {
+        console.log('[PDF Extraction Debug] First cleanField:', cleanFields[0]);
+      }
+
+      const requestBody = {
+        pdfId,
+        storageUrl,
+        fields: cleanFields
+      };
+
+      console.log('[PDF Extraction Debug] requestBody keys:', Object.keys(requestBody));
+
+      let serializedBody: string;
+      try {
+        serializedBody = JSON.stringify(requestBody);
+        console.log('[PDF Extraction Debug] JSON.stringify succeeded, length:', serializedBody.length);
+        console.log('[PDF Extraction Debug] Serialized body preview:', serializedBody.substring(0, 500));
+      } catch (jsonError: any) {
+        console.error('[PDF Extraction Debug] JSON.stringify FAILED:', jsonError.message);
+        throw new Error(`Failed to serialize request body: ${jsonError.message}`);
+      }
+
+      console.log('[PDF Extraction Debug] About to call supabase.functions.invoke...');
+
       const { data, error } = await supabase.functions.invoke('extract-order-entry-data', {
-        body: {
-          pdfId,
-          storageUrl,
-          fields: fields.map(f => ({
-            id: f.id,
-            fieldName: f.fieldName,
-            fieldLabel: f.fieldLabel,
-            fieldType: f.fieldType,
-            aiExtractionInstructions: f.aiExtractionInstructions
-          }))
-        }
+        body: requestBody
       });
+
+      console.log('[PDF Extraction Debug] supabase.functions.invoke completed');
 
       if (error) {
         throw new Error(`Extraction failed: ${error.message}`);
       }
 
-      if (data.error) {
+      if (data?.error) {
         throw new Error(data.error);
       }
 
-      const extractedData = data.extractedData || {};
-      const confidenceScores = data.confidenceScores || {};
+      const extractedData = data?.extractedData || {};
+      const confidenceScores = data?.confidenceScores || {};
 
       await supabase
         .from('order_entry_pdfs')
@@ -140,7 +194,10 @@ export default function PdfUploadSection({
       onExtractionComplete(extractedData, confidenceScores);
 
     } catch (err: any) {
-      console.error('Extraction error:', err);
+      console.error('[PDF Extraction Debug] Extraction error caught:', err);
+      console.error('[PDF Extraction Debug] Error name:', err?.name);
+      console.error('[PDF Extraction Debug] Error message:', err?.message);
+      console.error('[PDF Extraction Debug] Error stack:', err?.stack);
 
       await supabase
         .from('order_entry_pdfs')
@@ -268,6 +325,43 @@ export default function PdfUploadSection({
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  if (compact) {
+    return (
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading || extracting}
+          className="px-4 py-2.5 bg-orange-500 text-white rounded-full hover:bg-orange-600 transition-colors font-medium flex items-center space-x-2 disabled:opacity-70"
+        >
+          {uploading || extracting ? (
+            <>
+              <Loader className="h-4 w-4 animate-spin" />
+              <span>{extracting ? 'Extracting...' : 'Uploading...'}</span>
+            </>
+          ) : uploadedPdf?.extractionStatus === 'completed' ? (
+            <>
+              <CheckCircle className="h-4 w-4" />
+              <span>PDF Loaded</span>
+            </>
+          ) : (
+            <>
+              <Sparkles className="h-4 w-4" />
+              <span>Upload PDF to Autofill</span>
+            </>
+          )}
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf,application/pdf"
+          onChange={handleFileInputChange}
+          className="hidden"
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="mb-6">
       <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">
@@ -285,8 +379,8 @@ export default function PdfUploadSection({
           onClick={() => fileInputRef.current?.click()}
           className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
             dragOver
-              ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
-              : 'border-gray-300 dark:border-gray-600 hover:border-purple-400 dark:hover:border-purple-500 bg-gray-50 dark:bg-gray-800/50'
+              ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20'
+              : 'border-gray-300 dark:border-gray-600 hover:border-orange-400 dark:hover:border-orange-500 bg-gray-50 dark:bg-gray-800/50'
           }`}
         >
           <Upload className="h-12 w-12 mx-auto mb-4 text-gray-400" />
@@ -305,10 +399,10 @@ export default function PdfUploadSection({
           />
         </div>
       ) : (
-        <div className="bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl p-4">
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
           <div className="flex items-start justify-between mb-3">
             <div className="flex items-start space-x-3 flex-1 min-w-0">
-              <FileText className="h-6 w-6 text-purple-600 dark:text-purple-400 flex-shrink-0 mt-0.5" />
+              <FileText className="h-6 w-6 text-orange-600 dark:text-orange-400 flex-shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
                   {uploadedPdf.filename}
@@ -335,7 +429,7 @@ export default function PdfUploadSection({
           )}
 
           {extracting && (
-            <div className="flex items-center text-sm text-purple-600 dark:text-purple-400">
+            <div className="flex items-center text-sm text-orange-600 dark:text-orange-400">
               <Loader className="h-4 w-4 animate-spin mr-2" />
               <span>Extracting data from PDF...</span>
             </div>
@@ -350,7 +444,7 @@ export default function PdfUploadSection({
               <button
                 onClick={handleReExtract}
                 disabled={extracting}
-                className="text-sm text-purple-600 dark:text-purple-400 hover:underline flex items-center disabled:opacity-50"
+                className="text-sm text-orange-600 dark:text-orange-400 hover:underline flex items-center disabled:opacity-50"
               >
                 <RefreshCw className="h-3 w-3 mr-1" />
                 Re-extract from PDF
@@ -367,7 +461,7 @@ export default function PdfUploadSection({
               <button
                 onClick={handleReExtract}
                 disabled={extracting}
-                className="text-sm text-purple-600 dark:text-purple-400 hover:underline flex items-center disabled:opacity-50"
+                className="text-sm text-orange-600 dark:text-orange-400 hover:underline flex items-center disabled:opacity-50"
               >
                 <RefreshCw className="h-3 w-3 mr-1" />
                 Try again
@@ -381,11 +475,11 @@ export default function PdfUploadSection({
         <div className="mt-3">
           <div className="flex items-center justify-between text-sm mb-1">
             <span className="text-gray-600 dark:text-gray-400">Uploading...</span>
-            <span className="text-purple-600 dark:text-purple-400">{uploadProgress}%</span>
+            <span className="text-orange-600 dark:text-orange-400">{uploadProgress}%</span>
           </div>
           <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
             <div
-              className="bg-purple-600 dark:bg-purple-500 h-2 rounded-full transition-all duration-300"
+              className="bg-orange-500 dark:bg-orange-400 h-2 rounded-full transition-all duration-300"
               style={{ width: `${uploadProgress}%` }}
             />
           </div>
