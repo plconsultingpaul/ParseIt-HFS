@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { ClipboardList, AlertCircle, Loader, CheckCircle2, Building2, Sparkles } from 'lucide-react';
+import { ClipboardList, AlertCircle, Loader, CheckCircle2, Package, RefreshCw, X } from 'lucide-react';
 import type { User, OrderEntryField } from '../types';
 import { useOrderEntryForm } from '../hooks/useOrderEntryForm';
-import { TextField, NumberField, DateField, DateTimeField, PhoneField, ZipField, PostalCodeField, ProvinceField, StateField, DropdownField, FileField, BooleanField } from './form-fields';
+import { TextField, NumberField, DateField, DateTimeField, PhoneField, ZipField, PostalCodeField, ZipPostalField, ProvinceField, StateField, DropdownField, FileField, BooleanField } from './form-fields';
+import { validateZipPostal } from './form-fields/ZipPostalField';
 import ArrayFieldSection from './form-fields/ArrayFieldSection';
 import GroupedArrayTable from './form-fields/GroupedArrayTable';
 import PdfUploadSection from './order-entry/PdfUploadSection';
@@ -13,13 +14,14 @@ import FieldTypeIcon from './common/FieldTypeIcon';
 import { useToast } from '../hooks/useToast';
 import ToastContainer from './common/ToastContainer';
 import { FormSkeleton } from './common/Skeleton';
+import Modal from './common/Modal';
 
 interface OrderEntryPageProps {
   currentUser: User;
 }
 
 export default function OrderEntryPage({ currentUser }: OrderEntryPageProps) {
-  const { loading, config, fieldGroups, fields, layouts, error: configError, templateName } = useOrderEntryForm({
+  const { loading, config, fieldGroups, fields, layouts, error: configError, templateName, extractionTypeId } = useOrderEntryForm({
     clientId: currentUser.clientId
   });
   const toast = useToast();
@@ -36,6 +38,8 @@ export default function OrderEntryPage({ currentUser }: OrderEntryPageProps) {
   const [submissionStep, setSubmissionStep] = useState(0);
   const [submissionResult, setSubmissionResult] = useState<any>(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showClearConfirmModal, setShowClearConfirmModal] = useState(false);
+  const [pdfResetTrigger, setPdfResetTrigger] = useState(0);
 
   useEffect(() => {
     if (fields.length > 0 && fieldGroups.length > 0) {
@@ -87,17 +91,57 @@ export default function OrderEntryPage({ currentUser }: OrderEntryPageProps) {
   }, [fields, fieldGroups]);
 
   const handleExtractionComplete = (extractedData: Record<string, any>, scores: Record<string, number>) => {
+    console.log('[handleExtractionComplete] Called with extractedData:', Object.keys(extractedData));
+    console.log('[handleExtractionComplete] Fields with copyFromField:',
+      fields.filter(f => f.copyFromField).map(f => ({ name: f.fieldName, copyFrom: f.copyFromField })));
+
     const newAiFields = new Set<string>();
     const newFormData = { ...formData };
 
     Object.entries(extractedData).forEach(([fieldName, value]) => {
       const confidence = scores[fieldName] || 0;
+      console.log(`[handleExtractionComplete] Field "${fieldName}": value="${value}", confidence=${confidence}`);
 
       if (confidence >= 0.5) {
-        newFormData[fieldName] = value;
+        const field = fields.find(f => f.fieldName === fieldName);
+        let processedValue = value;
+        if (field?.fieldType === 'zip_postal' && typeof value === 'string') {
+          const cleaned = value.replace(/\s+/g, '').toUpperCase();
+          if (/^\d{5}-\d{4}$/.test(cleaned)) {
+            processedValue = cleaned.slice(0, 5);
+            console.log(`[handleExtractionComplete] Truncated ZIP+4 "${value}" to "${processedValue}"`);
+          }
+        }
+        newFormData[fieldName] = processedValue;
         newAiFields.add(fieldName);
       }
     });
+
+    console.log('[handleExtractionComplete] After extraction, newFormData keys with values:',
+      Object.entries(newFormData).filter(([_, v]) => v).map(([k, v]) => `${k}=${v}`));
+
+    Object.entries(newFormData).forEach(([fieldName, value]) => {
+      if (!value) return;
+      const dependentFields = fields.filter(f => f.copyFromField === fieldName);
+      if (dependentFields.length > 0) {
+        console.log(`[handleExtractionComplete] Field "${fieldName}" has ${dependentFields.length} dependent fields:`,
+          dependentFields.map(f => f.fieldName));
+      }
+      dependentFields.forEach(depField => {
+        const depCurrentValue = newFormData[depField.fieldName];
+        console.log(`[handleExtractionComplete] Dependent field "${depField.fieldName}" current value: "${depCurrentValue}"`);
+        if (!depCurrentValue || depCurrentValue === '') {
+          console.log(`[handleExtractionComplete] COPYING "${value}" to "${depField.fieldName}"`);
+          newFormData[depField.fieldName] = value;
+          newAiFields.add(depField.fieldName);
+        } else {
+          console.log(`[handleExtractionComplete] NOT copying - field already has value`);
+        }
+      });
+    });
+
+    console.log('[handleExtractionComplete] Final newFormData:', newFormData);
+    console.log('[handleExtractionComplete] Final aiFields:', [...newAiFields]);
 
     setFormData(newFormData);
     setAiExtractedFields(newAiFields);
@@ -106,9 +150,30 @@ export default function OrderEntryPage({ currentUser }: OrderEntryPageProps) {
   };
 
   const handleFieldChange = (fieldName: string, value: any) => {
+    console.log(`[OrderEntryPage] handleFieldChange called for "${fieldName}"`, {
+      newValue: value,
+      previousValue: formData[fieldName]
+    });
+
+    const dependentFields = fields.filter(f => f.copyFromField === fieldName);
+    const updates: Record<string, any> = { [fieldName]: value };
+
+    if (dependentFields.length > 0) {
+      console.log(`[OrderEntryPage] Found ${dependentFields.length} dependent fields for "${fieldName}":`,
+        dependentFields.map(f => f.fieldName));
+    }
+
+    dependentFields.forEach(depField => {
+      if (!formData[depField.fieldName] || formData[depField.fieldName] === '') {
+        console.log(`[OrderEntryPage] Copying value to dependent field "${depField.fieldName}"`);
+        updates[depField.fieldName] = value;
+      }
+    });
+
+    console.log(`[OrderEntryPage] Setting formData with updates:`, Object.keys(updates));
     setFormData(prev => ({
       ...prev,
-      [fieldName]: value
+      ...updates
     }));
 
     if (aiExtractedFields.has(fieldName)) {
@@ -137,6 +202,7 @@ export default function OrderEntryPage({ currentUser }: OrderEntryPageProps) {
   };
 
   const handleFieldBlur = (fieldName: string) => {
+    console.log(`[OrderEntryPage] handleFieldBlur called for "${fieldName}"`);
     setTouched(prev => ({ ...prev, [fieldName]: true }));
 
     const field = fields.find(f => f.fieldName === fieldName);
@@ -176,6 +242,25 @@ export default function OrderEntryPage({ currentUser }: OrderEntryPageProps) {
       }
     }
 
+    if (field.fieldType === 'zip_postal' && value) {
+      const validation = validateZipPostal(value);
+      if (!validation.isValid) {
+        return `${field.fieldLabel} must be a valid US Zip (12345) or Canadian Postal Code (A1A 1A1)`;
+      }
+    }
+
+    if (field.fieldType === 'zip' && value) {
+      if (!/^\d{5}$/.test(value)) {
+        return `${field.fieldLabel} must be a valid 5-digit US Zip Code`;
+      }
+    }
+
+    if (field.fieldType === 'postal_code' && value) {
+      if (!/^[A-Za-z]\d[A-Za-z] \d[A-Za-z]\d$/.test(value)) {
+        return `${field.fieldLabel} must be a valid Canadian Postal Code (A1A 1A1)`;
+      }
+    }
+
     if (field.validationRegex && value) {
       try {
         const regex = new RegExp(field.validationRegex);
@@ -204,6 +289,9 @@ export default function OrderEntryPage({ currentUser }: OrderEntryPageProps) {
     const newTouched: Record<string, boolean> = {};
 
     fields.forEach(field => {
+      const group = fieldGroups.find(g => g.id === field.fieldGroupId);
+      if (group?.isArrayGroup) return;
+
       newTouched[field.fieldName] = true;
       const value = formData[field.fieldName];
       const error = validateField(field, value);
@@ -222,18 +310,28 @@ export default function OrderEntryPage({ currentUser }: OrderEntryPageProps) {
     setError(null);
     setSubmitSuccess(false);
 
+    console.log('[OrderEntryPage] ========== SUBMIT BUTTON CLICKED ==========');
+    console.log('[OrderEntryPage] Form data:', formData);
+    console.log('[OrderEntryPage] User ID:', currentUser.id);
+    console.log('[OrderEntryPage] PDF ID:', uploadedPdfId);
+
     if (!validateForm()) {
       const errorMsg = 'Please fix the errors in the form before submitting';
+      console.log('[OrderEntryPage] Form validation failed');
       setError(errorMsg);
       toast.error(errorMsg);
       return;
     }
 
+    console.log('[OrderEntryPage] Form validation passed');
+
     try {
       setSubmitting(true);
       setSubmissionStep(1);
 
+      console.log('[OrderEntryPage] Loading submission config...');
       const submissionConfig = await loadSubmissionConfig();
+      console.log('[OrderEntryPage] Submission config loaded:', submissionConfig);
 
       if (!submissionConfig) {
         throw new Error('Order submission is not configured. Please contact support.');
@@ -245,13 +343,19 @@ export default function OrderEntryPage({ currentUser }: OrderEntryPageProps) {
 
       setSubmissionStep(2);
 
+      console.log('[OrderEntryPage] Calling submitOrderEntry...');
+      console.log('[OrderEntryPage] Extraction Type ID:', extractionTypeId);
       const result = await submitOrderEntry(
         formData,
         fields,
         currentUser.id,
         uploadedPdfId,
-        submissionConfig
+        submissionConfig,
+        extractionTypeId,
+        fieldGroups
       );
+
+      console.log('[OrderEntryPage] submitOrderEntry result:', result);
 
       setSubmissionStep(3);
 
@@ -265,9 +369,13 @@ export default function OrderEntryPage({ currentUser }: OrderEntryPageProps) {
       setShowSuccessModal(true);
       setSubmitSuccess(true);
       toast.success('Order submitted successfully');
+      console.log('[OrderEntryPage] ========== SUBMISSION SUCCESS ==========');
 
     } catch (err: any) {
-      console.error('Submission error:', err);
+      console.error('[OrderEntryPage] ========== SUBMISSION ERROR ==========');
+      console.error('[OrderEntryPage] Error:', err);
+      console.error('[OrderEntryPage] Error message:', err.message);
+      console.error('[OrderEntryPage] Error stack:', err.stack);
       const errorMsg = err.message || 'Failed to submit order';
       setError(errorMsg);
       toast.error(errorMsg);
@@ -284,6 +392,7 @@ export default function OrderEntryPage({ currentUser }: OrderEntryPageProps) {
     setUploadedPdfId(null);
     setAiExtractedFields(new Set());
     setConfidenceScores({});
+    setPdfResetTrigger(prev => prev + 1);
 
     const initialFormData: Record<string, any> = {};
 
@@ -331,6 +440,64 @@ export default function OrderEntryPage({ currentUser }: OrderEntryPageProps) {
     setFormData(initialFormData);
     setErrors({});
     setTouched({});
+    setError(null);
+  };
+
+  const handleClearForm = () => {
+    const initialFormData: Record<string, any> = {};
+
+    fieldGroups.forEach(group => {
+      if (group.isArrayGroup) {
+        const groupFields = fields.filter(f => f.fieldGroupId === group.id);
+        const minRows = group.arrayMinRows || 1;
+        const rowData = Array.from({ length: minRows }, () => {
+          const row: Record<string, any> = {};
+          groupFields.forEach(field => {
+            if (field.defaultValue) {
+              row[field.fieldName] = field.defaultValue;
+            } else if (field.fieldType === 'boolean') {
+              row[field.fieldName] = false;
+            } else if (field.fieldType === 'file') {
+              row[field.fieldName] = [];
+            } else {
+              row[field.fieldName] = '';
+            }
+          });
+          return row;
+        });
+        initialFormData[group.id] = rowData;
+      }
+    });
+
+    fields.forEach((field: OrderEntryField) => {
+      const group = fieldGroups.find(g => g.id === field.fieldGroupId);
+      if (group?.isArrayGroup) {
+        return;
+      }
+
+      if (field.defaultValue) {
+        initialFormData[field.fieldName] = field.defaultValue;
+      } else if (field.isArrayField) {
+        initialFormData[field.fieldName] = Array.from({ length: field.arrayMinRows || 1 }, () => ({}));
+      } else if (field.fieldType === 'boolean') {
+        initialFormData[field.fieldName] = false;
+      } else if (field.fieldType === 'file') {
+        initialFormData[field.fieldName] = [];
+      } else {
+        initialFormData[field.fieldName] = '';
+      }
+    });
+
+    setFormData(initialFormData);
+    setErrors({});
+    setTouched({});
+    setAiExtractedFields(new Set());
+    setConfidenceScores({});
+    setUploadedPdfId(null);
+    setPdfResetTrigger(prev => prev + 1);
+    setError(null);
+    setShowClearConfirmModal(false);
+    toast.success('Form has been cleared');
   };
 
   if (loading) {
@@ -344,8 +511,6 @@ export default function OrderEntryPage({ currentUser }: OrderEntryPageProps) {
   const renderField = (field: OrderEntryField) => {
     const value = formData[field.fieldName];
     const error = touched[field.fieldName] ? errors[field.fieldName] : undefined;
-    const isAiExtracted = aiExtractedFields.has(field.fieldName);
-    const confidence = confidenceScores[field.fieldName];
 
     const commonProps = {
       field,
@@ -389,6 +554,9 @@ export default function OrderEntryPage({ currentUser }: OrderEntryPageProps) {
       case 'postal_code':
         fieldComponent = <PostalCodeField {...commonProps} value={value} onChange={(v) => handleFieldChange(field.fieldName, v)} />;
         break;
+      case 'zip_postal':
+        fieldComponent = <ZipPostalField {...commonProps} value={value} onChange={(v) => handleFieldChange(field.fieldName, v)} />;
+        break;
       case 'province':
         fieldComponent = <ProvinceField {...commonProps} value={value} onChange={(v) => handleFieldChange(field.fieldName, v)} />;
         break;
@@ -406,27 +574,6 @@ export default function OrderEntryPage({ currentUser }: OrderEntryPageProps) {
         break;
       default:
         fieldComponent = <TextField {...commonProps} value={value} onChange={(v) => handleFieldChange(field.fieldName, v)} />;
-    }
-
-    if (isAiExtracted && confidence !== undefined) {
-      const confidencePercent = Math.round(confidence * 100);
-      const isLowConfidence = confidence < 0.7;
-
-      return (
-        <div className="relative">
-          {fieldComponent}
-          <div className="absolute top-0 right-0 -mt-2 -mr-2">
-            <div className={`flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium ${
-              isLowConfidence
-                ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 border border-yellow-300 dark:border-yellow-700'
-                : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border border-blue-300 dark:border-blue-700'
-            }`}>
-              <Sparkles className="h-3 w-3" />
-              <span>AI: {confidencePercent}%</span>
-            </div>
-          </div>
-        </div>
-      );
     }
 
     return fieldComponent;
@@ -499,25 +646,34 @@ export default function OrderEntryPage({ currentUser }: OrderEntryPageProps) {
   const isFormValid = errorCount === 0;
 
   return (
-    <div className="max-w-6xl mx-auto py-8 px-4">
-      <div className="mb-8 bg-gradient-to-r from-purple-600 to-purple-700 dark:from-purple-700 dark:to-purple-800 rounded-xl shadow-lg p-8 text-white">
-        <div className="flex items-center space-x-4">
-          <div className="bg-white/20 p-3 rounded-lg">
-            <Building2 className="h-8 w-8" />
-          </div>
+    <div className="space-y-6">
+      <div className="rounded-2xl border border-slate-200 dark:border-gray-700 bg-white/90 dark:bg-gray-800/90 backdrop-blur-lg shadow-lg p-6">
+        <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold mb-1">
-              New Order Entry
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+              Request Pickup
             </h1>
-            <p className="text-purple-100">
-              {templateName ? `Using template: ${templateName}` : 'Fill out the form below to submit your order'}
+            <p className="text-gray-500 dark:text-gray-400 mt-1">
+              {templateName ? `Using template: ${templateName}` : 'Fill out the form below or upload a document to autofill.'}
             </p>
           </div>
+          <PdfUploadSection
+            userId={currentUser.id}
+            fields={fields}
+            onExtractionComplete={handleExtractionComplete}
+            onPdfUpload={(pdfId) => setUploadedPdfId(pdfId)}
+            onUploadStart={() => toast.info('Uploading PDF...')}
+            onUploadError={(error) => toast.error(`Failed to upload PDF: ${error}`)}
+            onExtractionStart={() => toast.info('Extracting data from PDF...')}
+            onExtractionError={(error) => toast.error(`Failed to extract PDF data: ${error}`)}
+            compact
+            resetTrigger={pdfResetTrigger}
+          />
         </div>
       </div>
 
       {submitSuccess && (
-        <div className="mb-6 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 flex items-start">
+        <div className="rounded-2xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-4 flex items-start">
           <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 mr-3 flex-shrink-0 mt-0.5" />
           <div>
             <h4 className="text-sm font-medium text-green-800 dark:text-green-300 mb-1">
@@ -531,7 +687,7 @@ export default function OrderEntryPage({ currentUser }: OrderEntryPageProps) {
       )}
 
       {error && (
-        <div className="mb-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-start">
+        <div className="rounded-2xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4 flex items-start">
           <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 mr-3 flex-shrink-0 mt-0.5" />
           <div>
             <h4 className="text-sm font-medium text-red-800 dark:text-red-300 mb-1">
@@ -543,7 +699,7 @@ export default function OrderEntryPage({ currentUser }: OrderEntryPageProps) {
       )}
 
       {errorCount > 0 && (
-        <div className="mb-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+        <div className="rounded-2xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4">
           <div className="flex items-start">
             <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 mr-3 flex-shrink-0 mt-0.5" />
             <div>
@@ -573,19 +729,6 @@ export default function OrderEntryPage({ currentUser }: OrderEntryPageProps) {
         </div>
       )}
 
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border-2 border-purple-200 dark:border-purple-800 p-6 mb-6">
-        <PdfUploadSection
-          userId={currentUser.id}
-          fields={fields}
-          onExtractionComplete={handleExtractionComplete}
-          onPdfUpload={(pdfId) => setUploadedPdfId(pdfId)}
-          onUploadStart={() => toast.info('Uploading PDF...')}
-          onUploadError={(error) => toast.error(`Failed to upload PDF: ${error}`)}
-          onExtractionStart={() => toast.info('Extracting data from PDF...')}
-          onExtractionError={(error) => toast.error(`Failed to extract PDF data: ${error}`)}
-        />
-      </div>
-
       <form onSubmit={handleSubmit} className="space-y-6">
         {fieldGroups.map(group => {
           const groupFields = fields.filter(f => f.fieldGroupId === group.id);
@@ -595,11 +738,7 @@ export default function OrderEntryPage({ currentUser }: OrderEntryPageProps) {
             return (
               <div
                 key={group.id}
-                className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border-2 p-6 transition-all"
-                style={{
-                  borderColor: group.borderColor || '#d1d5db',
-                  backgroundColor: group.backgroundColor ? `${group.backgroundColor}08` : undefined
-                }}
+                className="rounded-2xl border border-slate-200 dark:border-gray-700 bg-white/90 dark:bg-gray-800/90 backdrop-blur-lg shadow-lg p-6 transition-all"
               >
                 <GroupedArrayTable
                   group={group}
@@ -621,21 +760,22 @@ export default function OrderEntryPage({ currentUser }: OrderEntryPageProps) {
           return (
             <div
               key={group.id}
-              className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border-2 p-6 transition-all"
-              style={{
-                borderColor: group.borderColor || '#d1d5db',
-                backgroundColor: group.backgroundColor ? `${group.backgroundColor}08` : undefined
-              }}
+              className="rounded-2xl border border-slate-200 dark:border-gray-700 bg-white/90 dark:bg-gray-800/90 backdrop-blur-lg shadow-lg p-6 transition-all"
             >
-              <div className="mb-6">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
-                  {group.groupName}
-                </h2>
-                {group.description && (
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                    {group.description}
-                  </p>
-                )}
+              <div className="mb-6 flex items-center space-x-3">
+                <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
+                  <Package className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                    {group.groupName}
+                  </h2>
+                  {group.description && (
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      {group.description}
+                    </p>
+                  )}
+                </div>
               </div>
 
               <div className="space-y-6">
@@ -662,24 +802,18 @@ export default function OrderEntryPage({ currentUser }: OrderEntryPageProps) {
           );
         })}
 
-        <div className="flex items-center justify-end space-x-4 pt-6 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-xl p-6 sticky bottom-0 shadow-lg">
+        <div className="flex items-center justify-end space-x-4 pt-6 border-t border-slate-200 dark:border-gray-700 rounded-2xl border border-slate-200 dark:border-gray-700 bg-white/90 dark:bg-gray-800/90 backdrop-blur-lg shadow-lg p-6 sticky bottom-0">
           <button
             type="button"
-            onClick={() => {
-              if (window.confirm('Are you sure you want to cancel? All data will be lost.')) {
-                setFormData({});
-                setErrors({});
-                setTouched({});
-              }
-            }}
-            className="px-6 py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium"
+            onClick={() => setShowClearConfirmModal(true)}
+            className="px-6 py-2.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-full hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={submitting || !isFormValid}
-            className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+            className="px-6 py-2.5 bg-orange-500 text-white rounded-full hover:bg-orange-600 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
           >
             {submitting ? (
               <>
@@ -709,6 +843,50 @@ export default function OrderEntryPage({ currentUser }: OrderEntryPageProps) {
         onClose={() => setShowSuccessModal(false)}
         onSubmitAnother={handleSubmitAnother}
       />
+
+      <Modal
+        isOpen={showClearConfirmModal}
+        onClose={() => setShowClearConfirmModal(false)}
+        title="Clear Form"
+        size="sm"
+      >
+        <div className="p-6">
+          <div className="flex items-start space-x-4">
+            <div className="flex-shrink-0 w-12 h-12 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
+              <RefreshCw className="h-6 w-6 text-orange-600 dark:text-orange-400" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                Start Over?
+              </h3>
+              <p className="text-gray-600 dark:text-gray-400 mb-1">
+                Would you like to clear this form and start fresh?
+              </p>
+              <p className="text-sm text-gray-500 dark:text-gray-500">
+                This will reset all fields including any AI-extracted data.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex justify-end space-x-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <button
+              type="button"
+              onClick={() => setShowClearConfirmModal(false)}
+              className="px-4 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg font-medium transition-colors"
+            >
+              Keep Editing
+            </button>
+            <button
+              type="button"
+              onClick={handleClearForm}
+              className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium transition-colors flex items-center space-x-2"
+            >
+              <RefreshCw className="h-4 w-4" />
+              <span>Clear Form</span>
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <ToastContainer toasts={toast.toasts} onClose={toast.closeToast} />
     </div>
