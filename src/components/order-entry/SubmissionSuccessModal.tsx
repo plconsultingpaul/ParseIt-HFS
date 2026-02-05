@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, X, FileText, Clock, Zap } from 'lucide-react';
+import { CheckCircle2, X, FileText, Clock, Zap, Hash } from 'lucide-react';
 
 interface SubmissionSuccessModalProps {
   isOpen: boolean;
@@ -8,6 +8,25 @@ interface SubmissionSuccessModalProps {
   workflowExecutionId?: string;
   onClose: () => void;
   onSubmitAnother: () => void;
+}
+
+function getBillNumber(apiResponse: any): string | null {
+  if (!apiResponse) return null;
+
+  try {
+    if (apiResponse.billNumber) return apiResponse.billNumber;
+    if (apiResponse.orders && Array.isArray(apiResponse.orders) && apiResponse.orders.length > 0) {
+      if (apiResponse.orders[0].billNumber) return apiResponse.orders[0].billNumber;
+    }
+    if (apiResponse.data?.orders && Array.isArray(apiResponse.data.orders) && apiResponse.data.orders.length > 0) {
+      if (apiResponse.data.orders[0].billNumber) return apiResponse.data.orders[0].billNumber;
+    }
+    if (apiResponse.result?.billNumber) return apiResponse.result.billNumber;
+  } catch {
+    return null;
+  }
+
+  return null;
 }
 
 export default function SubmissionSuccessModal({
@@ -47,6 +66,7 @@ export default function SubmissionSuccessModal({
 
   if (!isOpen) return null;
 
+  const billNumber = getBillNumber(apiResponse);
   const confirmationNumber = apiResponse?.confirmationNumber || apiResponse?.orderId || apiResponse?.id || submissionId.slice(0, 8);
 
   return (
@@ -72,15 +92,29 @@ export default function SubmissionSuccessModal({
         </div>
 
         <div className="space-y-4 mb-6">
-          <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
-            <div className="flex items-start justify-between mb-2">
-              <span className="text-sm text-gray-600 dark:text-gray-400">Confirmation Number</span>
-              <FileText className="h-4 w-4 text-gray-400" />
+          {billNumber && (
+            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-700">
+              <div className="flex items-start justify-between mb-2">
+                <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Bill #</span>
+                <Hash className="h-4 w-4 text-blue-500 dark:text-blue-400" />
+              </div>
+              <p className="text-xl font-mono font-bold text-blue-600 dark:text-blue-400">
+                {billNumber}
+              </p>
             </div>
-            <p className="text-lg font-mono font-semibold text-gray-900 dark:text-gray-100">
-              {confirmationNumber}
-            </p>
-          </div>
+          )}
+
+          {!billNumber && (
+            <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
+              <div className="flex items-start justify-between mb-2">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Confirmation Number</span>
+                <FileText className="h-4 w-4 text-gray-400" />
+              </div>
+              <p className="text-lg font-mono font-semibold text-gray-900 dark:text-gray-100">
+                {confirmationNumber}
+              </p>
+            </div>
+          )}
 
           <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
             <div className="flex items-start justify-between mb-2">
