@@ -172,7 +172,7 @@ export async function executeApiCall(step: any, contextData: any): Promise<any> 
       }
 
       console.log(`🔍 Extracting from response path: ${responsePath}`);
-      const extractedValue = getValueByPath(responseData, responsePath, true);
+      const extractedValue = getValueByPath(responseData, responsePath, false);
 
       if (extractedValue !== undefined && extractedValue !== null) {
         console.log(`✅ Extracted value: ${JSON.stringify(extractedValue)}`);
@@ -391,6 +391,31 @@ export async function executeApiEndpoint(step: any, contextData: any, supabaseUr
             finalValue = parseFloat(String(finalValue));
           } else if (dataType === 'boolean') {
             finalValue = String(finalValue).toLowerCase() === 'true';
+          } else if (dataType === 'datetime') {
+            const dateValue = String(finalValue);
+            if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(dateValue)) {
+              finalValue = `${dateValue}:00`;
+              console.log(`🕐 Appended seconds to datetime field ${fieldPath}: ${dateValue} -> ${finalValue}`);
+            } else if (/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+              finalValue = `${dateValue}T00:00:00`;
+              console.log(`🕐 Converted date-only to datetime field ${fieldPath}: ${dateValue} -> ${finalValue}`);
+            } else {
+              finalValue = dateValue;
+            }
+          } else if (dataType === 'zip_postal') {
+            if (finalValue && typeof finalValue === 'string') {
+              const cleaned = String(finalValue).replace(/\s+/g, '').toUpperCase();
+              if (/^[A-Z]\d[A-Z]\d[A-Z]\d$/.test(cleaned)) {
+                finalValue = `${cleaned.slice(0, 3)} ${cleaned.slice(3)}`;
+                console.log(`📮 Formatted Canadian postal code ${fieldPath}: ${cleaned} -> ${finalValue}`);
+              } else if (/^\d{5}(-\d{4})?$/.test(cleaned)) {
+                finalValue = cleaned.slice(0, 5);
+                console.log(`📮 US zip code ${fieldPath}: ${cleaned} -> ${finalValue}`);
+              } else {
+                finalValue = cleaned;
+                console.log(`📮 Cleaned zip/postal ${fieldPath}: ${finalValue}`);
+              }
+            }
           } else {
             finalValue = String(finalValue);
           }
