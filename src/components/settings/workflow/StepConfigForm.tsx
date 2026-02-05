@@ -1,10 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Plus, Trash2, Braces } from 'lucide-react';
+import { X, Plus, Trash2, Braces, HelpCircle, LogOut, Sparkles, FileText, AlertCircle } from 'lucide-react';
 import Select from '../../common/Select';
 import ApiEndpointConfigSection from './ApiEndpointConfigSection';
 import VariableDropdown from './VariableDropdown';
 import { supabase } from '../../../lib/supabase';
+
+interface ExecuteButtonField {
+  fieldKey: string;
+  name: string;
+}
+
+interface ArrayGroup {
+  id: string;
+  name: string;
+  arrayFieldName: string;
+}
 
 interface StepConfigFormProps {
   step: any;
@@ -13,6 +24,8 @@ interface StepConfigFormProps {
   onSave: (stepData: any) => void;
   onCancel: () => void;
   extractionType?: any;
+  executeButtonFields?: ExecuteButtonField[];
+  arrayGroups?: ArrayGroup[];
 }
 
 interface TransformationRule {
@@ -20,7 +33,7 @@ interface TransformationRule {
   transformation: string;
 }
 
-export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCancel, extractionType }: StepConfigFormProps) {
+export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCancel, extractionType, executeButtonFields, arrayGroups = [] }: StepConfigFormProps) {
   const [stepName, setStepName] = useState(step?.stepName || step?.step_name || 'New Step');
   const [stepType, setStepType] = useState(step?.stepType || step?.step_type || 'api_call');
   const [method, setMethod] = useState('POST');
@@ -34,6 +47,8 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
   const [conditionalField, setConditionalField] = useState('');
   const [conditionalOperator, setConditionalOperator] = useState('equals');
   const [conditionalValue, setConditionalValue] = useState('');
+  const [additionalConditions, setAdditionalConditions] = useState<Array<{ jsonPath: string; operator: string; expectedValue: string }>>([]);
+  const [logicalOperator, setLogicalOperator] = useState<'AND' | 'OR'>('AND');
   const [emailActionType, setEmailActionType] = useState('send_email');
   const [emailTo, setEmailTo] = useState('');
   const [emailSubject, setEmailSubject] = useState('');
@@ -80,9 +95,57 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
   });
   const [uploadType, setUploadType] = useState('csv');
   const [escapeSingleQuotesInBody, setEscapeSingleQuotesInBody] = useState(false);
+  const [userResponseTemplate, setUserResponseTemplate] = useState('');
   const [apiEndpointConfig, setApiEndpointConfig] = useState<any>({});
   const [openVariableDropdown, setOpenVariableDropdown] = useState<string | null>(null);
   const buttonRefs = useRef<Record<string, React.RefObject<HTMLButtonElement>>>({});
+  const promptMessageRef = useRef<HTMLTextAreaElement>(null);
+  const [promptMessageCursorPos, setPromptMessageCursorPos] = useState<number | null>(null);
+  const emailBodyRef = useRef<HTMLTextAreaElement>(null);
+  const [emailBodyCursorPos, setEmailBodyCursorPos] = useState<number | null>(null);
+  const [promptMessage, setPromptMessage] = useState('');
+  const [yesButtonLabel, setYesButtonLabel] = useState('Yes');
+  const [noButtonLabel, setNoButtonLabel] = useState('No');
+  const [showLocationMap, setShowLocationMap] = useState(false);
+  const [latitudeVariable, setLatitudeVariable] = useState('');
+  const [longitudeVariable, setLongitudeVariable] = useState('');
+  const [exitMessage, setExitMessage] = useState('');
+  const [showRestartButton, setShowRestartButton] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiResponseMappings, setAiResponseMappings] = useState<Array<{ fieldName: string; aiInstruction: string }>>([
+    { fieldName: '', aiInstruction: '' }
+  ]);
+  const [placesSearchQuery, setPlacesSearchQuery] = useState('');
+  const [placesFieldsToReturn, setPlacesFieldsToReturn] = useState({
+    name: true,
+    address: true,
+    phone: false,
+    website: false,
+    rating: false,
+    hours: false,
+    placeId: false
+  });
+  const [placesResponseMappings, setPlacesResponseMappings] = useState<Array<{ fieldName: string; placesField: string }>>([
+    { fieldName: '', placesField: '' }
+  ]);
+  const [multipartUrl, setMultipartUrl] = useState('');
+  const [multipartApiSourceType, setMultipartApiSourceType] = useState<'main' | 'secondary' | 'auth_config'>('main');
+  const [multipartSecondaryApiId, setMultipartSecondaryApiId] = useState('');
+  const [multipartAuthConfigId, setMultipartAuthConfigId] = useState('');
+  const [multipartFormParts, setMultipartFormParts] = useState<Array<{
+    name: string;
+    type: 'text' | 'file';
+    value: string;
+    contentType: string;
+    fieldMappings?: Array<{ fieldName: string; type: 'hardcoded' | 'variable'; value: string; dataType: string }>;
+  }>>([
+    { name: 'file', type: 'file', value: '', contentType: '' }
+  ]);
+  const [multipartJsonParseError, setMultipartJsonParseError] = useState<{ [key: number]: string }>({});
+  const [multipartFilenameTemplate, setMultipartFilenameTemplate] = useState('');
+  const [multipartResponseMappings, setMultipartResponseMappings] = useState<Array<{ responsePath: string; updatePath: string }>>([]);
+  const [secondaryApis, setSecondaryApis] = useState<any[]>([]);
+  const [authConfigs, setAuthConfigs] = useState<any[]>([]);
 
   useEffect(() => {
     const loadNotificationTemplates = async () => {
@@ -107,6 +170,27 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
   }, []);
 
   useEffect(() => {
+    const loadApiConfigs = async () => {
+      try {
+        const { data: secondaryData } = await supabase
+          .from('secondary_api_configs')
+          .select('id, name')
+          .order('name');
+        setSecondaryApis(secondaryData || []);
+
+        const { data: authData } = await supabase
+          .from('api_auth_config')
+          .select('id, name')
+          .order('name');
+        setAuthConfigs(authData || []);
+      } catch (err) {
+        console.error('Error loading API configs:', err);
+      }
+    };
+    loadApiConfigs();
+  }, []);
+
+  useEffect(() => {
     if (notificationTemplateId && notificationTemplates.length > 0) {
       const template = notificationTemplates.find(t => t.id === notificationTemplateId);
       if (template && template.custom_fields) {
@@ -128,6 +212,7 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
       setStepType(step.stepType || step.step_type || 'api_call');
       setNextStepOnSuccess(step.nextStepOnSuccessId || step.next_step_on_success_id || '');
       setNextStepOnFailure(step.nextStepOnFailureId || step.next_step_on_failure_id || '');
+      setUserResponseTemplate(step.userResponseTemplate || step.user_response_template || '');
 
       // Load configuration from step.configJson or step.config_json
       const config = step.configJson || step.config_json;
@@ -198,6 +283,8 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
         setConditionalField(config.jsonPath || config.fieldPath || config.checkField || config.conditional_field || '');
         setConditionalOperator(config.conditionType || config.operator || config.conditional_operator || 'equals');
         setConditionalValue(config.expectedValue || config.conditional_value || '');
+        setAdditionalConditions(config.additionalConditions || []);
+        setLogicalOperator(config.logicalOperator || 'AND');
 
         // Email Action configuration
         setEmailActionType(config.actionType || 'send_email');
@@ -217,7 +304,57 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
 
         // API Endpoint configuration
         if (step?.stepType === 'api_endpoint' || step?.step_type === 'api_endpoint') {
+          console.log('[StepConfigForm] Setting apiEndpointConfig from step.configJson:', config);
           setApiEndpointConfig(config);
+        }
+
+        // User Confirmation configuration
+        setPromptMessage(config.promptMessage || '');
+        setYesButtonLabel(config.yesButtonLabel || 'Yes');
+        setNoButtonLabel(config.noButtonLabel || 'No');
+        setShowLocationMap(config.showLocationMap || false);
+        setLatitudeVariable(config.latitudeVariable || '');
+        setLongitudeVariable(config.longitudeVariable || '');
+
+        // Exit configuration
+        setExitMessage(config.exitMessage || '');
+        setShowRestartButton(config.showRestartButton || false);
+
+        // AI Lookup configuration
+        setAiPrompt(config.aiPrompt || '');
+        if (config.aiResponseMappings && Array.isArray(config.aiResponseMappings)) {
+          setAiResponseMappings(config.aiResponseMappings);
+        } else {
+          setAiResponseMappings([{ fieldName: '', aiInstruction: '' }]);
+        }
+
+        // Google Places Lookup configuration
+        setPlacesSearchQuery(config.placesSearchQuery || '');
+        if (config.placesFieldsToReturn) {
+          setPlacesFieldsToReturn(config.placesFieldsToReturn);
+        } else {
+          setPlacesFieldsToReturn({ name: true, address: true, phone: false, website: false, rating: false, hours: false, placeId: false });
+        }
+        if (config.placesResponseMappings && Array.isArray(config.placesResponseMappings)) {
+          setPlacesResponseMappings(config.placesResponseMappings);
+        } else {
+          setPlacesResponseMappings([{ fieldName: '', placesField: '' }]);
+        }
+
+        setMultipartUrl(config.url || '');
+        setMultipartApiSourceType(config.apiSourceType || 'main');
+        setMultipartSecondaryApiId(config.secondaryApiId || '');
+        setMultipartAuthConfigId(config.authConfigId || '');
+        if (config.formParts && Array.isArray(config.formParts)) {
+          setMultipartFormParts(config.formParts);
+        } else {
+          setMultipartFormParts([{ name: 'file', type: 'file', value: '', contentType: '' }]);
+        }
+        setMultipartFilenameTemplate(config.filenameTemplate || '');
+        if (config.responseDataMappings && Array.isArray(config.responseDataMappings)) {
+          setMultipartResponseMappings(config.responseDataMappings);
+        } else {
+          setMultipartResponseMappings([]);
         }
       } else {
         console.log('No configJson found in step, using defaults');
@@ -265,8 +402,18 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
     setResponseDataMappings(updated);
   };
 
-  const getAvailableVariables = (): Array<{ name: string; stepName: string; source: 'extraction' | 'workflow'; dataType?: string }> => {
-    const variables: Array<{ name: string; stepName: string; source: 'extraction' | 'workflow'; dataType?: string }> = [];
+  const getAvailableVariables = (): Array<{ name: string; stepName: string; source: 'extraction' | 'workflow' | 'execute'; dataType?: string }> => {
+    const variables: Array<{ name: string; stepName: string; source: 'extraction' | 'workflow' | 'execute'; dataType?: string }> = [];
+
+    if (executeButtonFields && executeButtonFields.length > 0) {
+      executeButtonFields.forEach((field) => {
+        variables.push({
+          name: `execute.${field.fieldKey}`,
+          stepName: field.name,
+          source: 'execute'
+        });
+      });
+    }
 
     if (extractionType && extractionType.fieldMappings) {
       extractionType.fieldMappings.forEach((mapping: any) => {
@@ -282,9 +429,9 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
     }
 
     if (allSteps && step) {
-      const currentStepOrder = step.stepOrder || step.step_order || 999;
+      const currentStepOrder = step.stepOrder ?? step.step_order ?? 999;
       const previousSteps = allSteps.filter(s => {
-        const sOrder = s.stepOrder || s.step_order || 0;
+        const sOrder = s.stepOrder ?? s.step_order ?? 0;
         return sOrder < currentStepOrder && s.id !== step.id;
       });
 
@@ -310,6 +457,30 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
             }
           });
         }
+
+        if (config && config.aiResponseMappings && Array.isArray(config.aiResponseMappings)) {
+          config.aiResponseMappings.forEach((mapping: any) => {
+            if (mapping.fieldName) {
+              variables.push({
+                name: `execute.ai.${mapping.fieldName}`,
+                stepName: stepName,
+                source: 'workflow'
+              });
+            }
+          });
+        }
+
+        if (config && config.placesResponseMappings && Array.isArray(config.placesResponseMappings)) {
+          config.placesResponseMappings.forEach((mapping: any) => {
+            if (mapping.fieldName) {
+              variables.push({
+                name: `execute.places.${mapping.fieldName}`,
+                stepName: stepName,
+                source: 'workflow'
+              });
+            }
+          });
+        }
       });
     }
 
@@ -328,6 +499,85 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
     const newValue = currentValue ? `${currentValue}{{${variableName}}}` : `{{${variableName}}}`;
     setConditionalField(newValue);
     setOpenVariableDropdown(null);
+  };
+
+  const generateMultipartFieldMappings = (partIndex: number) => {
+    const part = multipartFormParts[partIndex];
+    if (!part || part.type !== 'text' || !part.value.trim()) return;
+
+    try {
+      const template = JSON.parse(part.value);
+      const fieldMappings: Array<{ fieldName: string; type: 'hardcoded' | 'variable'; value: string; dataType: string }> = [];
+
+      const extractFields = (obj: any, prefix: string = '') => {
+        for (const key of Object.keys(obj)) {
+          const fullPath = prefix ? `${prefix}.${key}` : key;
+          const value = obj[key];
+
+          if (value === null || value === undefined) {
+            fieldMappings.push({ fieldName: fullPath, type: 'hardcoded', value: '', dataType: 'string' });
+          } else if (Array.isArray(value)) {
+            if (value.length > 0 && typeof value[0] === 'object') {
+              extractFields(value[0], `${fullPath}[0]`);
+            }
+          } else if (typeof value === 'object') {
+            extractFields(value, fullPath);
+          } else {
+            let dataType = 'string';
+            if (typeof value === 'number') {
+              dataType = Number.isInteger(value) ? 'integer' : 'number';
+            } else if (typeof value === 'boolean') {
+              dataType = 'boolean';
+            }
+            fieldMappings.push({
+              fieldName: fullPath,
+              type: 'hardcoded',
+              value: String(value),
+              dataType
+            });
+          }
+        }
+      };
+
+      extractFields(template);
+
+      const existingFieldNames = new Set((part.fieldMappings || []).map(m => m.fieldName));
+      const newMappings = fieldMappings.filter(m => !existingFieldNames.has(m.fieldName));
+      const updated = [...multipartFormParts];
+      updated[partIndex] = {
+        ...updated[partIndex],
+        fieldMappings: [...(part.fieldMappings || []), ...newMappings]
+      };
+      setMultipartFormParts(updated);
+      setMultipartJsonParseError(prev => ({ ...prev, [partIndex]: '' }));
+    } catch (error: any) {
+      setMultipartJsonParseError(prev => ({
+        ...prev,
+        [partIndex]: error.message || 'Invalid JSON format'
+      }));
+    }
+  };
+
+  const updateMultipartFieldMapping = (partIndex: number, mappingIndex: number, field: string, value: any) => {
+    const updated = [...multipartFormParts];
+    const mappings = [...(updated[partIndex].fieldMappings || [])];
+    mappings[mappingIndex] = { ...mappings[mappingIndex], [field]: value };
+    updated[partIndex] = { ...updated[partIndex], fieldMappings: mappings };
+    setMultipartFormParts(updated);
+  };
+
+  const removeMultipartFieldMapping = (partIndex: number, mappingIndex: number) => {
+    const updated = [...multipartFormParts];
+    const mappings = (updated[partIndex].fieldMappings || []).filter((_, i) => i !== mappingIndex);
+    updated[partIndex] = { ...updated[partIndex], fieldMappings: mappings };
+    setMultipartFormParts(updated);
+  };
+
+  const addMultipartFieldMapping = (partIndex: number) => {
+    const updated = [...multipartFormParts];
+    const mappings = [...(updated[partIndex].fieldMappings || []), { fieldName: '', type: 'hardcoded' as const, value: '', dataType: 'string' }];
+    updated[partIndex] = { ...updated[partIndex], fieldMappings: mappings };
+    setMultipartFormParts(updated);
   };
 
   const handleSave = () => {
@@ -377,12 +627,13 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
         break;
       case 'conditional_check':
         config = {
-          // Save both naming conventions for backward compatibility
           jsonPath: conditionalField,
           fieldPath: conditionalField,
           conditionType: conditionalOperator,
           operator: conditionalOperator,
-          expectedValue: conditionalValue
+          expectedValue: conditionalValue,
+          additionalConditions: additionalConditions.filter(c => c.jsonPath.trim() !== ''),
+          logicalOperator: additionalConditions.length > 0 ? logicalOperator : undefined
         };
         break;
       case 'rename_file':
@@ -418,6 +669,46 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
           customFieldMappings: isNotificationEmail && hasCustomFieldMappings ? customFieldMappings : undefined
         };
         break;
+      case 'user_confirmation':
+        config = {
+          promptMessage: promptMessage,
+          yesButtonLabel: yesButtonLabel || 'Yes',
+          noButtonLabel: noButtonLabel || 'No',
+          showLocationMap: showLocationMap,
+          latitudeVariable: showLocationMap ? latitudeVariable : '',
+          longitudeVariable: showLocationMap ? longitudeVariable : ''
+        };
+        break;
+      case 'exit':
+        config = {
+          exitMessage: exitMessage,
+          showRestartButton: showRestartButton
+        };
+        break;
+      case 'ai_lookup':
+        config = {
+          aiPrompt: aiPrompt,
+          aiResponseMappings: aiResponseMappings.filter(m => m.fieldName && m.aiInstruction)
+        };
+        break;
+      case 'google_places_lookup':
+        config = {
+          placesSearchQuery: placesSearchQuery,
+          placesFieldsToReturn: placesFieldsToReturn,
+          placesResponseMappings: placesResponseMappings.filter(m => m.fieldName && m.placesField)
+        };
+        break;
+      case 'multipart_form_upload':
+        config = {
+          url: multipartUrl,
+          apiSourceType: multipartApiSourceType,
+          secondaryApiId: multipartApiSourceType === 'secondary' ? multipartSecondaryApiId : undefined,
+          authConfigId: multipartAuthConfigId || undefined,
+          formParts: multipartFormParts.filter(p => p.name.trim() !== ''),
+          filenameTemplate: multipartFilenameTemplate || undefined,
+          responseDataMappings: multipartResponseMappings.filter(m => m.responsePath && m.updatePath)
+        };
+        break;
     }
 
     const stepData = {
@@ -429,7 +720,8 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
       configJson: config,
       nextStepOnSuccessId: nextStepOnSuccess || undefined,
       nextStepOnFailureId: nextStepOnFailure || undefined,
-      escapeSingleQuotesInBody: escapeSingleQuotesInBody
+      escapeSingleQuotesInBody: escapeSingleQuotesInBody,
+      userResponseTemplate: userResponseTemplate || undefined
     };
 
     onSave(stepData);
@@ -479,8 +771,10 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                   { value: 'conditional_check', label: 'Conditional Check' },
                   { value: 'data_transform', label: 'Data Transform' },
                   { value: 'email_action', label: 'Email Action' },
+                  { value: 'multipart_form_upload', label: 'Multipart Form Upload' },
                   { value: 'rename_file', label: 'Rename File' },
-                  { value: 'sftp_upload', label: 'SFTP Upload' }
+                  { value: 'sftp_upload', label: 'SFTP Upload' },
+                  { value: 'user_confirmation', label: 'User Confirmation' }
                 ]}
                 searchable={false}
               />
@@ -680,8 +974,10 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                 config={apiEndpointConfig}
                 onChange={setApiEndpointConfig}
                 allSteps={allSteps}
-                currentStepOrder={step?.stepOrder || step?.step_order}
+                currentStepOrder={step?.stepOrder ?? step?.step_order}
                 extractionType={extractionType}
+                executeButtonFields={executeButtonFields}
+                arrayGroups={arrayGroups}
               />
             )}
 
@@ -876,66 +1172,1155 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
 
             {stepType === 'conditional_check' && (
               <div className="space-y-4">
+                <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800/50">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Condition 1</span>
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        JSON Path to Check
+                      </label>
+                      <div className="flex space-x-2">
+                        <input
+                          type="text"
+                          value={conditionalField}
+                          onChange={(e) => setConditionalField(e.target.value)}
+                          className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-gray-100"
+                          placeholder="{{execute.isConsignee}}"
+                        />
+                        <button
+                          ref={getButtonRef('conditional-field')}
+                          type="button"
+                          onClick={() => setOpenVariableDropdown(openVariableDropdown === 'conditional-field' ? null : 'conditional-field')}
+                          className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                          title="Insert variable"
+                        >
+                          <Braces className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <VariableDropdown
+                        isOpen={openVariableDropdown === 'conditional-field'}
+                        onClose={() => setOpenVariableDropdown(null)}
+                        triggerRef={getButtonRef('conditional-field')}
+                        variables={getAvailableVariables()}
+                        onSelect={handleInsertConditionalVariable}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <Select
+                          label="Condition Type"
+                          value={conditionalOperator}
+                          onValueChange={setConditionalOperator}
+                          options={[
+                            { value: 'equals', label: 'Equals' },
+                            { value: 'not_equals', label: 'Not Equals' },
+                            { value: 'is_null', label: 'Is Null' },
+                            { value: 'is_not_null', label: 'Is Not Null' },
+                            { value: 'contains', label: 'Contains' },
+                            { value: 'not_contains', label: 'Not Contains' },
+                            { value: 'greater_than', label: 'Greater Than' },
+                            { value: 'less_than', label: 'Less Than' }
+                          ]}
+                          searchable={false}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          Expected Value
+                        </label>
+                        <input
+                          type="text"
+                          value={conditionalValue}
+                          onChange={(e) => setConditionalValue(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-gray-100"
+                          placeholder="True"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {additionalConditions.length > 0 && (
+                  <div className="flex items-center justify-center">
+                    <div className="flex items-center space-x-2 px-4 py-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg border border-orange-200 dark:border-orange-800">
+                      <span className="text-sm font-medium text-orange-800 dark:text-orange-200">Logical Operator:</span>
+                      <select
+                        value={logicalOperator}
+                        onChange={(e) => setLogicalOperator(e.target.value as 'AND' | 'OR')}
+                        className="px-3 py-1 text-sm font-semibold border border-orange-300 dark:border-orange-600 rounded bg-white dark:bg-gray-700 text-orange-700 dark:text-orange-300 focus:ring-2 focus:ring-orange-500"
+                      >
+                        <option value="AND">AND</option>
+                        <option value="OR">OR</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                {additionalConditions.map((condition, index) => (
+                  <div key={index} className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800/50">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Condition {index + 2}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAdditionalConditions(prev => prev.filter((_, i) => i !== index));
+                        }}
+                        className="p-1 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                        title="Remove condition"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          JSON Path to Check
+                        </label>
+                        <div className="flex space-x-2">
+                          <input
+                            type="text"
+                            value={condition.jsonPath}
+                            onChange={(e) => {
+                              const newConditions = [...additionalConditions];
+                              newConditions[index] = { ...newConditions[index], jsonPath: e.target.value };
+                              setAdditionalConditions(newConditions);
+                            }}
+                            className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-gray-100"
+                            placeholder="{{execute.isShipper}}"
+                          />
+                          <button
+                            ref={getButtonRef(`additional-condition-${index}`)}
+                            type="button"
+                            onClick={() => setOpenVariableDropdown(openVariableDropdown === `additional-condition-${index}` ? null : `additional-condition-${index}`)}
+                            className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                            title="Insert variable"
+                          >
+                            <Braces className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <VariableDropdown
+                          isOpen={openVariableDropdown === `additional-condition-${index}`}
+                          onClose={() => setOpenVariableDropdown(null)}
+                          triggerRef={getButtonRef(`additional-condition-${index}`)}
+                          variables={getAvailableVariables()}
+                          onSelect={(variableName) => {
+                            const newConditions = [...additionalConditions];
+                            const currentValue = newConditions[index].jsonPath || '';
+                            newConditions[index] = { ...newConditions[index], jsonPath: currentValue ? `${currentValue}{{${variableName}}}` : `{{${variableName}}}` };
+                            setAdditionalConditions(newConditions);
+                            setOpenVariableDropdown(null);
+                          }}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <Select
+                            label="Condition Type"
+                            value={condition.operator}
+                            onValueChange={(value) => {
+                              const newConditions = [...additionalConditions];
+                              newConditions[index] = { ...newConditions[index], operator: value };
+                              setAdditionalConditions(newConditions);
+                            }}
+                            options={[
+                              { value: 'equals', label: 'Equals' },
+                              { value: 'not_equals', label: 'Not Equals' },
+                              { value: 'is_null', label: 'Is Null' },
+                              { value: 'is_not_null', label: 'Is Not Null' },
+                              { value: 'contains', label: 'Contains' },
+                              { value: 'not_contains', label: 'Not Contains' },
+                              { value: 'greater_than', label: 'Greater Than' },
+                              { value: 'less_than', label: 'Less Than' }
+                            ]}
+                            searchable={false}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            Expected Value
+                          </label>
+                          <input
+                            type="text"
+                            value={condition.expectedValue}
+                            onChange={(e) => {
+                              const newConditions = [...additionalConditions];
+                              newConditions[index] = { ...newConditions[index], expectedValue: e.target.value };
+                              setAdditionalConditions(newConditions);
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-gray-100"
+                            placeholder="True"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdditionalConditions(prev => [...prev, { jsonPath: '', operator: 'equals', expectedValue: '' }]);
+                  }}
+                  className="w-full py-2 px-4 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-400 hover:border-blue-500 hover:text-blue-600 dark:hover:border-blue-400 dark:hover:text-blue-400 transition-colors flex items-center justify-center space-x-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Add Condition</span>
+                </button>
+              </div>
+            )}
+
+            {stepType === 'user_confirmation' && (
+              <div className="space-y-4">
+                <div className="p-4 bg-cyan-50 dark:bg-cyan-900/20 rounded-lg border border-cyan-200 dark:border-cyan-800">
+                  <div className="flex items-start space-x-3">
+                    <HelpCircle className="h-5 w-5 text-cyan-600 dark:text-cyan-400 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <h5 className="font-medium text-cyan-800 dark:text-cyan-200">User Confirmation Step</h5>
+                      <p className="text-sm text-cyan-700 dark:text-cyan-300 mt-1">
+                        This step pauses the workflow and prompts the user with a Yes/No question.
+                        Use variables like {`{{clientId}}`} to include data from previous steps in your message.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    JSON Path to Check
+                    Prompt Message
                   </label>
                   <div className="flex space-x-2">
-                    <input
-                      type="text"
-                      value={conditionalField}
-                      onChange={(e) => setConditionalField(e.target.value)}
+                    <textarea
+                      ref={promptMessageRef}
+                      value={promptMessage}
+                      onChange={(e) => setPromptMessage(e.target.value)}
+                      rows={3}
                       className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
-                      placeholder="orders.0.status"
+                      placeholder="e.g., Client {{clientId}} already exists. Do you want to continue creating this client?"
                     />
                     <button
-                      ref={getButtonRef('conditional-field')}
+                      ref={getButtonRef('prompt-message')}
                       type="button"
-                      onClick={() => setOpenVariableDropdown(openVariableDropdown === 'conditional-field' ? null : 'conditional-field')}
-                      className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                      onClick={() => {
+                        if (promptMessageRef.current) {
+                          setPromptMessageCursorPos(promptMessageRef.current.selectionStart);
+                        }
+                        setOpenVariableDropdown(openVariableDropdown === 'prompt-message' ? null : 'prompt-message');
+                      }}
+                      className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors h-fit"
                       title="Insert variable"
                     >
                       <Braces className="w-4 h-4" />
                     </button>
                   </div>
                   <VariableDropdown
-                    isOpen={openVariableDropdown === 'conditional-field'}
+                    isOpen={openVariableDropdown === 'prompt-message'}
                     onClose={() => setOpenVariableDropdown(null)}
-                    triggerRef={getButtonRef('conditional-field')}
+                    triggerRef={getButtonRef('prompt-message')}
                     variables={getAvailableVariables()}
-                    onSelect={handleInsertConditionalVariable}
+                    onSelect={(variableName) => {
+                      const variable = `{{${variableName}}}`;
+                      const cursorPos = promptMessageCursorPos ?? promptMessage.length;
+                      const newValue = promptMessage.slice(0, cursorPos) + variable + promptMessage.slice(cursorPos);
+                      setPromptMessage(newValue);
+                      setPromptMessageCursorPos(null);
+                      setOpenVariableDropdown(null);
+                    }}
                   />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    The message shown to the user. Use {`{{variableName}}`} to insert values from previous steps.
+                  </p>
                 </div>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Select
-                      label="Condition Type"
-                      value={conditionalOperator}
-                      onValueChange={setConditionalOperator}
-                      options={[
-                        { value: 'equals', label: 'Equals' },
-                        { value: 'is_null', label: 'Is Null' },
-                        { value: 'is_not_null', label: 'Is Not Null' },
-                        { value: 'contains', label: 'Contains' },
-                        { value: 'greater_than', label: 'Greater Than' },
-                        { value: 'less_than', label: 'Less Than' }
-                      ]}
-                      searchable={false}
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Yes Button Label
+                    </label>
+                    <input
+                      type="text"
+                      value={yesButtonLabel}
+                      onChange={(e) => setYesButtonLabel(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                      placeholder="Yes"
                     />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Expected Value
+                      No Button Label
                     </label>
                     <input
                       type="text"
-                      value={conditionalValue}
-                      onChange={(e) => setConditionalValue(e.target.value)}
+                      value={noButtonLabel}
+                      onChange={(e) => setNoButtonLabel(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
-                      placeholder="active"
+                      placeholder="No"
                     />
                   </div>
+                </div>
+
+                <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                  <label className="flex items-center space-x-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showLocationMap}
+                      onChange={(e) => setShowLocationMap(e.target.checked)}
+                      className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-cyan-600 focus:ring-cyan-500 dark:bg-gray-700"
+                    />
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Show Location Map
+                    </span>
+                  </label>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 ml-7">
+                    Display an embedded map showing the location from Google Places lookup
+                  </p>
+
+                  {showLocationMap && (
+                    <div className="mt-4 ml-7 grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          Latitude Variable
+                        </label>
+                        <select
+                          value={latitudeVariable}
+                          onChange={(e) => setLatitudeVariable(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-cyan-500 focus:border-cyan-500 dark:bg-gray-700 dark:text-gray-100"
+                        >
+                          <option value="">Select variable...</option>
+                          {getAvailableVariables().map((v) => (
+                            <option key={v.name} value={v.name}>{v.stepName} ({v.name})</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          Longitude Variable
+                        </label>
+                        <select
+                          value={longitudeVariable}
+                          onChange={(e) => setLongitudeVariable(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-cyan-500 focus:border-cyan-500 dark:bg-gray-700 dark:text-gray-100"
+                        >
+                          <option value="">Select variable...</option>
+                          {getAvailableVariables().map((v) => (
+                            <option key={v.name} value={v.name}>{v.stepName} ({v.name})</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                  <h6 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Branching Behavior</h6>
+                  <ul className="text-xs text-gray-600 dark:text-gray-400 space-y-1">
+                    <li>- <span className="text-green-600 dark:text-green-400 font-medium">Yes path</span>: Continues to the step connected via the green (success) handle</li>
+                    <li>- <span className="text-red-600 dark:text-red-400 font-medium">No path</span>: Continues to the step connected via the red (failure) handle, or ends the workflow</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            {stepType === 'exit' && (
+              <div className="space-y-4">
+                <div className="p-4 bg-rose-50 dark:bg-rose-900/20 rounded-lg border border-rose-200 dark:border-rose-800">
+                  <div className="flex items-start space-x-3">
+                    <LogOut className="h-5 w-5 text-rose-600 dark:text-rose-400 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <h5 className="font-medium text-rose-800 dark:text-rose-200">Exit Step</h5>
+                      <p className="text-sm text-rose-700 dark:text-rose-300 mt-1">
+                        This step ends the workflow and displays a custom message to the user.
+                        Use variables like {`{{clientId}}`} to include data from previous steps.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Exit Message
+                  </label>
+                  <div className="flex space-x-2">
+                    <textarea
+                      value={exitMessage}
+                      onChange={(e) => setExitMessage(e.target.value)}
+                      rows={3}
+                      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-rose-500 focus:border-rose-500 dark:bg-gray-700 dark:text-gray-100"
+                      placeholder="e.g., Order {{orderNumber}} has been successfully created!"
+                    />
+                    <button
+                      ref={getButtonRef('exit-message')}
+                      type="button"
+                      onClick={() => setOpenVariableDropdown(openVariableDropdown === 'exit-message' ? null : 'exit-message')}
+                      className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors h-fit"
+                      title="Insert variable"
+                    >
+                      <Braces className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <VariableDropdown
+                    isOpen={openVariableDropdown === 'exit-message'}
+                    onClose={() => setOpenVariableDropdown(null)}
+                    triggerRef={getButtonRef('exit-message')}
+                    variables={getAvailableVariables()}
+                    onSelect={(variableName) => {
+                      const newValue = exitMessage + `{{${variableName}}}`;
+                      setExitMessage(newValue);
+                      setOpenVariableDropdown(null);
+                    }}
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    The message shown to the user when the flow ends. Use {`{{variableName}}`} to insert values.
+                  </p>
+                </div>
+
+                <div className="flex items-center space-x-3">
+                  <input
+                    type="checkbox"
+                    id="showRestartButton"
+                    checked={showRestartButton}
+                    onChange={(e) => setShowRestartButton(e.target.checked)}
+                    className="h-4 w-4 text-rose-600 focus:ring-rose-500 border-gray-300 rounded"
+                  />
+                  <label htmlFor="showRestartButton" className="text-sm text-gray-700 dark:text-gray-300">
+                    Show "Restart" button to allow running the flow again
+                  </label>
+                </div>
+
+                <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                  <h6 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Exit Behavior</h6>
+                  <ul className="text-xs text-gray-600 dark:text-gray-400 space-y-1">
+                    <li>- This is a <span className="text-rose-600 dark:text-rose-400 font-medium">terminal step</span> - the flow ends here</li>
+                    <li>- The exit message will be displayed to the user</li>
+                    <li>- If "Restart" is enabled, user can run the flow again from the beginning</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            {stepType === 'ai_lookup' && (
+              <div className="space-y-4">
+                <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                  <div className="flex items-start space-x-3">
+                    <Sparkles className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <h5 className="font-medium text-amber-800 dark:text-amber-200">AI Lookup Step</h5>
+                      <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
+                        Use AI to look up information based on form input. Results are stored in the <code className="bg-amber-100 dark:bg-amber-800 px-1 rounded">execute.ai.*</code> namespace for use in subsequent steps.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Instructions to AI
+                  </label>
+                  <div className="flex space-x-2">
+                    <textarea
+                      value={aiPrompt}
+                      onChange={(e) => setAiPrompt(e.target.value)}
+                      rows={4}
+                      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-amber-500 focus:border-amber-500 dark:bg-gray-700 dark:text-gray-100"
+                      placeholder="e.g., Look up the business using {{execute.billToName}} located in {{execute.billToCity}}. Find their full business information including address, phone, and contact details."
+                    />
+                    <button
+                      ref={getButtonRef('ai-prompt')}
+                      type="button"
+                      onClick={() => setOpenVariableDropdown(openVariableDropdown === 'ai-prompt' ? null : 'ai-prompt')}
+                      className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors h-fit"
+                      title="Insert variable"
+                    >
+                      <Braces className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <VariableDropdown
+                    isOpen={openVariableDropdown === 'ai-prompt'}
+                    onClose={() => setOpenVariableDropdown(null)}
+                    triggerRef={getButtonRef('ai-prompt')}
+                    variables={getAvailableVariables()}
+                    onSelect={(variableName) => {
+                      const newValue = aiPrompt + `{{${variableName}}}`;
+                      setAiPrompt(newValue);
+                      setOpenVariableDropdown(null);
+                    }}
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Provide instructions to the AI about what information to look up. Use {`{{execute.fieldKey}}`} to reference form field values.
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Response Data Mappings
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setAiResponseMappings([...aiResponseMappings, { fieldName: '', aiInstruction: '' }])}
+                      className="flex items-center px-3 py-1 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700"
+                    >
+                      <Plus className="w-4 h-4 mr-1" />
+                      Add Field
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Define what data you want the AI to extract and return. Each field will be stored in <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">execute.ai.fieldName</code>
+                  </p>
+
+                  {aiResponseMappings.map((mapping, index) => (
+                    <div key={index} className="flex items-start space-x-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-md">
+                      <div className="flex-1 grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                            Field Name
+                          </label>
+                          <input
+                            type="text"
+                            value={mapping.fieldName}
+                            onChange={(e) => {
+                              const updated = [...aiResponseMappings];
+                              updated[index].fieldName = e.target.value;
+                              setAiResponseMappings(updated);
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-amber-500 focus:border-amber-500 font-mono text-sm dark:bg-gray-600 dark:text-gray-100"
+                            placeholder="e.g., name, address, city"
+                          />
+                          <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                            Stored as: execute.ai.{mapping.fieldName || 'fieldName'}
+                          </p>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                            AI Instruction
+                          </label>
+                          <input
+                            type="text"
+                            value={mapping.aiInstruction}
+                            onChange={(e) => {
+                              const updated = [...aiResponseMappings];
+                              updated[index].aiInstruction = e.target.value;
+                              setAiResponseMappings(updated);
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-amber-500 focus:border-amber-500 text-sm dark:bg-gray-600 dark:text-gray-100"
+                            placeholder="e.g., business name, street address"
+                          />
+                          <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                            What the AI should extract
+                          </p>
+                        </div>
+                      </div>
+                      {aiResponseMappings.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (aiResponseMappings.length > 1) {
+                              setAiResponseMappings(aiResponseMappings.filter((_, i) => i !== index));
+                            }
+                          }}
+                          className="p-2 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-md flex-shrink-0 mt-5"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                  <h6 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Usage in Subsequent Steps</h6>
+                  <ul className="text-xs text-gray-600 dark:text-gray-400 space-y-1">
+                    <li>- AI results are stored in <code className="bg-gray-100 dark:bg-gray-600 px-1 rounded">execute.ai.*</code> namespace</li>
+                    <li>- Use with <span className="text-cyan-600 dark:text-cyan-400 font-medium">User Confirmation</span> step to let users verify results</li>
+                    <li>- Reference in form field default values: <code className="bg-gray-100 dark:bg-gray-600 px-1 rounded">{`{{execute.ai.name}}`}</code></li>
+                    <li>- Use <span className="text-orange-600 dark:text-orange-400 font-medium">Decision</span> step to branch based on AI results</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            {stepType === 'google_places_lookup' && (
+              <div className="space-y-4">
+                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                  <div className="flex items-start space-x-3">
+                    <svg className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    <div>
+                      <h5 className="font-medium text-blue-800 dark:text-blue-200">Google Places Lookup Step</h5>
+                      <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                        Search for business information using Google Places API. Results are stored in the <code className="bg-blue-100 dark:bg-blue-800 px-1 rounded">execute.places.*</code> namespace for use in subsequent steps.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Search Query
+                  </label>
+                  <div className="flex space-x-2">
+                    <textarea
+                      value={placesSearchQuery}
+                      onChange={(e) => setPlacesSearchQuery(e.target.value)}
+                      rows={2}
+                      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-gray-100"
+                      placeholder="e.g., {{execute.billToName}} {{execute.billToCity}} {{execute.billToState}}"
+                    />
+                    <button
+                      ref={getButtonRef('places-query')}
+                      type="button"
+                      onClick={() => setOpenVariableDropdown(openVariableDropdown === 'places-query' ? null : 'places-query')}
+                      className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors h-fit"
+                      title="Insert variable"
+                    >
+                      <Braces className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <VariableDropdown
+                    isOpen={openVariableDropdown === 'places-query'}
+                    onClose={() => setOpenVariableDropdown(null)}
+                    triggerRef={getButtonRef('places-query')}
+                    variables={getAvailableVariables()}
+                    onSelect={(variableName) => {
+                      const newValue = placesSearchQuery + `{{${variableName}}}`;
+                      setPlacesSearchQuery(newValue);
+                      setOpenVariableDropdown(null);
+                    }}
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Enter a search query to find business information. Use {`{{execute.fieldKey}}`} to include form field values.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                    Fields to Return
+                  </label>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {[
+                      { key: 'name', label: 'Business Name' },
+                      { key: 'address', label: 'Address' },
+                      { key: 'phone', label: 'Phone Number' },
+                      { key: 'website', label: 'Website' },
+                      { key: 'rating', label: 'Rating' },
+                      { key: 'hours', label: 'Business Hours' },
+                      { key: 'placeId', label: 'Place ID' },
+                    ].map((field) => (
+                      <label key={field.key} className="flex items-center space-x-2 p-2 bg-gray-50 dark:bg-gray-700 rounded-md cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600">
+                        <input
+                          type="checkbox"
+                          checked={placesFieldsToReturn[field.key as keyof typeof placesFieldsToReturn]}
+                          onChange={(e) => setPlacesFieldsToReturn({ ...placesFieldsToReturn, [field.key]: e.target.checked })}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <span className="text-sm text-gray-700 dark:text-gray-300">{field.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Response Data Mappings
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setPlacesResponseMappings([...placesResponseMappings, { fieldName: '', placesField: '' }])}
+                      className="flex items-center px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                    >
+                      <Plus className="w-4 h-4 mr-1" />
+                      Add Mapping
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Map Google Places response fields to variables. Each mapping will be stored in <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">execute.places.fieldName</code>
+                  </p>
+
+                  {placesResponseMappings.map((mapping, index) => (
+                    <div key={index} className="flex items-start space-x-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-md">
+                      <div className="flex-1 grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                            Variable Name
+                          </label>
+                          <input
+                            type="text"
+                            value={mapping.fieldName}
+                            onChange={(e) => {
+                              const updated = [...placesResponseMappings];
+                              updated[index].fieldName = e.target.value;
+                              setPlacesResponseMappings(updated);
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 font-mono text-sm dark:bg-gray-600 dark:text-gray-100"
+                            placeholder="e.g., businessName, fullAddress"
+                          />
+                          <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                            Stored as: execute.places.{mapping.fieldName || 'fieldName'}
+                          </p>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                            Google Places Field
+                          </label>
+                          <select
+                            value={mapping.placesField}
+                            onChange={(e) => {
+                              const updated = [...placesResponseMappings];
+                              updated[index].placesField = e.target.value;
+                              setPlacesResponseMappings(updated);
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm dark:bg-gray-600 dark:text-gray-100"
+                          >
+                            <option value="">Select field...</option>
+                            <option value="name">Business Name</option>
+                            <option value="formattedAddress">Full Address</option>
+                            <option value="streetAddress">Street Address</option>
+                            <option value="city">City</option>
+                            <option value="state">State</option>
+                            <option value="postalCode">Postal Code</option>
+                            <option value="country">Country</option>
+                            <option value="phone">Phone Number</option>
+                            <option value="website">Website</option>
+                            <option value="rating">Rating</option>
+                            <option value="userRatingsTotal">Total Ratings</option>
+                            <option value="hours">Business Hours</option>
+                            <option value="placeId">Place ID</option>
+                            <option value="latitude">Latitude</option>
+                            <option value="longitude">Longitude</option>
+                          </select>
+                        </div>
+                      </div>
+                      {placesResponseMappings.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (placesResponseMappings.length > 1) {
+                              setPlacesResponseMappings(placesResponseMappings.filter((_, i) => i !== index));
+                            }
+                          }}
+                          className="p-2 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-md flex-shrink-0 mt-5"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                  <h6 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Usage in Subsequent Steps</h6>
+                  <ul className="text-xs text-gray-600 dark:text-gray-400 space-y-1">
+                    <li>- Results are stored in <code className="bg-gray-100 dark:bg-gray-600 px-1 rounded">execute.places.*</code> namespace</li>
+                    <li>- Use with <span className="text-cyan-600 dark:text-cyan-400 font-medium">User Confirmation</span> step to let users verify results</li>
+                    <li>- Reference in form field default values: <code className="bg-gray-100 dark:bg-gray-600 px-1 rounded">{`{{execute.places.businessName}}`}</code></li>
+                    <li>- Use <span className="text-orange-600 dark:text-orange-400 font-medium">Decision</span> step to branch based on lookup results</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            {stepType === 'multipart_form_upload' && (
+              <div className="space-y-4">
+                <div className="p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                  <div className="flex items-start space-x-3">
+                    <Braces className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <h5 className="text-sm font-medium text-emerald-800 dark:text-emerald-200">Multipart Form Upload</h5>
+                      <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1">
+                        Upload PDF files via multipart/form-data with custom metadata fields.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <Select
+                    label="API Source"
+                    value={multipartApiSourceType}
+                    onValueChange={(v) => setMultipartApiSourceType(v as 'main' | 'secondary' | 'auth_config')}
+                    options={[
+                      { value: 'main', label: 'Main API' },
+                      { value: 'secondary', label: 'Secondary API' },
+                      { value: 'auth_config', label: 'Auth Config Only' }
+                    ]}
+                  />
+                </div>
+
+                {multipartApiSourceType === 'secondary' && (
+                  <div>
+                    <Select
+                      label="Secondary API"
+                      value={multipartSecondaryApiId}
+                      onValueChange={setMultipartSecondaryApiId}
+                      options={secondaryApis.map(api => ({ value: api.id, label: api.name }))}
+                      placeholder="Select secondary API..."
+                    />
+                  </div>
+                )}
+
+                {multipartApiSourceType === 'auth_config' && (
+                  <div>
+                    <Select
+                      label="Authentication Config"
+                      value={multipartAuthConfigId}
+                      onValueChange={setMultipartAuthConfigId}
+                      options={authConfigs.map(config => ({ value: config.id, label: config.name }))}
+                      placeholder="Select auth config..."
+                    />
+                  </div>
+                )}
+
+                {(multipartApiSourceType === 'main' || multipartApiSourceType === 'secondary') && (
+                  <div>
+                    <Select
+                      label="Authentication (Optional)"
+                      value={multipartAuthConfigId || '__none__'}
+                      onValueChange={(v) => setMultipartAuthConfigId(v === '__none__' ? '' : v)}
+                      options={[
+                        { value: '__none__', label: 'Use API source default' },
+                        ...authConfigs.map(config => ({ value: config.id, label: config.name }))
+                      ]}
+                    />
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Override authentication. Configure in Settings &gt; API Settings &gt; Authentication.
+                    </p>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    API URL
+                  </label>
+                  <input
+                    type="text"
+                    value={multipartUrl}
+                    onChange={(e) => setMultipartUrl(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-emerald-500 focus:border-emerald-500 dark:bg-gray-700 dark:text-gray-100"
+                    placeholder="https://api.example.com/upload or /api/Documents"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Full URL or path appended to base URL. Use {`{{variable}}`} for dynamic values.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Upload Filename Template
+                  </label>
+                  <input
+                    type="text"
+                    value={multipartFilenameTemplate}
+                    onChange={(e) => setMultipartFilenameTemplate(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-emerald-500 focus:border-emerald-500 dark:bg-gray-700 dark:text-gray-100"
+                    placeholder="e.g., {{orders[0].detailLineId}}_document.pdf"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Leave empty to use original filename. Use {`{{variable}}`} for dynamic naming.
+                  </p>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Form Parts
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setMultipartFormParts([...multipartFormParts, { name: '', type: 'text', value: '', contentType: '' }])}
+                      className="flex items-center space-x-1 px-2 py-1 text-xs text-emerald-600 hover:text-emerald-700 dark:text-emerald-400"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>Add Part</span>
+                    </button>
+                  </div>
+
+                  <div className="space-y-3">
+                    {multipartFormParts.map((part, index) => (
+                      <div key={index} className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                        <div className="grid grid-cols-12 gap-2 items-start">
+                          <div className="col-span-3">
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Name</label>
+                            <input
+                              type="text"
+                              value={part.name}
+                              onChange={(e) => {
+                                const updated = [...multipartFormParts];
+                                updated[index].name = e.target.value;
+                                setMultipartFormParts(updated);
+                              }}
+                              className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-emerald-500 focus:border-emerald-500 dark:bg-gray-700 dark:text-gray-100"
+                              placeholder="e.g., properties"
+                            />
+                          </div>
+                          <div className="col-span-2">
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Type</label>
+                            <select
+                              value={part.type}
+                              onChange={(e) => {
+                                const updated = [...multipartFormParts];
+                                updated[index].type = e.target.value as 'text' | 'file';
+                                setMultipartFormParts(updated);
+                              }}
+                              className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-emerald-500 focus:border-emerald-500 dark:bg-gray-700 dark:text-gray-100"
+                            >
+                              <option value="text">Text</option>
+                              <option value="file">File</option>
+                            </select>
+                          </div>
+                          {part.type === 'text' && (
+                            <>
+                              <div className="col-span-4">
+                                <div className="flex items-center justify-between mb-1">
+                                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400">Value</label>
+                                  {part.contentType.toLowerCase().includes('json') && (
+                                    <button
+                                      type="button"
+                                      onClick={() => generateMultipartFieldMappings(index)}
+                                      className="flex items-center px-2 py-0.5 text-xs bg-purple-600 text-white rounded hover:bg-purple-700"
+                                    >
+                                      <FileText className="w-3 h-3 mr-1" />
+                                      Map JSON
+                                    </button>
+                                  )}
+                                </div>
+                                <textarea
+                                  value={part.value}
+                                  onChange={(e) => {
+                                    const updated = [...multipartFormParts];
+                                    updated[index].value = e.target.value;
+                                    setMultipartFormParts(updated);
+                                    if (multipartJsonParseError[index]) {
+                                      setMultipartJsonParseError(prev => ({ ...prev, [index]: '' }));
+                                    }
+                                  }}
+                                  rows={3}
+                                  className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-emerald-500 focus:border-emerald-500 dark:bg-gray-700 dark:text-gray-100 font-mono"
+                                  placeholder='{"key": "value", "In_DocName": "{{variable}}"}'
+                                />
+                              </div>
+                              <div className="col-span-2">
+                                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Content-Type</label>
+                                <input
+                                  type="text"
+                                  value={part.contentType}
+                                  onChange={(e) => {
+                                    const updated = [...multipartFormParts];
+                                    updated[index].contentType = e.target.value;
+                                    setMultipartFormParts(updated);
+                                  }}
+                                  className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-emerald-500 focus:border-emerald-500 dark:bg-gray-700 dark:text-gray-100"
+                                  placeholder="application/json"
+                                />
+                              </div>
+                            </>
+                          )}
+                          {part.type === 'file' && (
+                            <div className="col-span-6">
+                              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">File Source</label>
+                              <div className="px-2 py-1.5 text-sm bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 rounded border border-emerald-200 dark:border-emerald-800">
+                                PDF from workflow context
+                              </div>
+                            </div>
+                          )}
+                          <div className="col-span-1 pt-5">
+                            {multipartFormParts.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => setMultipartFormParts(multipartFormParts.filter((_, i) => i !== index))}
+                                className="p-1.5 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/20 rounded"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {multipartJsonParseError[index] && (
+                          <div className="mt-2 flex items-start gap-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded">
+                            <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                            <p className="text-xs text-red-600 dark:text-red-300 font-mono">{multipartJsonParseError[index]}</p>
+                          </div>
+                        )}
+
+                        {part.type === 'text' && part.fieldMappings && part.fieldMappings.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+                            <div className="flex items-center justify-between mb-2">
+                              <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Field Mappings</label>
+                              <button
+                                type="button"
+                                onClick={() => addMultipartFieldMapping(index)}
+                                className="flex items-center px-2 py-0.5 text-xs text-emerald-600 hover:text-emerald-700 dark:text-emerald-400"
+                              >
+                                <Plus className="w-3 h-3 mr-1" />
+                                Add Field
+                              </button>
+                            </div>
+                            <div className="space-y-2">
+                              {part.fieldMappings.map((mapping, mappingIndex) => (
+                                <div
+                                  key={mappingIndex}
+                                  className={`p-2 rounded border ${
+                                    mapping.type === 'hardcoded'
+                                      ? 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700'
+                                      : 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-700'
+                                  }`}
+                                >
+                                  <div className="grid grid-cols-12 gap-2 items-end">
+                                    <div className="col-span-3">
+                                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Field</label>
+                                      <input
+                                        type="text"
+                                        value={mapping.fieldName}
+                                        onChange={(e) => updateMultipartFieldMapping(index, mappingIndex, 'fieldName', e.target.value)}
+                                        className="w-full px-1.5 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                                        placeholder="fieldName"
+                                      />
+                                    </div>
+                                    <div className="col-span-2">
+                                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Type</label>
+                                      <select
+                                        value={mapping.type}
+                                        onChange={(e) => updateMultipartFieldMapping(index, mappingIndex, 'type', e.target.value)}
+                                        className="w-full px-1.5 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                                      >
+                                        <option value="hardcoded">Hardcoded</option>
+                                        <option value="variable">Variable</option>
+                                      </select>
+                                    </div>
+                                    <div className="col-span-4">
+                                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Value</label>
+                                      <div className="flex items-center space-x-1">
+                                        <input
+                                          type="text"
+                                          value={mapping.value}
+                                          onChange={(e) => updateMultipartFieldMapping(index, mappingIndex, 'value', e.target.value)}
+                                          className="flex-1 px-1.5 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                                          placeholder={mapping.type === 'hardcoded' ? 'value' : '{{variable}}'}
+                                        />
+                                        {mapping.type === 'variable' && (
+                                          <>
+                                            <button
+                                              ref={getButtonRef(`mp_${index}_${mappingIndex}`)}
+                                              type="button"
+                                              onClick={() => setOpenVariableDropdown(openVariableDropdown === `mp_${index}_${mappingIndex}` ? null : `mp_${index}_${mappingIndex}`)}
+                                              className="p-1 text-gray-500 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-600 rounded"
+                                            >
+                                              <Braces className="w-3 h-3" />
+                                            </button>
+                                            <VariableDropdown
+                                              isOpen={openVariableDropdown === `mp_${index}_${mappingIndex}`}
+                                              onClose={() => setOpenVariableDropdown(null)}
+                                              triggerRef={getButtonRef(`mp_${index}_${mappingIndex}`)}
+                                              variables={getAvailableVariables()}
+                                              onSelect={(varName) => {
+                                                const current = mapping.value || '';
+                                                updateMultipartFieldMapping(index, mappingIndex, 'value', current + `{{${varName}}}`);
+                                                setOpenVariableDropdown(null);
+                                              }}
+                                            />
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="col-span-2">
+                                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Data Type</label>
+                                      <select
+                                        value={mapping.dataType}
+                                        onChange={(e) => updateMultipartFieldMapping(index, mappingIndex, 'dataType', e.target.value)}
+                                        className="w-full px-1.5 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                                      >
+                                        <option value="string">String</option>
+                                        <option value="integer">Integer</option>
+                                        <option value="number">Number</option>
+                                        <option value="boolean">Boolean</option>
+                                      </select>
+                                    </div>
+                                    <div className="col-span-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => removeMultipartFieldMapping(index, mappingIndex)}
+                                        className="p-1 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/20 rounded"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                    Configure form-data parts. The "file" type part will include the PDF from the workflow.
+                  </p>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Response Data Mappings
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setMultipartResponseMappings([...multipartResponseMappings, { responsePath: '', updatePath: '' }])}
+                      className="flex items-center space-x-1 px-2 py-1 text-xs text-emerald-600 hover:text-emerald-700 dark:text-emerald-400"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>Add Mapping</span>
+                    </button>
+                  </div>
+
+                  {multipartResponseMappings.length > 0 && (
+                    <div className="space-y-2">
+                      {multipartResponseMappings.map((mapping, index) => (
+                        <div key={index} className="flex items-center space-x-2">
+                          <input
+                            type="text"
+                            value={mapping.responsePath}
+                            onChange={(e) => {
+                              const updated = [...multipartResponseMappings];
+                              updated[index].responsePath = e.target.value;
+                              setMultipartResponseMappings(updated);
+                            }}
+                            className="flex-1 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-emerald-500 focus:border-emerald-500 dark:bg-gray-700 dark:text-gray-100"
+                            placeholder="Response path (e.g., data.id)"
+                          />
+                          <span className="text-gray-400">to</span>
+                          <input
+                            type="text"
+                            value={mapping.updatePath}
+                            onChange={(e) => {
+                              const updated = [...multipartResponseMappings];
+                              updated[index].updatePath = e.target.value;
+                              setMultipartResponseMappings(updated);
+                            }}
+                            className="flex-1 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-emerald-500 focus:border-emerald-500 dark:bg-gray-700 dark:text-gray-100"
+                            placeholder="Context path (e.g., documentId)"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setMultipartResponseMappings(multipartResponseMappings.filter((_, i) => i !== index))}
+                            className="p-1.5 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/20 rounded"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Map values from the API response to context variables for use in subsequent steps.
+                  </p>
                 </div>
               </div>
             )}
@@ -1237,13 +2622,34 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       To (Email Address)
                     </label>
-                    <input
-                      type="email"
-                      value={emailTo}
-                      onChange={(e) => setEmailTo(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
-                      placeholder="recipient@example.com or {{customerEmail}}"
-                    />
+                    <div className="flex space-x-2">
+                      <input
+                        type="text"
+                        value={emailTo}
+                        onChange={(e) => setEmailTo(e.target.value)}
+                        className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                        placeholder="recipient@example.com or {{customerEmail}}"
+                      />
+                      <button
+                        ref={getButtonRef('email-to')}
+                        type="button"
+                        onClick={() => setOpenVariableDropdown(openVariableDropdown === 'email-to' ? null : 'email-to')}
+                        className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                        title="Insert variable"
+                      >
+                        <Braces className="w-4 h-4" />
+                      </button>
+                      <VariableDropdown
+                        isOpen={openVariableDropdown === 'email-to'}
+                        onClose={() => setOpenVariableDropdown(null)}
+                        triggerRef={getButtonRef('email-to')}
+                        variables={getAvailableVariables()}
+                        onSelect={(variableName) => {
+                          setEmailTo(emailTo ? `${emailTo}{{${variableName}}}` : `{{${variableName}}}`);
+                          setOpenVariableDropdown(null);
+                        }}
+                      />
+                    </div>
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                       Use {`{{fieldName}}`} to reference extracted data
                     </p>
@@ -1252,13 +2658,34 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       From (Optional)
                     </label>
-                    <input
-                      type="email"
-                      value={emailFrom}
-                      onChange={(e) => setEmailFrom(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
-                      placeholder="sender@example.com"
-                    />
+                    <div className="flex space-x-2">
+                      <input
+                        type="text"
+                        value={emailFrom}
+                        onChange={(e) => setEmailFrom(e.target.value)}
+                        className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                        placeholder="sender@example.com"
+                      />
+                      <button
+                        ref={getButtonRef('email-from')}
+                        type="button"
+                        onClick={() => setOpenVariableDropdown(openVariableDropdown === 'email-from' ? null : 'email-from')}
+                        className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                        title="Insert variable"
+                      >
+                        <Braces className="w-4 h-4" />
+                      </button>
+                      <VariableDropdown
+                        isOpen={openVariableDropdown === 'email-from'}
+                        onClose={() => setOpenVariableDropdown(null)}
+                        triggerRef={getButtonRef('email-from')}
+                        variables={getAvailableVariables()}
+                        onSelect={(variableName) => {
+                          setEmailFrom(emailFrom ? `${emailFrom}{{${variableName}}}` : `{{${variableName}}}`);
+                          setOpenVariableDropdown(null);
+                        }}
+                      />
+                    </div>
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                       Leave empty to use default sender
                     </p>
@@ -1285,13 +2712,34 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Subject
                   </label>
-                  <input
-                    type="text"
-                    value={emailSubject}
-                    onChange={(e) => setEmailSubject(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
-                    placeholder="Your document has been processed - {{invoiceNumber}}"
-                  />
+                  <div className="flex space-x-2">
+                    <input
+                      type="text"
+                      value={emailSubject}
+                      onChange={(e) => setEmailSubject(e.target.value)}
+                      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                      placeholder="Your document has been processed - {{invoiceNumber}}"
+                    />
+                    <button
+                      ref={getButtonRef('email-subject')}
+                      type="button"
+                      onClick={() => setOpenVariableDropdown(openVariableDropdown === 'email-subject' ? null : 'email-subject')}
+                      className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                      title="Insert variable"
+                    >
+                      <Braces className="w-4 h-4" />
+                    </button>
+                    <VariableDropdown
+                      isOpen={openVariableDropdown === 'email-subject'}
+                      onClose={() => setOpenVariableDropdown(null)}
+                      triggerRef={getButtonRef('email-subject')}
+                      variables={getAvailableVariables()}
+                      onSelect={(variableName) => {
+                        setEmailSubject(emailSubject ? `${emailSubject}{{${variableName}}}` : `{{${variableName}}}`);
+                        setOpenVariableDropdown(null);
+                      }}
+                    />
+                  </div>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     Use {`{{fieldName}}`} to reference extracted data
                   </p>
@@ -1301,13 +2749,44 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Email Body
                   </label>
-                  <textarea
-                    value={emailBody}
-                    onChange={(e) => setEmailBody(e.target.value)}
-                    rows={6}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
-                    placeholder="Dear {{customerName}},&#10;&#10;Your document {{invoiceNumber}} has been processed successfully.&#10;&#10;Please find the attached PDF for your records.&#10;&#10;Best regards,&#10;Parse-It System"
-                  />
+                  <div className="flex space-x-2">
+                    <textarea
+                      ref={emailBodyRef}
+                      value={emailBody}
+                      onChange={(e) => setEmailBody(e.target.value)}
+                      rows={6}
+                      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                      placeholder="Dear {{customerName}},&#10;&#10;Your document {{invoiceNumber}} has been processed successfully.&#10;&#10;Please find the attached PDF for your records.&#10;&#10;Best regards,&#10;Parse-It System"
+                    />
+                    <button
+                      ref={getButtonRef('email-body')}
+                      type="button"
+                      onClick={() => {
+                        if (emailBodyRef.current) {
+                          setEmailBodyCursorPos(emailBodyRef.current.selectionStart);
+                        }
+                        setOpenVariableDropdown(openVariableDropdown === 'email-body' ? null : 'email-body');
+                      }}
+                      className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors h-fit"
+                      title="Insert variable"
+                    >
+                      <Braces className="w-4 h-4" />
+                    </button>
+                    <VariableDropdown
+                      isOpen={openVariableDropdown === 'email-body'}
+                      onClose={() => setOpenVariableDropdown(null)}
+                      triggerRef={getButtonRef('email-body')}
+                      variables={getAvailableVariables()}
+                      onSelect={(variableName) => {
+                        const variable = `{{${variableName}}}`;
+                        const cursorPos = emailBodyCursorPos ?? emailBody.length;
+                        const newValue = emailBody.slice(0, cursorPos) + variable + emailBody.slice(cursorPos);
+                        setEmailBody(newValue);
+                        setEmailBodyCursorPos(null);
+                        setOpenVariableDropdown(null);
+                      }}
+                    />
+                  </div>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     Use {`{{fieldName}}`} to reference extracted data. Use &#10; for line breaks.
                   </p>
@@ -1392,6 +2871,59 @@ export default function StepConfigForm({ step, allSteps, apiConfig, onSave, onCa
                 )}
               </div>
             )}
+          </div>
+
+          {/* User Response Template - applies to all step types */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              User Response Message
+              <span className="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">(Optional)</span>
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                value={userResponseTemplate}
+                onChange={(e) => setUserResponseTemplate(e.target.value)}
+                className="w-full px-3 py-2 pr-10 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                placeholder="e.g., Found Client ID: {orders.0.consignee.clientId}"
+              />
+              <button
+                type="button"
+                ref={(el) => {
+                  if (!buttonRefs.current['userResponse']) {
+                    buttonRefs.current['userResponse'] = React.createRef();
+                  }
+                  if (el) {
+                    (buttonRefs.current['userResponse'] as any).current = el;
+                  }
+                }}
+                onClick={() => setOpenVariableDropdown(openVariableDropdown === 'userResponse' ? null : 'userResponse')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 rounded"
+                title="Insert variable"
+              >
+                <Braces className="w-4 h-4" />
+              </button>
+              <VariableDropdown
+                isOpen={openVariableDropdown === 'userResponse'}
+                onClose={() => setOpenVariableDropdown(null)}
+                onSelect={(variableName) => {
+                  setUserResponseTemplate(prev => prev + `{${variableName}}`);
+                  setOpenVariableDropdown(null);
+                }}
+                variables={responseDataMappings
+                  .filter(m => m.updatePath && m.updatePath.trim() !== '')
+                  .map(m => ({
+                    name: m.updatePath,
+                    stepName: `Stored at: ${m.updatePath}`,
+                    source: 'workflow' as const,
+                    dataType: 'response mapping'
+                  }))}
+                triggerRef={buttonRefs.current['userResponse']}
+              />
+            </div>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Message shown to users during workflow execution. Use {'{variableName}'} to include dynamic values.
+            </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
