@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Trash2, Save, FileText, Code, Database, Map, Brain, Copy, Split, AlertTriangle, FunctionSquare, CheckCircle, XCircle, Layers, Download, Upload, ChevronDown, ChevronRight, Filter, RefreshCw } from 'lucide-react';
+import { Plus, Trash2, Save, FileText, Code, Database, Map, Brain, Copy, Split, AlertTriangle, FunctionSquare, CheckCircle, XCircle, Layers, Download, Upload, ChevronDown, ChevronRight, Filter, RefreshCw, Mail } from 'lucide-react';
 import type { ExtractionType, FieldMapping, ArraySplitConfig, FieldMappingFunction, ArrayEntryConfig, ArrayEntryField, ArrayEntryConditions, ArrayEntryConditionRule } from '../../types';
 import { useSupabaseData } from '../../hooks/useSupabaseData';
 import MappingPage from '../MappingPage';
@@ -77,6 +77,7 @@ export default function ExtractionTypesSettings({
     repeatInstruction: ''
   });
   const [showConditionsSection, setShowConditionsSection] = useState(false);
+  const [showNotificationSettings, setShowNotificationSettings] = useState(false);
   const [conditionFieldSelectorOpen, setConditionFieldSelectorOpen] = useState<number | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -725,7 +726,8 @@ export default function ExtractionTypesSettings({
         currentType.arrayEntryConfigs[index] = {
           ...editingArrayEntry,
           ...arrayEntryForm,
-          fields: arrayEntryForm.fields || []
+          fields: arrayEntryForm.fields || [],
+          conditions: arrayEntryForm.conditions || null
         } as ArrayEntryConfig;
       }
     } else {
@@ -737,7 +739,8 @@ export default function ExtractionTypesSettings({
         isEnabled: arrayEntryForm.isEnabled !== false,
         fields: arrayEntryForm.fields || [],
         isRepeating: arrayEntryForm.isRepeating || false,
-        repeatInstruction: arrayEntryForm.repeatInstruction || ''
+        repeatInstruction: arrayEntryForm.repeatInstruction || '',
+        conditions: arrayEntryForm.conditions || null
       });
     }
 
@@ -1332,8 +1335,8 @@ export default function ExtractionTypesSettings({
                               <div className="px-2 py-1 text-xs text-gray-400 dark:text-gray-500 italic">N/A</div>
                             )}
                           </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                          <div title="Remove if Null">
+                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 cursor-help">
                               RIN
                             </label>
                             <div className="flex justify-center pt-1">
@@ -1342,7 +1345,7 @@ export default function ExtractionTypesSettings({
                                 checked={field.removeIfNull || false}
                                 onChange={(e) => handleUpdateArrayEntryField(fieldIndex, 'removeIfNull', e.target.checked)}
                                 className="w-4 h-4 text-emerald-600 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-emerald-500 focus:ring-2"
-                                title="Remove if Null - removes field from output if value is empty"
+                                title="Remove if Null"
                               />
                             </div>
                           </div>
@@ -2016,13 +2019,26 @@ export default function ExtractionTypesSettings({
             </div>
 
             {/* Notification Settings */}
-            <div className="mb-4 border border-gray-300 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-700/50">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
-                <span>📧</span> Notification Settings
-              </h3>
+            <div className="mb-4 border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden bg-gray-50 dark:bg-gray-700/50">
+              <button
+                type="button"
+                onClick={() => setShowNotificationSettings(!showNotificationSettings)}
+                className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-600/50 transition-colors"
+              >
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                  <Mail className="h-5 w-5 text-blue-500" /> Notification Settings
+                </h3>
+                {showNotificationSettings ? (
+                  <ChevronDown className="h-5 w-5 text-gray-500" />
+                ) : (
+                  <ChevronRight className="h-5 w-5 text-gray-500" />
+                )}
+              </button>
 
-              {/* Failure Notifications */}
-              <div className="mb-4">
+              {showNotificationSettings && (
+                <div className="p-4 pt-0 space-y-4">
+                  {/* Failure Notifications */}
+                  <div className="mb-4">
                 <label className="flex items-center space-x-2 cursor-pointer mb-3">
                   <input
                     type="checkbox"
@@ -2124,6 +2140,8 @@ export default function ExtractionTypesSettings({
                   </div>
                 )}
               </div>
+                </div>
+              )}
             </div>
 
             {/* Default Upload Mode */}
@@ -2457,6 +2475,9 @@ export default function ExtractionTypesSettings({
                                   <RefreshCw className="h-3 w-3" />
                                   <span>Repeating</span>
                                 </span>
+                              )}
+                              {entry.conditions?.enabled && (entry.conditions?.rules?.length ?? 0) > 0 && (
+                                <Filter className="h-4 w-4 text-amber-500" />
                               )}
                               {!entry.isEnabled && (
                                 <span className="text-xs px-2 py-0.5 bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 rounded">
