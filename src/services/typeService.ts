@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import type { ExtractionType, TransformationType } from '../types';
+import type { ExtractionType, TransformationType, ArrayEntryConfig, ArrayEntryField, ArraySplitConfig } from '../types';
 
 // Extraction Types
 export async function fetchExtractionTypes(): Promise<ExtractionType[]> {
@@ -32,6 +32,67 @@ export async function fetchExtractionTypes(): Promise<ExtractionType[]> {
       arraySplitsByType.get(split.extraction_type_id)!.push(split);
     });
 
+    // Fetch array entry configurations
+    const { data: arrayEntryData, error: arrayEntryError } = await supabase
+      .from('extraction_type_array_entries')
+      .select('*')
+      .order('entry_order', { ascending: true });
+
+    if (arrayEntryError) {
+      console.error('Error fetching array entry configs:', arrayEntryError);
+    }
+
+    // Fetch array entry fields
+    const { data: arrayEntryFieldData, error: arrayEntryFieldError } = await supabase
+      .from('extraction_type_array_entry_fields')
+      .select('*')
+      .order('field_order', { ascending: true });
+
+    if (arrayEntryFieldError) {
+      console.error('Error fetching array entry fields:', arrayEntryFieldError);
+    }
+
+    // Group entry fields by array entry ID
+    const fieldsByEntryId = new Map<string, ArrayEntryField[]>();
+    (arrayEntryFieldData || []).forEach(field => {
+      if (!fieldsByEntryId.has(field.array_entry_id)) {
+        fieldsByEntryId.set(field.array_entry_id, []);
+      }
+      fieldsByEntryId.get(field.array_entry_id)!.push({
+        id: field.id,
+        arrayEntryId: field.array_entry_id,
+        fieldName: field.field_name,
+        fieldType: field.field_type as 'hardcoded' | 'extracted',
+        hardcodedValue: field.hardcoded_value,
+        extractionInstruction: field.extraction_instruction,
+        dataType: field.data_type as 'string' | 'number' | 'integer' | 'boolean' | 'datetime',
+        maxLength: field.max_length,
+        fieldOrder: field.field_order,
+        createdAt: field.created_at
+      });
+    });
+
+    // Group array entries by extraction type ID
+    const arrayEntriesByType = new Map<string, ArrayEntryConfig[]>();
+    (arrayEntryData || []).forEach(entry => {
+      if (!arrayEntriesByType.has(entry.extraction_type_id)) {
+        arrayEntriesByType.set(entry.extraction_type_id, []);
+      }
+      arrayEntriesByType.get(entry.extraction_type_id)!.push({
+        id: entry.id,
+        extractionTypeId: entry.extraction_type_id,
+        targetArrayField: entry.target_array_field,
+        entryOrder: entry.entry_order,
+        isEnabled: entry.is_enabled,
+        fields: fieldsByEntryId.get(entry.id) || [],
+        conditions: entry.conditions || undefined,
+        isRepeating: entry.is_repeating || false,
+        repeatInstruction: entry.repeat_instruction || undefined,
+        createdAt: entry.created_at,
+        updatedAt: entry.updated_at
+      });
+    });
+
     return types.map(type => ({
       id: type.id,
       name: type.name,
@@ -57,6 +118,12 @@ export async function fetchExtractionTypes(): Promise<ExtractionType[]> {
       pageProcessingSinglePage: type.page_processing_single_page,
       pageProcessingRangeStart: type.page_processing_range_start,
       pageProcessingRangeEnd: type.page_processing_range_end,
+      enableFailureNotifications: type.enable_failure_notifications || false,
+      failureNotificationTemplateId: type.failure_notification_template_id,
+      failureRecipientEmailOverride: type.failure_recipient_email_override,
+      enableSuccessNotifications: type.enable_success_notifications || false,
+      successNotificationTemplateId: type.success_notification_template_id,
+      successRecipientEmailOverride: type.success_recipient_email_override,
       arraySplitConfigs: (arraySplitsByType.get(type.id) || []).map(split => ({
         id: split.id,
         extractionTypeId: split.extraction_type_id,
@@ -66,7 +133,8 @@ export async function fetchExtractionTypes(): Promise<ExtractionType[]> {
         defaultToOneIfMissing: split.default_to_one_if_missing || false,
         createdAt: split.created_at,
         updatedAt: split.updated_at
-      }))
+      })),
+      arrayEntryConfigs: arrayEntriesByType.get(type.id) || []
     }));
   } catch (error) {
     console.error('Error fetching extraction types:', error);
@@ -75,51 +143,16 @@ export async function fetchExtractionTypes(): Promise<ExtractionType[]> {
 }
 
 export async function updateExtractionTypes(types: ExtractionType[]): Promise<void> {
-  console.log('=== updateExtractionTypes SERVICE START ===');
-  console.log('Received types count:', types.length);
-  console.log('Service input validation:');
-  types.forEach((type, index) => {
-    console.log(`  Service Type ${index}:`, {
-      id: type.id,
-      name: type.name,
-      isTemp: type.id.startsWith('temp-'),
-      hasName: !!type.name,
-      hasInstructions: type.defaultInstructions !== undefined,
-      hasTemplate: type.formatTemplate !== undefined,
-      allRequiredFields: !!(type.name && type.defaultInstructions !== undefined && type.formatTemplate !== undefined)
-    });
-  });
-
   try {
-    // Get existing types to determine which to update vs insert
-    console.log('Fetching existing types from database...');
     const { data: existingTypes } = await supabase
       .from('extraction_types')
       .select('id');
 
-    console.log('Existing types in database:', existingTypes?.length || 0);
-    if (existingTypes) {
-      console.log('Existing type IDs:', existingTypes.map(t => t.id));
-    }
-    
     const existingIds = new Set((existingTypes || []).map(t => t.id));
     const typesToUpdate = types.filter(type => existingIds.has(type.id) && !type.id.startsWith('temp-'));
     const typesToInsert = types.filter(type => !existingIds.has(type.id) || type.id.startsWith('temp-'));
 
-    console.log('Operation breakdown:');
-    console.log('  Types to update:', typesToUpdate.length);
-    console.log('  Types to insert:', typesToInsert.length);
-    
-    if (typesToUpdate.length > 0) {
-      console.log('  Update candidates:', typesToUpdate.map(t => ({ id: t.id, name: t.name })));
-    }
-    if (typesToInsert.length > 0) {
-      console.log('  Insert candidates:', typesToInsert.map(t => ({ id: t.id, name: t.name, isTemp: t.id.startsWith('temp-') })));
-    }
-    
-    // Update existing types
     for (const type of typesToUpdate) {
-      console.log('Updating existing type:', type.name);
       const { error } = await supabase
         .from('extraction_types')
         .update({
@@ -146,100 +179,61 @@ export async function updateExtractionTypes(types: ExtractionType[]): Promise<vo
           page_processing_single_page: type.pageProcessingSinglePage || 1,
           page_processing_range_start: type.pageProcessingRangeStart || 1,
           page_processing_range_end: type.pageProcessingRangeEnd || 1,
+          enable_failure_notifications: type.enableFailureNotifications || false,
+          failure_notification_template_id: type.failureNotificationTemplateId || null,
+          failure_recipient_email_override: type.failureRecipientEmailOverride || null,
+          enable_success_notifications: type.enableSuccessNotifications || false,
+          success_notification_template_id: type.successNotificationTemplateId || null,
+          success_recipient_email_override: type.successRecipientEmailOverride || null,
           updated_at: new Date().toISOString()
         })
         .eq('id', type.id);
 
       if (error) throw error;
-      console.log('Successfully updated type:', type.name);
     }
 
-    // Insert new types
     if (typesToInsert.length > 0) {
-      console.log('=== PREPARING INSERT OPERATION ===');
-      console.log('Inserting new types:', typesToInsert.map(t => t.name));
-      
-      const insertData = typesToInsert.map(type => {
-        console.log(`Preparing insert data for type: ${type.name}`);
-        console.log('  Original type data:', {
-          id: type.id,
-          name: type.name,
-          defaultInstructions: type.defaultInstructions,
-          formatTemplate: type.formatTemplate,
-          filename: type.filename,
-          formatType: type.formatType,
-          jsonPath: type.jsonPath,
-          fieldMappings: type.fieldMappings,
-          parseitIdMapping: type.parseitIdMapping,
-          traceTypeMapping: type.traceTypeMapping,
-          traceTypeValue: type.traceTypeValue,
-          workflowId: type.workflowId,
-          autoDetectInstructions: type.autoDetectInstructions
-        });
-        
-        const mappedData = {
-          name: type.name,
-          default_instructions: type.defaultInstructions || '',
-          xml_format: type.formatTemplate || '',
-          filename: type.filename || '',
-          format_type: type.formatType || 'XML',
-          json_path: type.jsonPath || '',
-          field_mappings: type.fieldMappings ? JSON.stringify(type.fieldMappings) : null,
-          parseit_id_mapping: type.parseitIdMapping || null,
-          trace_type_mapping: type.traceTypeMapping || null,
-          trace_type_value: type.traceTypeValue || null,
-          workflow_id: type.workflowId || null,
-          auto_detect_instructions: type.autoDetectInstructions || null,
-          csv_delimiter: type.csvDelimiter || ',',
-          csv_include_headers: type.csvIncludeHeaders !== false,
-          csv_row_detection_instructions: type.csvRowDetectionInstructions || null,
-          csv_multi_page_processing: type.csvMultiPageProcessing || false,
-          json_multi_page_processing: type.jsonMultiPageProcessing || false,
-          default_upload_mode: type.defaultUploadMode || null,
-          lock_upload_mode: type.lockUploadMode || false,
-          page_processing_mode: type.pageProcessingMode || 'all',
-          page_processing_single_page: type.pageProcessingSinglePage || 1,
-          page_processing_range_start: type.pageProcessingRangeStart || 1,
-          page_processing_range_end: type.pageProcessingRangeEnd || 1
-        };
+      const insertData = typesToInsert.map(type => ({
+        name: type.name,
+        default_instructions: type.defaultInstructions || '',
+        xml_format: type.formatTemplate || '',
+        filename: type.filename || '',
+        format_type: type.formatType || 'XML',
+        json_path: type.jsonPath || '',
+        field_mappings: type.fieldMappings ? JSON.stringify(type.fieldMappings) : null,
+        parseit_id_mapping: type.parseitIdMapping || null,
+        trace_type_mapping: type.traceTypeMapping || null,
+        trace_type_value: type.traceTypeValue || null,
+        workflow_id: type.workflowId || null,
+        auto_detect_instructions: type.autoDetectInstructions || null,
+        csv_delimiter: type.csvDelimiter || ',',
+        csv_include_headers: type.csvIncludeHeaders !== false,
+        csv_row_detection_instructions: type.csvRowDetectionInstructions || null,
+        csv_multi_page_processing: type.csvMultiPageProcessing || false,
+        json_multi_page_processing: type.jsonMultiPageProcessing || false,
+        default_upload_mode: type.defaultUploadMode || null,
+        lock_upload_mode: type.lockUploadMode || false,
+        page_processing_mode: type.pageProcessingMode || 'all',
+        page_processing_single_page: type.pageProcessingSinglePage || 1,
+        page_processing_range_start: type.pageProcessingRangeStart || 1,
+        page_processing_range_end: type.pageProcessingRangeEnd || 1,
+        enable_failure_notifications: type.enableFailureNotifications || false,
+        failure_notification_template_id: type.failureNotificationTemplateId || null,
+        failure_recipient_email_override: type.failureRecipientEmailOverride || null,
+        enable_success_notifications: type.enableSuccessNotifications || false,
+        success_notification_template_id: type.successNotificationTemplateId || null,
+        success_recipient_email_override: type.successRecipientEmailOverride || null
+      }));
 
-        console.log('  Mapped data for database:', mappedData);
-        console.log('  Required fields check:', {
-          hasName: !!mappedData.name,
-          hasInstructions: mappedData.default_instructions !== undefined,
-          hasTemplate: mappedData.xml_format !== undefined
-        });
-        
-        return mappedData;
-      });
-      
-      console.log('=== EXECUTING DATABASE INSERT ===');
-      console.log('Insert data array length:', insertData.length);
-      console.log('Insert data being sent to Supabase:', JSON.stringify(insertData, null, 2));
-      
       const { error } = await supabase
         .from('extraction_types')
         .insert(insertData);
 
-      console.log('=== DATABASE INSERT RESPONSE ===');
       if (error) throw error;
-      console.log('✅ DATABASE INSERT SUCCESSFUL');
-      console.log('Successfully inserted', typesToInsert.length, 'new types');
-    } else {
-      console.log('No types to insert, skipping insert operation');
     }
 
-    // FIXED: Don't do automatic cleanup for extraction types
-    // The cleanup was deleting newly inserted records by mistake
-    // Let the user manually delete types they don't want
-    console.log('=== CLEANUP PHASE SKIPPED ===');
-    console.log('Skipping automatic cleanup to prevent deleting newly inserted records');
-
-    // Update array split configurations
-    console.log('=== UPDATING ARRAY SPLIT CONFIGS ===');
     for (const type of types) {
       if (!type.id.startsWith('temp-') && type.arraySplitConfigs) {
-        console.log(`Processing array split configs for ${type.name}`);
 
         const { data: existingArraySplits } = await supabase
           .from('extraction_type_array_splits')
@@ -253,7 +247,6 @@ export async function updateExtractionTypes(types: ExtractionType[]): Promise<vo
         const splitsToDelete = (existingArraySplits || []).filter(split => !splitIdsToKeep.has(split.id));
 
         for (const split of splitsToUpdate) {
-          console.log(`Updating array split config: ${split.id}`);
           const { error } = await supabase
             .from('extraction_type_array_splits')
             .update({
@@ -265,20 +258,10 @@ export async function updateExtractionTypes(types: ExtractionType[]): Promise<vo
             })
             .eq('id', split.id!);
 
-          if (error) {
-            console.error('❌ Failed to update array split config:', error);
-            console.error('Error details:', {
-              message: error.message,
-              code: error.code,
-              details: error.details,
-              hint: error.hint
-            });
-            throw new Error(`Failed to update array split configuration: ${error.message}`);
-          }
+          if (error) throw new Error(`Failed to update array split configuration: ${error.message}`);
         }
 
         if (splitsToInsert.length > 0) {
-          console.log(`Inserting ${splitsToInsert.length} array split configs for ${type.name}`);
           const insertData = splitsToInsert.map(split => ({
             extraction_type_id: type.id,
             target_array_field: split.targetArrayField,
@@ -287,24 +270,11 @@ export async function updateExtractionTypes(types: ExtractionType[]): Promise<vo
             default_to_one_if_missing: split.defaultToOneIfMissing || false
           }));
 
-          console.log('Array split insert data:', insertData);
-
           const { error } = await supabase
             .from('extraction_type_array_splits')
             .insert(insertData);
 
-          if (error) {
-            console.error('❌ Failed to insert array split configs:', error);
-            console.error('Error details:', {
-              message: error.message,
-              code: error.code,
-              details: error.details,
-              hint: error.hint
-            });
-            throw new Error(`Failed to save array split configuration: ${error.message}`);
-          }
-
-          console.log(`✅ Successfully inserted ${splitsToInsert.length} array split configs`);
+          if (error) throw new Error(`Failed to save array split configuration: ${error.message}`);
         }
 
         for (const split of splitsToDelete) {
@@ -315,17 +285,144 @@ export async function updateExtractionTypes(types: ExtractionType[]): Promise<vo
 
           if (error) throw error;
         }
-
-        console.log(`Updated ${splitsToUpdate.length}, inserted ${splitsToInsert.length}, deleted ${splitsToDelete.length} array split configs for ${type.name}`);
       }
     }
-    console.log('=== ARRAY SPLIT CONFIGS UPDATE COMPLETE ===');
 
-    console.log('=== updateExtractionTypes SERVICE COMPLETE ===');
+    for (const type of types) {
+      if (!type.id.startsWith('temp-') && type.arrayEntryConfigs) {
+        const { data: existingEntries } = await supabase
+          .from('extraction_type_array_entries')
+          .select('id')
+          .eq('extraction_type_id', type.id);
+
+        const existingEntryIds = new Set((existingEntries || []).map(e => e.id));
+        const entriesToUpdate = type.arrayEntryConfigs.filter(e => e.id && existingEntryIds.has(e.id) && !e.id.startsWith('temp-'));
+        const entriesToInsert = type.arrayEntryConfigs.filter(e => !e.id || !existingEntryIds.has(e.id) || e.id.startsWith('temp-'));
+        const entryIdsToKeep = new Set(type.arrayEntryConfigs.filter(e => e.id).map(e => e.id!));
+        const entriesToDelete = (existingEntries || []).filter(e => !entryIdsToKeep.has(e.id));
+
+        for (const entry of entriesToUpdate) {
+          const { error } = await supabase
+            .from('extraction_type_array_entries')
+            .update({
+              target_array_field: entry.targetArrayField,
+              entry_order: entry.entryOrder,
+              is_enabled: entry.isEnabled,
+              conditions: entry.conditions || null,
+              is_repeating: entry.isRepeating || false,
+              repeat_instruction: entry.repeatInstruction || null,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', entry.id!);
+
+          if (error) throw error;
+
+          // Update fields for this entry
+          await updateArrayEntryFields(entry.id!, entry.fields);
+        }
+
+        for (const entry of entriesToInsert) {
+          const { data: insertedEntry, error } = await supabase
+            .from('extraction_type_array_entries')
+            .insert({
+              extraction_type_id: type.id,
+              target_array_field: entry.targetArrayField,
+              entry_order: entry.entryOrder,
+              is_enabled: entry.isEnabled,
+              conditions: entry.conditions || null,
+              is_repeating: entry.isRepeating || false,
+              repeat_instruction: entry.repeatInstruction || null
+            })
+            .select('id')
+            .single();
+
+          if (error) throw error;
+
+          if (insertedEntry && entry.fields.length > 0) {
+            await insertArrayEntryFields(insertedEntry.id, entry.fields);
+          }
+        }
+
+        for (const entry of entriesToDelete) {
+          const { error } = await supabase
+            .from('extraction_type_array_entries')
+            .delete()
+            .eq('id', entry.id);
+
+          if (error) throw error;
+        }
+      }
+    }
   } catch (error) {
     console.error('Error updating extraction types:', error);
     throw error;
   }
+}
+
+async function updateArrayEntryFields(entryId: string, fields: ArrayEntryField[]): Promise<void> {
+  // Get existing fields
+  const { data: existingFields } = await supabase
+    .from('extraction_type_array_entry_fields')
+    .select('id')
+    .eq('array_entry_id', entryId);
+
+  const existingFieldIds = new Set((existingFields || []).map(f => f.id));
+  const fieldsToUpdate = fields.filter(f => f.id && existingFieldIds.has(f.id) && !f.id.startsWith('temp-'));
+  const fieldsToInsert = fields.filter(f => !f.id || !existingFieldIds.has(f.id) || f.id.startsWith('temp-'));
+  const fieldIdsToKeep = new Set(fields.filter(f => f.id).map(f => f.id!));
+  const fieldsToDelete = (existingFields || []).filter(f => !fieldIdsToKeep.has(f.id));
+
+  // Update existing fields
+  for (const field of fieldsToUpdate) {
+    const { error } = await supabase
+      .from('extraction_type_array_entry_fields')
+      .update({
+        field_name: field.fieldName,
+        field_type: field.fieldType,
+        hardcoded_value: field.hardcodedValue || null,
+        extraction_instruction: field.extractionInstruction || null,
+        data_type: field.dataType || 'string',
+        max_length: field.maxLength || null,
+        field_order: field.fieldOrder
+      })
+      .eq('id', field.id!);
+
+    if (error) throw error;
+  }
+
+  // Insert new fields
+  if (fieldsToInsert.length > 0) {
+    await insertArrayEntryFields(entryId, fieldsToInsert);
+  }
+
+  // Delete removed fields
+  for (const field of fieldsToDelete) {
+    const { error } = await supabase
+      .from('extraction_type_array_entry_fields')
+      .delete()
+      .eq('id', field.id);
+
+    if (error) throw error;
+  }
+}
+
+async function insertArrayEntryFields(entryId: string, fields: ArrayEntryField[]): Promise<void> {
+  const insertData = fields.map(field => ({
+    array_entry_id: entryId,
+    field_name: field.fieldName,
+    field_type: field.fieldType,
+    hardcoded_value: field.hardcodedValue || null,
+    extraction_instruction: field.extractionInstruction || null,
+    data_type: field.dataType || 'string',
+    max_length: field.maxLength || null,
+    field_order: field.fieldOrder
+  }));
+
+  const { error } = await supabase
+    .from('extraction_type_array_entry_fields')
+    .insert(insertData);
+
+  if (error) throw error;
 }
 
 export async function deleteExtractionType(id: string): Promise<void> {
@@ -413,53 +510,15 @@ export async function fetchTransformationTypes(): Promise<TransformationType[]> 
 
 export async function updateTransformationTypes(types: TransformationType[]): Promise<void> {
   try {
-    console.log('=== updateTransformationTypes SERVICE START ===');
-    console.log('Received types count:', types.length);
-    console.log('Service input validation:');
-    types.forEach((type, index) => {
-      console.log(`  Service Type ${index}:`, {
-        id: type.id,
-        name: type.name,
-        isTemp: type.id.startsWith('temp-'),
-        hasName: !!type.name,
-        hasInstructions: type.defaultInstructions !== undefined,
-        hasTemplate: type.filenameTemplate !== undefined,
-        pagesPerGroup: type.pagesPerGroup,
-        documentStartPattern: type.documentStartPattern,
-        documentStartDetectionEnabled: type.documentStartDetectionEnabled,
-        allRequiredFields: !!(type.name && type.defaultInstructions !== undefined && type.filenameTemplate !== undefined)
-      });
-    });
-   
-    // Get existing types to determine which to update vs insert
-    console.log('Fetching existing types from database...');
     const { data: existingTypes } = await supabase
       .from('transformation_types')
       .select('id');
 
-    console.log('Existing types in database:', existingTypes?.length || 0);
-    if (existingTypes) {
-      console.log('Existing type IDs:', existingTypes.map(t => t.id));
-    }
-    
     const existingIds = new Set((existingTypes || []).map(t => t.id));
     const typesToUpdate = types.filter(type => existingIds.has(type.id) && !type.id.startsWith('temp-'));
     const typesToInsert = types.filter(type => !existingIds.has(type.id) || type.id.startsWith('temp-'));
 
-    console.log('Operation breakdown:');
-    console.log('  Types to update:', typesToUpdate.length);
-    console.log('  Types to insert:', typesToInsert.length);
-    
-    if (typesToUpdate.length > 0) {
-      console.log('  Update candidates:', typesToUpdate.map(t => ({ id: t.id, name: t.name })));
-    }
-    if (typesToInsert.length > 0) {
-      console.log('  Insert candidates:', typesToInsert.map(t => ({ id: t.id, name: t.name, isTemp: t.id.startsWith('temp-') })));
-    }
-   
-    // Update existing types
     for (const type of typesToUpdate) {
-     console.log('Updating existing type:', type.name);
       const { error } = await supabase
         .from('transformation_types')
         .update({
@@ -480,95 +539,33 @@ export async function updateTransformationTypes(types: TransformationType[]): Pr
         .eq('id', type.id);
 
       if (error) throw error;
-     console.log('Successfully updated type:', type.name);
     }
 
-    // Insert new types
     if (typesToInsert.length > 0) {
-      console.log('=== PREPARING INSERT OPERATION ===');
-      console.log('Inserting new types:', typesToInsert.map(t => t.name));
-      
-      const insertData = typesToInsert.map(type => {
-        console.log(`Preparing insert data for type: ${type.name}`);
-        console.log('  Original type data:', {
-          id: type.id,
-          name: type.name,
-          defaultInstructions: type.defaultInstructions,
-          filenameTemplate: type.filenameTemplate,
-          fieldMappings: type.fieldMappings,
-          autoDetectInstructions: type.autoDetectInstructions,
-          workflowId: type.workflowId,
-          userId: type.userId,
-          pagesPerGroup: type.pagesPerGroup,
-          documentStartPattern: type.documentStartPattern,
-          documentStartDetectionEnabled: type.documentStartDetectionEnabled,
-          defaultUploadMode: type.defaultUploadMode
-        });
+      const insertData = typesToInsert.map(type => ({
+        name: type.name,
+        default_instructions: type.defaultInstructions || '',
+        filename_template: type.filenameTemplate || '',
+        field_mappings: type.fieldMappings ? JSON.stringify(type.fieldMappings) : null,
+        auto_detect_instructions: type.autoDetectInstructions || '',
+        workflow_id: type.workflowId || null,
+        user_id: type.userId || null,
+        pages_per_group: type.pagesPerGroup || 1,
+        document_start_pattern: type.documentStartPattern || null,
+        document_start_detection_enabled: type.documentStartDetectionEnabled || false,
+        default_upload_mode: type.defaultUploadMode || null,
+        lock_upload_mode: type.lockUploadMode || false
+      }));
 
-        const mappedData = {
-          name: type.name,
-          default_instructions: type.defaultInstructions || '',
-          filename_template: type.filenameTemplate || '',
-          field_mappings: type.fieldMappings ? JSON.stringify(type.fieldMappings) : null,
-          auto_detect_instructions: type.autoDetectInstructions || '',
-          workflow_id: type.workflowId || null,
-          user_id: type.userId || null,
-          pages_per_group: type.pagesPerGroup || 1,
-          document_start_pattern: type.documentStartPattern || null,
-          document_start_detection_enabled: type.documentStartDetectionEnabled || false,
-          default_upload_mode: type.defaultUploadMode || null,
-          lock_upload_mode: type.lockUploadMode || false
-        };
-        
-        console.log('  Mapped data for database:', mappedData);
-        console.log('  Required fields check:', {
-          hasName: !!mappedData.name,
-          hasInstructions: mappedData.default_instructions !== undefined,
-          hasTemplate: mappedData.filename_template !== undefined
-        });
-        
-        return mappedData;
-      });
-      
-      console.log('=== EXECUTING DATABASE INSERT ===');
-      console.log('Insert data array length:', insertData.length);
-      console.log('Insert data being sent to Supabase:', JSON.stringify(insertData, null, 2));
-     
       const { error } = await supabase
         .from('transformation_types')
         .insert(insertData);
 
-      console.log('=== DATABASE INSERT RESPONSE ===');
-      if (error) {
-        console.error('❌ DATABASE INSERT FAILED');
-        console.error('Error object:', error);
-        console.error('Error details:', {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code,
-          statusCode: (error as any).statusCode
-        });
-        console.error('Failed insert data was:', JSON.stringify(insertData, null, 2));
-        throw error;
-      } else {
-        console.log('✅ DATABASE INSERT SUCCESSFUL');
-        console.log('Successfully inserted', typesToInsert.length, 'new types');
-      }
-    } else {
-      console.log('No types to insert, skipping insert operation');
+      if (error) throw error;
     }
 
-    // FIXED: Don't do automatic cleanup for transformation types
-    // The cleanup was deleting newly inserted records by mistake
-    // Let the user manually delete types they don't want
-    console.log('=== CLEANUP PHASE SKIPPED ===');
-    console.log('Skipping automatic cleanup to prevent deleting newly inserted records');
-
-    console.log('=== UPDATING PAGE GROUP CONFIGS ===');
     for (const type of types) {
       if (!type.id.startsWith('temp-') && type.pageGroupConfigs) {
-        console.log(`Processing page group configs for ${type.name}`);
 
         const { data: existingPageGroups } = await supabase
           .from('page_group_configs')
@@ -635,12 +632,8 @@ export async function updateTransformationTypes(types: TransformationType[]): Pr
           if (error) throw error;
         }
 
-        console.log(`Updated ${configsToUpdate.length}, inserted ${configsToInsert.length}, deleted ${configsToDelete.length} page group configs for ${type.name}`);
       }
     }
-    console.log('=== PAGE GROUP CONFIGS UPDATE COMPLETE ===');
-
-    console.log('=== updateTransformationTypes SERVICE COMPLETE ===');
   } catch (error) {
     console.error('Error updating transformation types:', error);
     throw error;
@@ -658,5 +651,382 @@ export async function deleteTransformationType(id: string): Promise<void> {
   } catch (error) {
     console.error('Error deleting transformation type:', error);
     throw error;
+  }
+}
+
+export interface ExportedExtractionType {
+  exportVersion: string;
+  exportType: 'extraction';
+  exportDate: string;
+  typeName: string;
+  type: Omit<ExtractionType, 'id' | 'workflowId'>;
+  relatedData: {
+    arraySplitConfigs: Omit<ArraySplitConfig, 'id' | 'extractionTypeId'>[];
+    arrayEntryConfigs: {
+      targetArrayField: string;
+      entryOrder: number;
+      isEnabled: boolean;
+      fields: Omit<ArrayEntryField, 'id' | 'arrayEntryId'>[];
+    }[];
+    functions: {
+      function_name: string;
+      description?: string;
+      function_type: string;
+      function_logic: any;
+    }[];
+  };
+}
+
+export interface ExportedTransformationType {
+  exportVersion: string;
+  exportType: 'transformation';
+  exportDate: string;
+  typeName: string;
+  type: Omit<TransformationType, 'id' | 'workflowId' | 'userId'>;
+  relatedData: {
+    pageGroupConfigs: Omit<PageGroupConfig, 'id' | 'transformationTypeId' | 'workflowId'>[];
+  };
+}
+
+export async function exportExtractionType(extractionType: ExtractionType): Promise<ExportedExtractionType> {
+  const { data: arraySplits } = await supabase
+    .from('extraction_type_array_splits')
+    .select('*')
+    .eq('extraction_type_id', extractionType.id);
+
+  const { data: arrayEntries } = await supabase
+    .from('extraction_type_array_entries')
+    .select('*')
+    .eq('extraction_type_id', extractionType.id)
+    .order('entry_order');
+
+  const entryIds = (arrayEntries || []).map(e => e.id);
+  let entryFields: any[] = [];
+  if (entryIds.length > 0) {
+    const { data: fields } = await supabase
+      .from('extraction_type_array_entry_fields')
+      .select('*')
+      .in('array_entry_id', entryIds)
+      .order('field_order');
+    entryFields = fields || [];
+  }
+
+  const functionIds: string[] = [];
+  if (extractionType.fieldMappings) {
+    extractionType.fieldMappings.forEach(mapping => {
+      if (mapping.type === 'function' && mapping.functionId) {
+        functionIds.push(mapping.functionId);
+      }
+    });
+  }
+
+  let functions: any[] = [];
+  if (functionIds.length > 0) {
+    const { data: funcs } = await supabase
+      .from('field_mapping_functions')
+      .select('*')
+      .in('id', functionIds);
+    functions = funcs || [];
+  }
+
+  const { id, workflowId, ...typeWithoutIdAndWorkflow } = extractionType;
+
+  return {
+    exportVersion: '1.0',
+    exportType: 'extraction',
+    exportDate: new Date().toISOString(),
+    typeName: extractionType.name,
+    type: typeWithoutIdAndWorkflow,
+    relatedData: {
+      arraySplitConfigs: (arraySplits || []).map(split => ({
+        targetArrayField: split.target_array_field,
+        splitBasedOnField: split.split_based_on_field,
+        splitStrategy: split.split_strategy,
+        defaultToOneIfMissing: split.default_to_one_if_missing
+      })),
+      arrayEntryConfigs: (arrayEntries || []).map(entry => ({
+        targetArrayField: entry.target_array_field,
+        entryOrder: entry.entry_order,
+        isEnabled: entry.is_enabled,
+        conditions: entry.conditions || undefined,
+        fields: entryFields
+          .filter(f => f.array_entry_id === entry.id)
+          .map(f => ({
+            fieldName: f.field_name,
+            fieldType: f.field_type,
+            hardcodedValue: f.hardcoded_value,
+            extractionInstruction: f.extraction_instruction,
+            dataType: f.data_type,
+            fieldOrder: f.field_order
+          }))
+      })),
+      functions: functions.map(f => ({
+        function_name: f.function_name,
+        description: f.description,
+        function_type: f.function_type || 'conditional',
+        function_logic: f.function_logic
+      }))
+    }
+  };
+}
+
+export async function importExtractionType(exportData: ExportedExtractionType): Promise<{ success: boolean; newTypeId?: string; error?: string }> {
+  try {
+    const { data: existingTypes } = await supabase
+      .from('extraction_types')
+      .select('name')
+      .ilike('name', exportData.typeName);
+
+    let newName = exportData.typeName;
+    if (existingTypes && existingTypes.length > 0) {
+      newName = `${exportData.typeName} (Imported)`;
+    }
+
+    const functionIdMap = new Map<string, string>();
+
+    for (const func of exportData.relatedData.functions) {
+      const { data: existingFunc } = await supabase
+        .from('field_mapping_functions')
+        .select('id, function_name')
+        .eq('function_name', func.function_name)
+        .maybeSingle();
+
+      if (existingFunc) {
+        functionIdMap.set(func.function_name, existingFunc.id);
+      } else {
+        const { data: newFunc, error: funcError } = await supabase
+          .from('field_mapping_functions')
+          .insert({
+            function_name: func.function_name,
+            description: func.description,
+            function_type: func.function_type,
+            function_logic: func.function_logic
+          })
+          .select('id')
+          .single();
+
+        if (funcError) throw funcError;
+        functionIdMap.set(func.function_name, newFunc.id);
+      }
+    }
+
+    let fieldMappings = exportData.type.fieldMappings;
+    if (fieldMappings) {
+      fieldMappings = fieldMappings.map(mapping => {
+        if (mapping.type === 'function' && mapping.functionId) {
+          const funcData = exportData.relatedData.functions.find(f => {
+            const originalFunc = exportData.relatedData.functions.find(fn => fn.function_name);
+            return originalFunc;
+          });
+          if (funcData) {
+            const newFuncId = functionIdMap.get(funcData.function_name);
+            if (newFuncId) {
+              return { ...mapping, functionId: newFuncId };
+            }
+          }
+        }
+        return mapping;
+      });
+    }
+
+    const { data: newType, error: typeError } = await supabase
+      .from('extraction_types')
+      .insert({
+        name: newName,
+        default_instructions: exportData.type.defaultInstructions || '',
+        xml_format: exportData.type.formatTemplate || '',
+        filename: exportData.type.filename || '',
+        format_type: exportData.type.formatType || 'XML',
+        json_path: exportData.type.jsonPath || '',
+        field_mappings: fieldMappings ? JSON.stringify(fieldMappings) : null,
+        parseit_id_mapping: exportData.type.parseitIdMapping || null,
+        trace_type_mapping: exportData.type.traceTypeMapping || null,
+        trace_type_value: exportData.type.traceTypeValue || null,
+        auto_detect_instructions: exportData.type.autoDetectInstructions || null,
+        csv_delimiter: exportData.type.csvDelimiter || ',',
+        csv_include_headers: exportData.type.csvIncludeHeaders !== false,
+        csv_row_detection_instructions: exportData.type.csvRowDetectionInstructions || null,
+        csv_multi_page_processing: exportData.type.csvMultiPageProcessing || false,
+        json_multi_page_processing: exportData.type.jsonMultiPageProcessing || false,
+        default_upload_mode: exportData.type.defaultUploadMode || null,
+        lock_upload_mode: exportData.type.lockUploadMode || false,
+        page_processing_mode: exportData.type.pageProcessingMode || 'all',
+        page_processing_single_page: exportData.type.pageProcessingSinglePage || 1,
+        page_processing_range_start: exportData.type.pageProcessingRangeStart || 1,
+        page_processing_range_end: exportData.type.pageProcessingRangeEnd || 1
+      })
+      .select('id')
+      .single();
+
+    if (typeError) throw typeError;
+
+    if (exportData.relatedData.arraySplitConfigs.length > 0) {
+      const { error: splitError } = await supabase
+        .from('extraction_type_array_splits')
+        .insert(exportData.relatedData.arraySplitConfigs.map(split => ({
+          extraction_type_id: newType.id,
+          target_array_field: split.targetArrayField,
+          split_based_on_field: split.splitBasedOnField,
+          split_strategy: split.splitStrategy,
+          default_to_one_if_missing: split.defaultToOneIfMissing
+        })));
+
+      if (splitError) throw splitError;
+    }
+
+    for (const entry of exportData.relatedData.arrayEntryConfigs) {
+      const { data: newEntry, error: entryError } = await supabase
+        .from('extraction_type_array_entries')
+        .insert({
+          extraction_type_id: newType.id,
+          target_array_field: entry.targetArrayField,
+          entry_order: entry.entryOrder,
+          is_enabled: entry.isEnabled,
+          conditions: entry.conditions || null
+        })
+        .select('id')
+        .single();
+
+      if (entryError) throw entryError;
+
+      if (entry.fields.length > 0) {
+        const { error: fieldsError } = await supabase
+          .from('extraction_type_array_entry_fields')
+          .insert(entry.fields.map(f => ({
+            array_entry_id: newEntry.id,
+            field_name: f.fieldName,
+            field_type: f.fieldType,
+            hardcoded_value: f.hardcodedValue || null,
+            extraction_instruction: f.extractionInstruction || null,
+            data_type: f.dataType || 'string',
+            max_length: f.maxLength || null,
+            field_order: f.fieldOrder
+          })));
+
+        if (fieldsError) throw fieldsError;
+      }
+    }
+
+    for (const func of exportData.relatedData.functions) {
+      const newFuncId = functionIdMap.get(func.function_name);
+      if (newFuncId) {
+        await supabase
+          .from('field_mapping_functions')
+          .update({ extraction_type_id: newType.id })
+          .eq('id', newFuncId)
+          .is('extraction_type_id', null);
+      }
+    }
+
+    return { success: true, newTypeId: newType.id };
+  } catch (error: any) {
+    console.error('Error importing extraction type:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+interface PageGroupConfig {
+  id: string;
+  transformationTypeId: string;
+  groupOrder: number;
+  pagesPerGroup: number;
+  workflowId?: string;
+  smartDetectionPattern?: string;
+  processMode: 'single' | 'all';
+  filenameTemplate?: string;
+  fieldMappings?: any[];
+  useAiDetection?: boolean;
+  fallbackBehavior?: 'skip' | 'fixed_position' | 'error';
+  detectionConfidenceThreshold?: number;
+  followsPreviousGroup?: boolean;
+}
+
+export async function exportTransformationType(transformationType: TransformationType): Promise<ExportedTransformationType> {
+  const { data: pageGroups } = await supabase
+    .from('page_group_configs')
+    .select('*')
+    .eq('transformation_type_id', transformationType.id)
+    .order('group_order');
+
+  const { id, workflowId, userId, ...typeWithoutIds } = transformationType;
+
+  return {
+    exportVersion: '1.0',
+    exportType: 'transformation',
+    exportDate: new Date().toISOString(),
+    typeName: transformationType.name,
+    type: typeWithoutIds,
+    relatedData: {
+      pageGroupConfigs: (pageGroups || []).map(pg => ({
+        groupOrder: pg.group_order,
+        pagesPerGroup: pg.pages_per_group,
+        smartDetectionPattern: pg.smart_detection_pattern,
+        processMode: pg.process_mode,
+        filenameTemplate: pg.filename_template,
+        fieldMappings: pg.field_mappings ? JSON.parse(pg.field_mappings) : undefined,
+        useAiDetection: pg.use_ai_detection,
+        fallbackBehavior: pg.fallback_behavior,
+        detectionConfidenceThreshold: pg.detection_confidence_threshold,
+        followsPreviousGroup: pg.follows_previous_group
+      }))
+    }
+  };
+}
+
+export async function importTransformationType(exportData: ExportedTransformationType): Promise<{ success: boolean; newTypeId?: string; error?: string }> {
+  try {
+    const { data: existingTypes } = await supabase
+      .from('transformation_types')
+      .select('name')
+      .ilike('name', exportData.typeName);
+
+    let newName = exportData.typeName;
+    if (existingTypes && existingTypes.length > 0) {
+      newName = `${exportData.typeName} (Imported)`;
+    }
+
+    const { data: newType, error: typeError } = await supabase
+      .from('transformation_types')
+      .insert({
+        name: newName,
+        default_instructions: exportData.type.defaultInstructions || '',
+        filename_template: exportData.type.filenameTemplate || '',
+        field_mappings: exportData.type.fieldMappings ? JSON.stringify(exportData.type.fieldMappings) : null,
+        auto_detect_instructions: exportData.type.autoDetectInstructions || '',
+        pages_per_group: exportData.type.pagesPerGroup || 1,
+        document_start_pattern: exportData.type.documentStartPattern || null,
+        document_start_detection_enabled: exportData.type.documentStartDetectionEnabled || false,
+        default_upload_mode: exportData.type.defaultUploadMode || null,
+        lock_upload_mode: exportData.type.lockUploadMode || false
+      })
+      .select('id')
+      .single();
+
+    if (typeError) throw typeError;
+
+    if (exportData.relatedData.pageGroupConfigs.length > 0) {
+      const { error: pgError } = await supabase
+        .from('page_group_configs')
+        .insert(exportData.relatedData.pageGroupConfigs.map(pg => ({
+          transformation_type_id: newType.id,
+          group_order: pg.groupOrder,
+          pages_per_group: pg.pagesPerGroup,
+          smart_detection_pattern: pg.smartDetectionPattern || null,
+          process_mode: pg.processMode,
+          filename_template: pg.filenameTemplate || null,
+          field_mappings: pg.fieldMappings ? JSON.stringify(pg.fieldMappings) : null,
+          use_ai_detection: pg.useAiDetection || false,
+          fallback_behavior: pg.fallbackBehavior || 'skip',
+          detection_confidence_threshold: pg.detectionConfidenceThreshold || 0.7,
+          follows_previous_group: pg.followsPreviousGroup || false
+        })));
+
+      if (pgError) throw pgError;
+    }
+
+    return { success: true, newTypeId: newType.id };
+  } catch (error: any) {
+    console.error('Error importing transformation type:', error);
+    return { success: false, error: error.message };
   }
 }
