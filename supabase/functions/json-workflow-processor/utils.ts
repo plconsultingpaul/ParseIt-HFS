@@ -137,6 +137,23 @@ export function filterJsonWorkflowOnlyFields(data: any, fieldMappings: any[]): a
   }
 }
 
+export function resolveUserResponseTemplate(template: string | null | undefined, contextData: any): string | null {
+  if (!template) return null;
+
+  try {
+    return template.replace(/\{([^}]+)\}/g, (match, variablePath) => {
+      const value = getValueByPath(contextData, variablePath.trim());
+      if (value === null || value === undefined) {
+        return match;
+      }
+      return String(value);
+    });
+  } catch (error) {
+    console.error('Error resolving user response template:', error);
+    return template;
+  }
+}
+
 export async function createStepLog(
   supabaseUrl: string,
   supabaseServiceKey: string,
@@ -149,9 +166,12 @@ export async function createStepLog(
   durationMs: number | null,
   errorMessage: string | null,
   inputData: any,
-  outputData: any
+  outputData: any,
+  contextData?: any
 ): Promise<string | null> {
   try {
+    const userResponse = resolveUserResponseTemplate(step.user_response_template, contextData || {});
+
     const stepLogPayload = {
       workflow_execution_log_id: workflowExecutionLogId,
       workflow_id: workflowId,
@@ -166,6 +186,7 @@ export async function createStepLog(
       error_message: errorMessage || null,
       input_data: inputData || null,
       output_data: outputData || null,
+      user_response: userResponse,
       created_at: new Date().toISOString()
     };
 
