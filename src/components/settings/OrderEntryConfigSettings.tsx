@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Plus, Trash2, Edit2, Settings, GripVertical, Eye, AlertCircle, Download, HelpCircle, Brain, ChevronDown, ChevronRight, Check, Loader2, ChevronsDown, ChevronsRight, FileText, Wrench, Power, Save } from 'lucide-react';
-import type { OrderEntryFieldGroup, OrderEntryField, OrderEntryFieldLayout, User, Workflow } from '../../types';
+import { Plus, Trash2, Edit2, Settings, GripVertical, Eye, AlertCircle, Download, HelpCircle, Brain, ChevronDown, ChevronRight, Check, Loader2, ChevronsDown, ChevronsRight, FileText, Wrench, Power, Save, Code } from 'lucide-react';
+import type { OrderEntryFieldGroup, OrderEntryField, OrderEntryFieldLayout, User, ExtractionType, DropdownOption } from '../../types';
 import { supabase } from '../../lib/supabase';
 import LayoutDesigner from './LayoutDesigner';
 import JsonSchemaManager from './JsonSchemaManager';
@@ -18,12 +18,11 @@ import OrderEntryTemplatesSettings from './OrderEntryTemplatesSettings';
 
 interface OrderEntryConfigSettingsProps {
   currentUser: User;
-  workflows: Workflow[];
 }
 
 type OrderEntrySubTab = 'templates' | 'configuration';
 
-export default function OrderEntryConfigSettings({ currentUser, workflows }: OrderEntryConfigSettingsProps) {
+export default function OrderEntryConfigSettings({ currentUser }: OrderEntryConfigSettingsProps) {
   const [activeSubTab, setActiveSubTab] = useState<OrderEntrySubTab>('templates');
   const [loading, setLoading] = useState(true);
   const [fieldGroups, setFieldGroups] = useState<OrderEntryFieldGroup[]>([]);
@@ -34,19 +33,10 @@ export default function OrderEntryConfigSettings({ currentUser, workflows }: Ord
   const [globalConfig, setGlobalConfig] = useState<{
     id?: string;
     isEnabled: boolean;
-    apiEndpoint: string;
-    apiMethod: string;
-    apiAuthType: string;
-    apiAuthToken: string;
-    workflowId: string | null;
   }>({
-    isEnabled: false,
-    apiEndpoint: '',
-    apiMethod: 'POST',
-    apiAuthType: 'none',
-    apiAuthToken: '',
-    workflowId: null
+    isEnabled: false
   });
+  const [extractionTypes, setExtractionTypes] = useState<ExtractionType[]>([]);
 
   const [editingGroup, setEditingGroup] = useState<OrderEntryFieldGroup | null>(null);
   const [editingField, setEditingField] = useState<OrderEntryField | null>(null);
@@ -71,6 +61,7 @@ export default function OrderEntryConfigSettings({ currentUser, workflows }: Ord
   useEffect(() => {
     loadData(true);
     loadGlobalConfig();
+    loadExtractionTypes();
   }, []);
 
   const loadGlobalConfig = async () => {
@@ -86,12 +77,7 @@ export default function OrderEntryConfigSettings({ currentUser, workflows }: Ord
       if (data) {
         setGlobalConfig({
           id: data.id,
-          isEnabled: data.is_enabled || false,
-          apiEndpoint: data.api_endpoint || '',
-          apiMethod: data.api_method || 'POST',
-          apiAuthType: data.api_auth_type || 'none',
-          apiAuthToken: data.api_auth_token || '',
-          workflowId: data.workflow_id || null
+          isEnabled: data.is_enabled || false
         });
       }
     } catch (err: any) {
@@ -102,16 +88,51 @@ export default function OrderEntryConfigSettings({ currentUser, workflows }: Ord
     }
   };
 
+  const loadExtractionTypes = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('extraction_types')
+        .select('*')
+        .order('name');
+
+      if (error) throw error;
+
+      const types: ExtractionType[] = (data || []).map((t: any) => {
+        let fieldMappings = [];
+        if (t.field_mappings) {
+          try {
+            fieldMappings = typeof t.field_mappings === 'string'
+              ? JSON.parse(t.field_mappings)
+              : t.field_mappings;
+          } catch (e) {
+            console.error('Failed to parse field_mappings for extraction type:', t.name, e);
+          }
+        }
+
+        return {
+          id: t.id,
+          name: t.name,
+          defaultInstructions: t.default_instructions || '',
+          formatTemplate: t.format_template || '',
+          filename: t.filename || '',
+          formatType: t.format_type || 'JSON',
+          workflowId: t.workflow_id,
+          fieldMappings
+        };
+      });
+
+      console.log('[OrderEntryConfigSettings] Loaded extraction types with fieldMappings:', types.map(t => ({ name: t.name, fieldMappingsCount: t.fieldMappings?.length || 0 })));
+      setExtractionTypes(types);
+    } catch (err: any) {
+      console.error('Failed to load extraction types:', err);
+    }
+  };
+
   const saveGlobalConfig = async () => {
     try {
       setGlobalConfigLoading(true);
       const configData = {
         is_enabled: globalConfig.isEnabled,
-        api_endpoint: globalConfig.apiEndpoint,
-        api_method: globalConfig.apiMethod,
-        api_auth_type: globalConfig.apiAuthType,
-        api_auth_token: globalConfig.apiAuthToken,
-        workflow_id: globalConfig.workflowId,
         updated_at: new Date().toISOString()
       };
 
@@ -248,7 +269,8 @@ export default function OrderEntryConfigSettings({ currentUser, workflows }: Ord
         minValue: f.min_value,
         maxValue: f.max_value,
         defaultValue: f.default_value,
-        dropdownOptions: f.dropdown_options,
+        dropdownOptions: f.dropdown_options || [],
+        dropdownDisplayMode: f.dropdown_display_mode || 'description_only',
         jsonPath: f.json_path,
         isArrayField: f.is_array_field,
         arrayMinRows: f.array_min_rows,
@@ -455,10 +477,15 @@ export default function OrderEntryConfigSettings({ currentUser, workflows }: Ord
     try {
       setError(null);
 
-      // Clean up dropdown options before saving (remove empty/whitespace-only options)
-      const cleanedDropdownOptions = editingField.dropdownOptions
-        .map(o => o.trim())
-        .filter(o => o.length > 0);
+      const cleanedDropdownOptions = (editingField.dropdownOptions || [])
+        .filter((opt: string | DropdownOption) => {
+          if (typeof opt === 'string') return opt.trim().length > 0;
+          return opt.value?.trim().length > 0;
+        })
+        .map((opt: string | DropdownOption) => {
+          if (typeof opt === 'string') return { value: opt.trim(), description: opt.trim() };
+          return { value: opt.value?.trim() || '', description: opt.description?.trim() || opt.value?.trim() || '' };
+        });
 
       const fieldData = {
         field_group_id: editingField.fieldGroupId,
@@ -473,6 +500,7 @@ export default function OrderEntryConfigSettings({ currentUser, workflows }: Ord
         max_value: editingField.maxValue,
         default_value: editingField.defaultValue,
         dropdown_options: cleanedDropdownOptions,
+        dropdown_display_mode: editingField.dropdownDisplayMode || 'description_only',
         json_path: editingField.jsonPath,
         is_array_field: editingField.isArrayField,
         array_min_rows: editingField.arrayMinRows,
@@ -675,123 +703,38 @@ export default function OrderEntryConfigSettings({ currentUser, workflows }: Ord
             </button>
           </div>
 
-          <div className="space-y-6">
-            <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border-2 border-gray-200 dark:border-gray-600">
-              <div className="flex items-center gap-4">
-                <div className={`p-3 rounded-lg ${globalConfig.isEnabled ? 'bg-green-100 dark:bg-green-900/30' : 'bg-red-100 dark:bg-red-900/30'}`}>
-                  <Power className={`h-6 w-6 ${globalConfig.isEnabled ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} />
-                </div>
-                <div>
-                  <h4 className="text-md font-semibold text-gray-900 dark:text-gray-100">
-                    Order Entry System Status
-                  </h4>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    {globalConfig.isEnabled
-                      ? 'Order entry is currently enabled for all users with access'
-                      : 'Order entry is currently disabled - users will see "Form Unavailable"'}
-                  </p>
-                </div>
+          <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border-2 border-gray-200 dark:border-gray-600">
+            <div className="flex items-center gap-4">
+              <div className={`p-3 rounded-lg ${globalConfig.isEnabled ? 'bg-green-100 dark:bg-green-900/30' : 'bg-red-100 dark:bg-red-900/30'}`}>
+                <Power className={`h-6 w-6 ${globalConfig.isEnabled ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} />
               </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={globalConfig.isEnabled}
-                  onChange={(e) => setGlobalConfig({ ...globalConfig, isEnabled: e.target.checked })}
-                  className="sr-only peer"
-                />
-                <div className="w-14 h-7 bg-gray-300 dark:bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:start-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-green-600"></div>
-                <span className="ms-3 text-sm font-medium text-gray-900 dark:text-gray-100">
-                  {globalConfig.isEnabled ? 'Enabled' : 'Disabled'}
-                </span>
-              </label>
-            </div>
-
-            <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
-              <h4 className="text-md font-semibold text-gray-900 dark:text-gray-100 mb-4">API Configuration</h4>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Workflow
-                  </label>
-                  <Select
-                    value={globalConfig.workflowId || 'none'}
-                    onValueChange={(value) => setGlobalConfig({ ...globalConfig, workflowId: value === 'none' ? null : value })}
-                    options={[
-                      { value: 'none', label: 'No workflow' },
-                      ...workflows.map(w => ({ value: w.id, label: w.name }))
-                    ]}
-                    placeholder="Select a workflow (optional)"
-                  />
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Optional: Process submissions through a workflow before sending to API
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    API Endpoint
-                  </label>
-                  <input
-                    type="text"
-                    value={globalConfig.apiEndpoint}
-                    onChange={(e) => setGlobalConfig({ ...globalConfig, apiEndpoint: e.target.value })}
-                    placeholder="https://api.example.com/orders"
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Method
-                    </label>
-                    <Select
-                      value={globalConfig.apiMethod}
-                      onValueChange={(value) => setGlobalConfig({ ...globalConfig, apiMethod: value })}
-                      options={[
-                        { value: 'POST', label: 'POST' },
-                        { value: 'PUT', label: 'PUT' },
-                        { value: 'PATCH', label: 'PATCH' }
-                      ]}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Auth Type
-                    </label>
-                    <Select
-                      value={globalConfig.apiAuthType}
-                      onValueChange={(value) => setGlobalConfig({ ...globalConfig, apiAuthType: value })}
-                      options={[
-                        { value: 'none', label: 'None' },
-                        { value: 'bearer', label: 'Bearer Token' },
-                        { value: 'apikey', label: 'API Key' }
-                      ]}
-                    />
-                  </div>
-                </div>
-
-                {globalConfig.apiAuthType !== 'none' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      {globalConfig.apiAuthType === 'bearer' ? 'Bearer Token' : 'API Key'}
-                    </label>
-                    <input
-                      type="password"
-                      value={globalConfig.apiAuthToken}
-                      onChange={(e) => setGlobalConfig({ ...globalConfig, apiAuthToken: e.target.value })}
-                      placeholder="Enter token or key"
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                )}
+              <div>
+                <h4 className="text-md font-semibold text-gray-900 dark:text-gray-100">
+                  Order Entry System Status
+                </h4>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  {globalConfig.isEnabled
+                    ? 'Order entry is currently enabled for all users with access'
+                    : 'Order entry is currently disabled - users will see "Form Unavailable"'}
+                </p>
               </div>
             </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={globalConfig.isEnabled}
+                onChange={(e) => setGlobalConfig({ ...globalConfig, isEnabled: e.target.checked })}
+                className="sr-only peer"
+              />
+              <div className="w-14 h-7 bg-gray-300 dark:bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:start-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-green-600"></div>
+              <span className="ms-3 text-sm font-medium text-gray-900 dark:text-gray-100">
+                {globalConfig.isEnabled ? 'Enabled' : 'Disabled'}
+              </span>
+            </label>
           </div>
         </div>
 
-        <OrderEntryTemplatesSettings workflows={workflows} />
+        <OrderEntryTemplatesSettings extractionTypes={extractionTypes} />
       </div>
     );
   }
@@ -1481,8 +1424,9 @@ function FieldEditModal({ field, onChange, onSave, onClose }: FieldEditModalProp
     { value: 'date', label: 'Date' },
     { value: 'datetime', label: 'Date & Time' },
     { value: 'phone', label: 'Phone' },
-    { value: 'zip', label: 'Zip Code (5 digits)' },
+    { value: 'zip', label: 'Zip Code (US 5 digits)' },
     { value: 'postal_code', label: 'Postal Code (Canadian)' },
+    { value: 'zip_postal', label: 'Zip/Postal Code (US or CA)' },
     { value: 'province', label: 'Province (Canadian)' },
     { value: 'state', label: 'State (US)' },
     { value: 'dropdown', label: 'Dropdown' },
@@ -1647,17 +1591,77 @@ function FieldEditModal({ field, onChange, onSave, onClose }: FieldEditModalProp
           </div>
 
           {field.fieldType === 'dropdown' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Dropdown Options (one per line)
-              </label>
-              <textarea
-                value={field.dropdownOptions.join('\n')}
-                onChange={(e) => onChange({ ...field, dropdownOptions: e.target.value.split('\n') })}
-                placeholder="Option 1&#10;Option 2&#10;Option 3"
-                rows={4}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-purple-500 hover:border-purple-400 dark:hover:border-purple-500 transition-colors"
+            <div className="space-y-4">
+              <Select
+                label="Display Mode"
+                value={field.dropdownDisplayMode || 'description_only'}
+                onValueChange={(value) => onChange({ ...field, dropdownDisplayMode: value as 'description_only' | 'value_and_description' })}
+                options={[
+                  { value: 'description_only', label: 'Show description only' },
+                  { value: 'value_and_description', label: 'Show value and description' }
+                ]}
+                helpText="Controls how options appear to users in the dropdown"
+                searchable={false}
               />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Dropdown Options
+                </label>
+                <div className="space-y-2">
+                  {(field.dropdownOptions || []).map((opt: string | DropdownOption, index: number) => {
+                    const optValue = typeof opt === 'string' ? opt : opt.value;
+                    const optDesc = typeof opt === 'string' ? opt : opt.description;
+                    return (
+                      <div key={index} className="flex gap-2 items-center">
+                        <input
+                          type="text"
+                          value={optValue}
+                          onChange={(e) => {
+                            const newOptions = [...(field.dropdownOptions || [])];
+                            newOptions[index] = { value: e.target.value, description: optDesc };
+                            onChange({ ...field, dropdownOptions: newOptions });
+                          }}
+                          placeholder="Value"
+                          className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-purple-500 text-sm"
+                        />
+                        <input
+                          type="text"
+                          value={optDesc}
+                          onChange={(e) => {
+                            const newOptions = [...(field.dropdownOptions || [])];
+                            newOptions[index] = { value: optValue, description: e.target.value };
+                            onChange({ ...field, dropdownOptions: newOptions });
+                          }}
+                          placeholder="Description"
+                          className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-purple-500 text-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newOptions = (field.dropdownOptions || []).filter((_: string | DropdownOption, i: number) => i !== index);
+                            onChange({ ...field, dropdownOptions: newOptions });
+                          }}
+                          className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newOptions = [...(field.dropdownOptions || []), { value: '', description: '' }];
+                      onChange({ ...field, dropdownOptions: newOptions });
+                    }}
+                    className="flex items-center gap-2 px-3 py-2 text-sm text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Option
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">Value is sent to the API. Description is what users see.</p>
+              </div>
             </div>
           )}
 
