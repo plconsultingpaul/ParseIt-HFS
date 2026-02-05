@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Trash2, Save, Users, Shield, User as UserIcon, Eye, EyeOff, Settings, FileText, Server, Key, Mail, Filter, Database, GitBranch, Brain, RefreshCw, Send, Clock } from 'lucide-react';
+import { Plus, Trash2, Save, Users, Shield, User as UserIcon, Eye, EyeOff, Settings, FileText, Server, Key, Mail, Filter, Database, GitBranch, Brain, RefreshCw, Send, Clock, Play } from 'lucide-react';
 import type { User, ExtractionType, TransformationType } from '../../types';
 import Select from '../common/Select';
 import InvitationEmailTemplateEditor from './InvitationEmailTemplateEditor';
@@ -58,6 +58,12 @@ const formatInvitationSent = (sentAt: string | undefined, count: number | undefi
   return timeStr;
 };
 
+interface ExecuteCategory {
+  id: string;
+  name: string;
+  displayOrder: number;
+}
+
 interface UserManagementSettingsProps {
   currentUser: User;
   getAllUsers: () => Promise<User[]>;
@@ -70,6 +76,8 @@ interface UserManagementSettingsProps {
   transformationTypes: TransformationType[];
   getUserTransformationTypes: (userId: string) => Promise<string[]>;
   updateUserTransformationTypes: (userId: string, transformationTypeIds: string[]) => Promise<{ success: boolean; message: string }>;
+  getUserExecuteCategories: (userId: string) => Promise<string[]>;
+  updateUserExecuteCategories: (userId: string, categoryIds: string[]) => Promise<{ success: boolean; message: string }>;
 }
 
 export default function UserManagementSettings({
@@ -83,7 +91,9 @@ export default function UserManagementSettings({
   updateUserExtractionTypes,
   transformationTypes,
   getUserTransformationTypes,
-  updateUserTransformationTypes
+  updateUserTransformationTypes,
+  getUserExecuteCategories,
+  updateUserExecuteCategories
 }: UserManagementSettingsProps) {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -128,6 +138,11 @@ export default function UserManagementSettings({
   const [showForgotUsernameTemplateModal, setShowForgotUsernameTemplateModal] = useState(false);
   const [showResetPasswordTemplateModal, setShowResetPasswordTemplateModal] = useState(false);
   const [sendingEmail, setSendingEmail] = useState<string | null>(null);
+  const [showExecuteCategoriesModal, setShowExecuteCategoriesModal] = useState(false);
+  const [userForExecuteCategories, setUserForExecuteCategories] = useState<User | null>(null);
+  const [selectedExecuteCategoryIds, setSelectedExecuteCategoryIds] = useState<string[]>([]);
+  const [isUpdatingExecuteCategories, setIsUpdatingExecuteCategories] = useState(false);
+  const [executeCategories, setExecuteCategories] = useState<ExecuteCategory[]>([]);
 
   const permissionOptions = [
     { key: 'extractionTypes', label: 'Extraction Types', icon: FileText, description: 'Manage PDF extraction templates and configurations' },
@@ -139,7 +154,8 @@ export default function UserManagementSettings({
     { key: 'processedEmails', label: 'Processed Emails', icon: Database, description: 'View processed email history' },
     { key: 'extractionLogs', label: 'Extraction Logs', icon: FileText, description: 'View PDF extraction activity logs' },
     { key: 'userManagement', label: 'User Management', icon: Users, description: 'Manage users and permissions' },
-    { key: 'workflowManagement', label: 'Workflow Management', icon: GitBranch, description: 'Create and manage multi-step extraction workflows' }
+    { key: 'workflowManagement', label: 'Workflow Management', icon: GitBranch, description: 'Create and manage multi-step extraction workflows' },
+    { key: 'executeSetup', label: 'Execute Setup', icon: Play, description: 'Configure execute buttons and categories' }
   ];
 
   useEffect(() => {
@@ -545,6 +561,93 @@ export default function UserManagementSettings({
 
   const deselectAllTransformationTypes = () => {
     setSelectedTransformationTypeIds([]);
+  };
+
+  const handleManageExecuteCategories = async (user: User) => {
+    setUserForExecuteCategories(user);
+    setIsUpdatingExecuteCategories(true);
+
+    let categoriesLoaded = false;
+
+    try {
+      const { data: categoriesData, error: categoriesError } = await supabase
+        .from('execute_button_categories')
+        .select('*')
+        .order('display_order', { ascending: true });
+
+      if (categoriesError) {
+        console.error('Failed to fetch execute categories:', categoriesError);
+        setExecuteCategories([]);
+      } else {
+        setExecuteCategories((categoriesData || []).map(c => ({
+          id: c.id,
+          name: c.name,
+          displayOrder: c.display_order
+        })));
+        categoriesLoaded = true;
+      }
+    } catch (error) {
+      console.error('Error loading execute categories:', error);
+      setExecuteCategories([]);
+    }
+
+    try {
+      const currentCategoryIds = await getUserExecuteCategories(user.id);
+      setSelectedExecuteCategoryIds(currentCategoryIds);
+    } catch (error) {
+      console.error('Error loading user execute category selections:', error);
+      setSelectedExecuteCategoryIds([]);
+    }
+
+    setIsUpdatingExecuteCategories(false);
+    setShowExecuteCategoriesModal(true);
+  };
+
+  const handleUpdateExecuteCategories = async () => {
+    if (!userForExecuteCategories) return;
+
+    setIsUpdatingExecuteCategories(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const result = await updateUserExecuteCategories(userForExecuteCategories.id, selectedExecuteCategoryIds);
+
+      if (result.success) {
+        setSuccess('Execute category permissions updated successfully');
+        setShowExecuteCategoriesModal(false);
+        setUserForExecuteCategories(null);
+        setSelectedExecuteCategoryIds([]);
+        await loadUsers();
+        setTimeout(() => setSuccess(''), 3000);
+      } else {
+        setError(result.message);
+        setTimeout(() => setError(''), 3000);
+      }
+    } catch (error) {
+      setError('Failed to update execute category permissions. Please try again.');
+      setTimeout(() => setError(''), 3000);
+    } finally {
+      setIsUpdatingExecuteCategories(false);
+    }
+  };
+
+  const toggleExecuteCategory = (categoryId: string) => {
+    setSelectedExecuteCategoryIds(prev => {
+      if (prev.includes(categoryId)) {
+        return prev.filter(id => id !== categoryId);
+      } else {
+        return [...prev, categoryId];
+      }
+    });
+  };
+
+  const selectAllExecuteCategories = () => {
+    setSelectedExecuteCategoryIds(executeCategories.map(cat => cat.id));
+  };
+
+  const deselectAllExecuteCategories = () => {
+    setSelectedExecuteCategoryIds([]);
   };
 
   const togglePermission = (permissionKey: string) => {
@@ -953,6 +1056,121 @@ export default function UserManagementSettings({
         </div>
       )}
 
+      {/* Execute Categories Modal */}
+      {showExecuteCategoriesModal && userForExecuteCategories && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-2xl w-full mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="text-center mb-6">
+              <div className="bg-cyan-100 dark:bg-cyan-900/50 p-3 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                <Play className="h-8 w-8 text-cyan-600 dark:text-cyan-400" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">Manage Execute Categories</h3>
+              <p className="text-gray-600 dark:text-gray-400">Select which execute button categories <strong>{userForExecuteCategories.username}</strong> can access</p>
+            </div>
+
+            {executeCategories.length === 0 ? (
+              <div className="text-center py-8">
+                <Play className="h-12 w-12 text-gray-400 dark:text-gray-500 mx-auto mb-4" />
+                <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No Execute Categories Available</h4>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Create execute button categories in Execute Setup first.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="flex space-x-3 mb-4">
+                  <button
+                    onClick={selectAllExecuteCategories}
+                    className="flex-1 px-3 py-2 bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-200 dark:border-cyan-700 text-cyan-700 dark:text-cyan-300 text-sm font-medium rounded-lg hover:bg-cyan-100 dark:hover:bg-cyan-900/30 transition-colors duration-200"
+                  >
+                    Select All
+                  </button>
+                  <button
+                    onClick={deselectAllExecuteCategories}
+                    className="flex-1 px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors duration-200"
+                  >
+                    Deselect All
+                  </button>
+                </div>
+
+                <div className="space-y-4 mb-6">
+                  {executeCategories.map((category) => {
+                    const isSelected = selectedExecuteCategoryIds.includes(category.id);
+
+                    return (
+                      <div
+                        key={category.id}
+                        className={`p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 ${
+                          isSelected
+                            ? 'border-cyan-300 dark:border-cyan-600 bg-cyan-50 dark:bg-cyan-900/20'
+                            : 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-500'
+                        }`}
+                        onClick={() => toggleExecuteCategory(category.id)}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <div className={`p-2 rounded-lg ${
+                              isSelected ? 'bg-cyan-100 dark:bg-cyan-800' : 'bg-gray-100 dark:bg-gray-600'
+                            }`}>
+                              <Play className={`h-5 w-5 ${
+                                isSelected ? 'text-cyan-600 dark:text-cyan-400' : 'text-gray-500 dark:text-gray-400'
+                              }`} />
+                            </div>
+                            <div>
+                              <h4 className={`font-semibold ${
+                                isSelected ? 'text-cyan-900 dark:text-cyan-200' : 'text-gray-700 dark:text-gray-200'
+                              }`}>
+                                {category.name}
+                              </h4>
+                            </div>
+                          </div>
+                          <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
+                            isSelected
+                              ? 'border-cyan-500 bg-cyan-500'
+                              : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700'
+                          }`}>
+                            {isSelected && (
+                              <div className="w-2 h-2 bg-white rounded-full"></div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {error && (
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-3 mb-4">
+                <p className="text-red-700 dark:text-red-400 text-sm">{error}</p>
+              </div>
+            )}
+
+            <div className="flex space-x-3">
+              <button
+                onClick={handleUpdateExecuteCategories}
+                disabled={isUpdatingExecuteCategories || executeCategories.length === 0}
+                className="flex-1 px-4 py-3 bg-cyan-600 hover:bg-cyan-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200"
+              >
+                {isUpdatingExecuteCategories ? 'Updating...' : 'Update Permissions'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowExecuteCategoriesModal(false);
+                  setUserForExecuteCategories(null);
+                  setSelectedExecuteCategoryIds([]);
+                  setError('');
+                }}
+                className="flex-1 px-4 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-semibold rounded-lg transition-colors duration-200"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Upload Mode Modal */}
       {showUploadModeModal && userForUploadMode && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -964,7 +1182,7 @@ export default function UserManagementSettings({
               <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">Upload Mode Settings</h3>
               <p className="text-gray-600 dark:text-gray-400">Configure upload mode for <strong>{userForUploadMode.username}</strong></p>
             </div>
-            
+
             <div className="space-y-4 mb-6">
               <div
                 onClick={() => handleUpdateUploadMode('manual')}
@@ -991,7 +1209,7 @@ export default function UserManagementSettings({
                   </div>
                 </div>
               </div>
-              
+
               <div
                 onClick={() => handleUpdateUploadMode('auto')}
                 className="p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-500"
@@ -1493,6 +1711,15 @@ export default function UserManagementSettings({
                   >
                     <RefreshCw className="h-3 w-3" />
                     <span>Transform</span>
+                  </button>
+                )}
+                {user.role === 'user' && (
+                  <button
+                    onClick={() => handleManageExecuteCategories(user)}
+                    className="px-3 py-1 text-xs font-medium rounded-full bg-cyan-100 text-cyan-800 hover:bg-cyan-200 transition-colors duration-200 flex items-center space-x-1"
+                  >
+                    <Play className="h-3 w-3" />
+                    <span>Execute</span>
                   </button>
                 )}
                 {user.role === 'vendor' && (
