@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { DndContext, DragEndEvent, DragOverlay, closestCenter, PointerSensor, useSensor, useSensors, DragStartEvent } from '@dnd-kit/core';
-import { SortableContext, rectSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { SortableContext, rectSortingStrategy, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { GripVertical, Eye, Edit3, Plus, Trash2, Monitor, Smartphone, Settings, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, ChevronDown, ChevronRight, ChevronsDown, ChevronsRight, Layers } from 'lucide-react';
 import type { OrderEntryField, OrderEntryFieldGroup, OrderEntryFieldLayout } from '../../types';
@@ -14,6 +14,7 @@ interface LayoutDesignerProps {
   fieldGroups: OrderEntryFieldGroup[];
   layouts: OrderEntryFieldLayout[];
   onLayoutChange: (layouts: OrderEntryFieldLayout[]) => void;
+  onGroupOrderChange?: (groups: OrderEntryFieldGroup[]) => void;
 }
 
 interface LayoutField {
@@ -27,13 +28,14 @@ interface GroupLayoutState {
   isCollapsed: boolean;
 }
 
-export default function LayoutDesigner({ fields, fieldGroups, layouts, onLayoutChange }: LayoutDesignerProps) {
+export default function LayoutDesigner({ fields, fieldGroups, layouts, onLayoutChange, onGroupOrderChange }: LayoutDesignerProps) {
   const { isDarkMode } = useDarkMode();
   const [viewMode, setViewMode] = useState<'desktop' | 'mobile'>('desktop');
   const [previewMode, setPreviewMode] = useState(false);
   const [editingLayout, setEditingLayout] = useState<OrderEntryFieldLayout | null>(null);
   const [localLayouts, setLocalLayouts] = useState<OrderEntryFieldLayout[]>(layouts);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const isInternalUpdate = useRef(false);
 
@@ -41,6 +43,14 @@ export default function LayoutDesigner({ fields, fieldGroups, layouts, onLayoutC
     useSensor(PointerSensor, {
       activationConstraint: {
         distance: 8,
+      },
+    })
+  );
+
+  const groupSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 10,
       },
     })
   );
@@ -561,7 +571,30 @@ export default function LayoutDesigner({ fields, fieldGroups, layouts, onLayoutC
     };
   };
 
+  const handleGroupDragStart = (event: DragStartEvent) => {
+    setActiveGroupId(event.active.id as string);
+  };
+
+  const handleGroupDragEnd = (event: DragEndEvent) => {
+    setActiveGroupId(null);
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = sortedGroups.findIndex(g => g.id === active.id);
+    const newIndex = sortedGroups.findIndex(g => g.id === over.id);
+
+    if (oldIndex !== -1 && newIndex !== -1) {
+      const reorderedGroups = arrayMove(sortedGroups, oldIndex, newIndex);
+      const updatedGroups = reorderedGroups.map((group, index) => ({
+        ...group,
+        groupOrder: index
+      }));
+      onGroupOrderChange?.(updatedGroups);
+    }
+  };
+
   const sortedGroups = [...fieldGroups].sort((a, b) => a.groupOrder - b.groupOrder);
+  const groupIds = sortedGroups.map(g => g.id);
 
   return (
     <div className="space-y-6">
@@ -634,77 +667,34 @@ export default function LayoutDesigner({ fields, fieldGroups, layouts, onLayoutC
           <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">Create field groups and fields first</p>
         </div>
       ) : (
-        <div className="space-y-4">
-          {sortedGroups.map((group, groupIndex) => {
-            const isCollapsed = collapsedGroups.has(group.id);
-            const groupFields = getFieldsForGroup(group.id);
-            const unlayoutedFields = getUnlayoutedFieldsForGroup(group.id);
-            const fieldsByRow = getFieldsByRowForGroup(group.id);
-            const sortedRows = Array.from(fieldsByRow.keys()).sort((a, b) => a - b);
-            const layoutedFieldCount = groupFields.length - unlayoutedFields.length;
+        <DndContext
+          sensors={groupSensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleGroupDragStart}
+          onDragEnd={handleGroupDragEnd}
+        >
+          <SortableContext items={groupIds} strategy={verticalListSortingStrategy}>
+            <div className="space-y-4">
+              {sortedGroups.map((group, groupIndex) => {
+                const isCollapsed = collapsedGroups.has(group.id);
+                const groupFields = getFieldsForGroup(group.id);
+                const unlayoutedFields = getUnlayoutedFieldsForGroup(group.id);
+                const fieldsByRow = getFieldsByRowForGroup(group.id);
+                const sortedRows = Array.from(fieldsByRow.keys()).sort((a, b) => a - b);
+                const layoutedFieldCount = groupFields.length - unlayoutedFields.length;
 
-            const adaptedBgColor = adaptBackgroundForDarkMode(group.backgroundColor, isDarkMode);
-            const textColor = getContrastTextColor(group.backgroundColor, isDarkMode);
-            const hasCustomBg = Boolean(group.backgroundColor);
-
-            return (
-              <div
-                key={group.id}
-                className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 dark:bg-black"
-                style={{ borderColor: group.borderColor }}
-              >
-                <div
-                  className={`cursor-pointer hover:opacity-70 transition-opacity -mx-4 -my-4 px-4 py-4 ${!hasCustomBg ? 'dark:bg-black' : ''}`}
-                  onClick={() => toggleGroupCollapse(group.id)}
-                  style={{ backgroundColor: hasCustomBg ? adaptedBgColor : undefined }}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3 flex-1">
-                      <GripVertical className={`h-5 w-5 ${group.backgroundColor ? textColor.replace('text-', 'text-').replace('100', '400').replace('900', '500') : 'text-gray-400'}`} />
-                      {isCollapsed ? (
-                        <ChevronRight className={`h-5 w-5 ${group.backgroundColor ? textColor.replace('text-', 'text-').replace('100', '400').replace('900', '500') : 'text-gray-500 dark:text-gray-400'}`} />
-                      ) : (
-                        <ChevronDown className={`h-5 w-5 ${group.backgroundColor ? textColor.replace('text-', 'text-').replace('100', '400').replace('900', '500') : 'text-gray-500 dark:text-gray-400'}`} />
-                      )}
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <h4 className={`font-semibold ${group.backgroundColor ? textColor : 'text-gray-900 dark:text-gray-100'}`}>
-                            {groupIndex + 1}. {group.groupName}
-                          </h4>
-                          {group.isArrayGroup && (
-                            <Tooltip content={
-                              <div className="space-y-1">
-                                <div className="font-semibold">Array Group</div>
-                                <div className="text-xs">Fields from this group will be added to the same row</div>
-                                {group.arrayJsonPath && (
-                                  <div className="text-xs mt-2">
-                                    <span className="font-medium">JSON Path:</span> {group.arrayJsonPath}
-                                  </div>
-                                )}
-                                <div className="text-xs">
-                                  <span className="font-medium">Rows:</span> {group.arrayMinRows} - {group.arrayMaxRows}
-                                </div>
-                              </div>
-                            }>
-                              <span className="inline-flex items-center gap-1 text-xs px-2 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-full font-medium">
-                                <Layers className="h-3 w-3" />
-                                Array Group
-                              </span>
-                            </Tooltip>
-                          )}
-                          <span className={`text-xs px-2 py-1 rounded-full ${group.backgroundColor ? 'bg-black/10 dark:bg-white/10' : 'bg-gray-100 dark:bg-gray-700'} ${group.backgroundColor ? textColor.replace('900', '700').replace('100', '300') : 'text-gray-600 dark:text-gray-400'}`}>
-                            {layoutedFieldCount}/{groupFields.length} fields in layout
-                          </span>
-                        </div>
-                        {group.description && !isCollapsed && (
-                          <p className={`text-sm mt-1 ${group.backgroundColor ? textColor.replace('900', '700').replace('100', '300') : 'text-gray-600 dark:text-gray-400'}`}>{group.description}</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {!isCollapsed && (
+                return (
+                  <SortableGroupCard
+                    key={group.id}
+                    group={group}
+                    groupIndex={groupIndex}
+                    isCollapsed={isCollapsed}
+                    onToggleCollapse={() => toggleGroupCollapse(group.id)}
+                    groupFields={groupFields}
+                    layoutedFieldCount={layoutedFieldCount}
+                    isDarkMode={isDarkMode}
+                  >
+                    {!isCollapsed && (
                   <div className="mt-4 space-y-4">
                     {unlayoutedFields.length > 0 && !previewMode && (
                       <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
@@ -821,13 +811,27 @@ export default function LayoutDesigner({ fields, fieldGroups, layouts, onLayoutC
                           </DragOverlay>
                         </DndContext>
                       )}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                  </SortableGroupCard>
+                );
+              })}
+            </div>
+          </SortableContext>
+          <DragOverlay>
+            {activeGroupId ? (
+              <div className="p-4 bg-white dark:bg-gray-800 border-2 border-blue-500 dark:border-blue-400 rounded-lg shadow-xl opacity-90">
+                <div className="flex items-center space-x-2">
+                  <GripVertical className="h-5 w-5 text-gray-400" />
+                  <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                    {fieldGroups.find(g => g.id === activeGroupId)?.groupName}
+                  </span>
+                </div>
               </div>
-            );
-          })}
-        </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
       )}
 
       {editingLayout && (
@@ -1024,6 +1028,110 @@ function LayoutFieldCard({ fieldId, field, layout, viewMode, previewMode, onEdit
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+interface SortableGroupCardProps {
+  group: OrderEntryFieldGroup;
+  groupIndex: number;
+  isCollapsed: boolean;
+  onToggleCollapse: () => void;
+  children: React.ReactNode;
+  groupFields: OrderEntryField[];
+  layoutedFieldCount: number;
+  isDarkMode: boolean;
+}
+
+function SortableGroupCard({
+  group,
+  groupIndex,
+  isCollapsed,
+  onToggleCollapse,
+  children,
+  groupFields,
+  layoutedFieldCount,
+  isDarkMode
+}: SortableGroupCardProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: group.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const adaptedBgColor = adaptBackgroundForDarkMode(group.backgroundColor, isDarkMode);
+  const textColor = getContrastTextColor(group.backgroundColor, isDarkMode);
+  const hasCustomBg = Boolean(group.backgroundColor);
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ ...style, borderColor: group.borderColor }}
+      className={`border border-gray-200 dark:border-gray-700 rounded-lg p-4 dark:bg-black ${isDragging ? 'shadow-lg ring-2 ring-blue-500' : ''}`}
+    >
+      <div
+        className={`transition-opacity -mx-4 -my-4 px-4 py-4 ${!hasCustomBg ? 'dark:bg-black' : ''}`}
+        style={{ backgroundColor: hasCustomBg ? adaptedBgColor : undefined }}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3 flex-1">
+            <div
+              {...attributes}
+              {...listeners}
+              className="cursor-grab active:cursor-grabbing touch-none p-1 -m-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors select-none"
+            >
+              <GripVertical className={`h-5 w-5 ${group.backgroundColor ? textColor.replace('text-', 'text-').replace('100', '400').replace('900', '500') : 'text-gray-400'} hover:text-blue-500 transition-colors pointer-events-none`} />
+            </div>
+            <div
+              className="flex items-center space-x-3 flex-1 cursor-pointer hover:opacity-70"
+              onClick={onToggleCollapse}
+            >
+              {isCollapsed ? (
+                <ChevronRight className={`h-5 w-5 ${group.backgroundColor ? textColor.replace('text-', 'text-').replace('100', '400').replace('900', '500') : 'text-gray-500 dark:text-gray-400'}`} />
+              ) : (
+                <ChevronDown className={`h-5 w-5 ${group.backgroundColor ? textColor.replace('text-', 'text-').replace('100', '400').replace('900', '500') : 'text-gray-500 dark:text-gray-400'}`} />
+              )}
+              <div className="flex-1">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <h4 className={`font-semibold ${group.backgroundColor ? textColor : 'text-gray-900 dark:text-gray-100'}`}>
+                    {groupIndex + 1}. {group.groupName}
+                  </h4>
+                  {group.isArrayGroup && (
+                    <Tooltip content={
+                      <div className="space-y-1">
+                        <div className="font-semibold">Array Group</div>
+                        <div className="text-xs">Fields from this group will be added to the same row</div>
+                        {group.arrayJsonPath && (
+                          <div className="text-xs mt-2">
+                            <span className="font-medium">JSON Path:</span> {group.arrayJsonPath}
+                          </div>
+                        )}
+                        <div className="text-xs">
+                          <span className="font-medium">Rows:</span> {group.arrayMinRows} - {group.arrayMaxRows}
+                        </div>
+                      </div>
+                    }>
+                      <span className="inline-flex items-center gap-1 text-xs px-2 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-full font-medium">
+                        <Layers className="h-3 w-3" />
+                        Array Group
+                      </span>
+                    </Tooltip>
+                  )}
+                  <span className={`text-xs px-2 py-1 rounded-full ${group.backgroundColor ? 'bg-black/10 dark:bg-white/10' : 'bg-gray-100 dark:bg-gray-700'} ${group.backgroundColor ? textColor.replace('900', '700').replace('100', '300') : 'text-gray-600 dark:text-gray-400'}`}>
+                    {layoutedFieldCount}/{groupFields.length} fields in layout
+                  </span>
+                </div>
+                {group.description && !isCollapsed && (
+                  <p className={`text-sm mt-1 ${group.backgroundColor ? textColor.replace('900', '700').replace('100', '300') : 'text-gray-600 dark:text-gray-400'}`}>{group.description}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      {children}
     </div>
   );
 }
