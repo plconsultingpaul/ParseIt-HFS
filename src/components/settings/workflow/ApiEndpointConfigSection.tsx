@@ -1,8 +1,19 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Info, Braces, ExternalLink, AlertCircle, Plus, Trash2, FileText, Save } from 'lucide-react';
+import { Info, Braces, ExternalLink, AlertCircle, Plus, Trash2, FileText, Save, Repeat, Layers } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import Select from '../../common/Select';
 import VariableDropdown from './VariableDropdown';
+
+interface ExecuteButtonField {
+  fieldKey: string;
+  name: string;
+}
+
+interface ArrayGroup {
+  id: string;
+  name: string;
+  arrayFieldName: string;
+}
 
 interface ApiEndpointConfigSectionProps {
   config: any;
@@ -10,6 +21,8 @@ interface ApiEndpointConfigSectionProps {
   allSteps?: any[];
   currentStepOrder?: number;
   extractionType?: any;
+  executeButtonFields?: ExecuteButtonField[];
+  arrayGroups?: ArrayGroup[];
 }
 
 interface SecondaryApi {
@@ -50,7 +63,25 @@ interface RequestBodyFieldMapping {
   dataType?: 'string' | 'number' | 'integer' | 'datetime' | 'boolean';
 }
 
-export default function ApiEndpointConfigSection({ config, onChange, allSteps = [], currentStepOrder, extractionType }: ApiEndpointConfigSectionProps) {
+interface ConditionalArrayMapping {
+  id: string;
+  variable: string;
+  operator: 'equals' | 'not_equals' | 'contains' | 'not_contains';
+  expectedValue: string;
+  fieldMappings: RequestBodyFieldMapping[];
+}
+
+export default function ApiEndpointConfigSection({ config, onChange, allSteps = [], currentStepOrder, extractionType, executeButtonFields, arrayGroups = [] }: ApiEndpointConfigSectionProps) {
+  console.log('[ApiEndpointConfigSection] Component render');
+  console.log('[ApiEndpointConfigSection] allSteps received:', allSteps);
+  console.log('[ApiEndpointConfigSection] allSteps length:', allSteps.length);
+  console.log('[ApiEndpointConfigSection] currentStepOrder:', currentStepOrder);
+  allSteps.forEach((step, idx) => {
+    console.log(`[ApiEndpointConfigSection] Step ${idx}: "${step.stepName}" (type: ${step.stepType})`);
+    console.log(`[ApiEndpointConfigSection] Step ${idx} configJson:`, step.configJson);
+    console.log(`[ApiEndpointConfigSection] Step ${idx} responseDataMappings:`, step.configJson?.responseDataMappings);
+  });
+
   const [apiSourceType, setApiSourceType] = useState<'main' | 'secondary'>(config?.apiSourceType || 'main');
   const [secondaryApis, setSecondaryApis] = useState<SecondaryApi[]>([]);
   const [selectedSecondaryApiId, setSelectedSecondaryApiId] = useState(config?.secondaryApiId || '');
@@ -76,14 +107,27 @@ export default function ApiEndpointConfigSection({ config, onChange, allSteps = 
     config?.pathVariableConfig || {}
   );
   const [requestBodyTemplate, setRequestBodyTemplate] = useState(config?.requestBodyTemplate || '');
+  const [jsonParseError, setJsonParseError] = useState<string | null>(null);
   const [requestBodyFieldMappings, setRequestBodyFieldMappings] = useState<RequestBodyFieldMapping[]>(
     config?.requestBodyFieldMappings || []
+  );
+  const [arrayProcessingMode, setArrayProcessingMode] = useState<'none' | 'loop' | 'batch' | 'single_array' | 'conditional_hardcode'>(
+    config?.arrayProcessingMode || 'none'
+  );
+  const [arraySourceGroupId, setArraySourceGroupId] = useState(config?.arraySourceGroupId || '');
+  const [stopOnError, setStopOnError] = useState(config?.stopOnError !== false);
+  const [wrapBodyInArray, setWrapBodyInArray] = useState(config?.wrapBodyInArray || false);
+  const [conditionalArrayMappings, setConditionalArrayMappings] = useState<ConditionalArrayMapping[]>(
+    config?.conditionalArrayMappings || []
   );
   const buttonRefs = useRef<Record<string, React.RefObject<HTMLButtonElement>>>({});
   const isRestoringRef = useRef(false);
   const isInitialMountRef = useRef(true);
   const isEditingResponseMappingsRef = useRef(false);
   const editingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const selectedApiSpecIdRef = useRef(selectedApiSpecId);
+  const configApiSpecIdRef = useRef(config?.apiSpecId);
+  const loadApiSpecsRequestRef = useRef(0);
 
   const endpointOptions = useMemo(() => {
     return availableEndpoints.map(endpoint => ({
@@ -93,15 +137,24 @@ export default function ApiEndpointConfigSection({ config, onChange, allSteps = 
   }, [availableEndpoints]);
 
   useEffect(() => {
+    selectedApiSpecIdRef.current = selectedApiSpecId;
+  }, [selectedApiSpecId]);
+
+  useEffect(() => {
+    configApiSpecIdRef.current = config?.apiSpecId;
+  }, [config?.apiSpecId]);
+
+  useEffect(() => {
     loadSecondaryApis();
     loadMainApiConfig();
   }, []);
 
   useEffect(() => {
     restoreConfigFromProps();
-  }, [config]);
+  }, [config, secondaryApis]);
 
   useEffect(() => {
+    console.log('[useEffect:loadApiSpecs] Triggered with apiSourceType:', apiSourceType, 'selectedSecondaryApiId:', selectedSecondaryApiId);
     loadApiSpecs();
   }, [apiSourceType, selectedSecondaryApiId]);
 
@@ -119,27 +172,45 @@ export default function ApiEndpointConfigSection({ config, onChange, allSteps = 
 
   useEffect(() => {
     updateParentConfig();
-  }, [apiSourceType, selectedSecondaryApiId, httpMethod, selectedEndpoint, queryParameterConfig, pathVariableConfig, manualApiEntry, manualApiPath, responseDataMappings, escapeSingleQuotesInBody, requestBodyTemplate, requestBodyFieldMappings]);
+  }, [apiSourceType, selectedSecondaryApiId, httpMethod, selectedEndpoint, queryParameterConfig, pathVariableConfig, manualApiEntry, manualApiPath, responseDataMappings, escapeSingleQuotesInBody, requestBodyTemplate, requestBodyFieldMappings, arrayProcessingMode, arraySourceGroupId, stopOnError, wrapBodyInArray, conditionalArrayMappings]);
 
   const restoreConfigFromProps = async () => {
-    if (!config || !config.apiSpecEndpointId) {
+    console.log('[restoreConfigFromProps] Called');
+    console.log('[restoreConfigFromProps] config object:', config);
+    console.log('[restoreConfigFromProps] config is empty object:', config && Object.keys(config).length === 0);
+
+    if (!config) {
+      console.log('[restoreConfigFromProps] No config, early return');
+      isInitialMountRef.current = false;
+      return;
+    }
+
+    if (Object.keys(config).length === 0) {
+      console.log('[restoreConfigFromProps] Config is empty object, early return');
       isInitialMountRef.current = false;
       return;
     }
 
     isRestoringRef.current = true;
+    console.log('[restoreConfigFromProps] Set isRestoringRef to true');
 
     try {
-      console.log('Restoring config from props:', config);
+      console.log('[restoreConfigFromProps] Starting restoration...');
 
       // Restore API source type
       if (config.apiSourceType && config.apiSourceType !== apiSourceType) {
+        console.log('[restoreConfigFromProps] Restoring apiSourceType from', apiSourceType, 'to', config.apiSourceType);
         setApiSourceType(config.apiSourceType);
       }
 
       // Restore secondary API ID and selection
       if (config.secondaryApiId && config.secondaryApiId !== selectedSecondaryApiId) {
+        console.log('[restoreConfigFromProps] Restoring secondaryApiId to', config.secondaryApiId);
         setSelectedSecondaryApiId(config.secondaryApiId);
+        const api = secondaryApis.find(a => a.id === config.secondaryApiId);
+        if (api) {
+          setSelectedSecondaryApi(api);
+        }
       }
 
       // Restore HTTP method from config first
@@ -155,6 +226,17 @@ export default function ApiEndpointConfigSection({ config, onChange, allSteps = 
       // Restore manual API path
       if (config.apiPath && config.apiPath !== manualApiPath) {
         setManualApiPath(config.apiPath);
+      }
+
+      // Restore API spec ID directly if available (avoids race condition with loadApiSpecs)
+      // Use ref to prevent update loop when parent config reflects our own state change
+      if (config.apiSpecId &&
+          config.apiSpecId !== selectedApiSpecId &&
+          config.apiSpecId !== selectedApiSpecIdRef.current) {
+        console.log('[restoreConfigFromProps] Restoring apiSpecId from', selectedApiSpecId, 'to', config.apiSpecId);
+        setSelectedApiSpecId(config.apiSpecId);
+      } else {
+        console.log('[restoreConfigFromProps] NOT restoring apiSpecId - config.apiSpecId:', config.apiSpecId, 'selectedApiSpecId:', selectedApiSpecId, 'ref:', selectedApiSpecIdRef.current);
       }
 
       // Restore response data mappings - support both old and new formats
@@ -197,38 +279,59 @@ export default function ApiEndpointConfigSection({ config, onChange, allSteps = 
         setRequestBodyFieldMappings(config.requestBodyFieldMappings);
       }
 
-      // Load the API spec endpoint to get the spec ID
-      const { data: endpointData, error: endpointError } = await supabase
-        .from('api_spec_endpoints')
-        .select('*, api_specs!inner(id, name)')
-        .eq('id', config.apiSpecEndpointId)
-        .maybeSingle();
+      // Restore array processing settings
+      if (config.arrayProcessingMode && config.arrayProcessingMode !== arrayProcessingMode) {
+        setArrayProcessingMode(config.arrayProcessingMode);
+      }
+      if (config.arraySourceGroupId && config.arraySourceGroupId !== arraySourceGroupId) {
+        setArraySourceGroupId(config.arraySourceGroupId);
+      }
+      if (config.stopOnError !== undefined && config.stopOnError !== stopOnError) {
+        setStopOnError(config.stopOnError);
+      }
+      if (config.wrapBodyInArray !== undefined && config.wrapBodyInArray !== wrapBodyInArray) {
+        setWrapBodyInArray(config.wrapBodyInArray);
+      }
+      if (config.conditionalArrayMappings && Array.isArray(config.conditionalArrayMappings)) {
+        setConditionalArrayMappings(config.conditionalArrayMappings);
+      }
 
-      if (!endpointError && endpointData) {
-        console.log('Loaded endpoint data:', endpointData);
+      // Load the API spec endpoint to get the spec ID (only if we have an endpoint ID)
+      if (config.apiSpecEndpointId) {
+        const { data: endpointData, error: endpointError } = await supabase
+          .from('api_spec_endpoints')
+          .select('*, api_specs!inner(id, name)')
+          .eq('id', config.apiSpecEndpointId)
+          .maybeSingle();
 
-        // Set the API spec ID from the loaded endpoint
-        const apiSpecId = endpointData.api_spec_id;
-        if (apiSpecId && apiSpecId !== selectedApiSpecId) {
-          setSelectedApiSpecId(apiSpecId);
-        }
+        if (!endpointError && endpointData) {
+          console.log('Loaded endpoint data:', endpointData);
 
-        // Set the selected endpoint
-        const endpoint: ApiSpecEndpoint = {
-          id: endpointData.id,
-          path: endpointData.path,
-          method: endpointData.method,
-          summary: endpointData.summary || ''
-        };
+          // Set the API spec ID from the loaded endpoint
+          const apiSpecId = endpointData.api_spec_id;
+          if (apiSpecId && apiSpecId !== selectedApiSpecId) {
+            setSelectedApiSpecId(apiSpecId);
+          }
 
-        if (!selectedEndpoint || selectedEndpoint.id !== endpoint.id) {
-          setSelectedEndpoint(endpoint);
+          // Set the selected endpoint
+          const endpoint: ApiSpecEndpoint = {
+            id: endpointData.id,
+            path: endpointData.path,
+            method: endpointData.method,
+            summary: endpointData.summary || ''
+          };
+
+          if (!selectedEndpoint || selectedEndpoint.id !== endpoint.id) {
+            setSelectedEndpoint(endpoint);
+          }
         }
       }
 
       isInitialMountRef.current = false;
+      console.log('[restoreConfigFromProps] Restoration complete');
     } finally {
       isRestoringRef.current = false;
+      console.log('[restoreConfigFromProps] Set isRestoringRef to false');
     }
   };
 
@@ -261,24 +364,48 @@ export default function ApiEndpointConfigSection({ config, onChange, allSteps = 
   };
 
   const loadApiSpecs = async () => {
+    const requestId = ++loadApiSpecsRequestRef.current;
+    console.log('[loadApiSpecs] Called with apiSourceType:', apiSourceType, 'selectedSecondaryApiId:', selectedSecondaryApiId, 'requestId:', requestId);
+    console.log('[loadApiSpecs] Current selectedApiSpecId state:', selectedApiSpecId);
+    console.log('[loadApiSpecs] isRestoringRef.current:', isRestoringRef.current);
+    console.log('[loadApiSpecs] config?.apiSpecId:', config?.apiSpecId);
+
     let query = supabase.from('api_specs').select('*');
 
     if (apiSourceType === 'main') {
+      console.log('[loadApiSpecs] Loading MAIN API specs');
       query = query.not('api_endpoint_id', 'is', null);
     } else if (apiSourceType === 'secondary' && selectedSecondaryApiId) {
+      console.log('[loadApiSpecs] Loading SECONDARY API specs for:', selectedSecondaryApiId);
       query = query.eq('secondary_api_id', selectedSecondaryApiId);
     } else {
+      console.log('[loadApiSpecs] No valid source, clearing specs');
       setApiSpecs([]);
       return;
     }
 
     const { data, error } = await query.order('uploaded_at', { ascending: false });
 
+    if (requestId !== loadApiSpecsRequestRef.current) {
+      console.log('[loadApiSpecs] Stale request ignored. requestId:', requestId, 'current:', loadApiSpecsRequestRef.current);
+      return;
+    }
+
     if (!error && data) {
+      console.log('[loadApiSpecs] Loaded specs:', data.map(s => ({ id: s.id, name: s.name })));
       setApiSpecs(data);
-      if (data.length > 0 && !selectedApiSpecId) {
+      const currentSelectedApiSpecId = selectedApiSpecIdRef.current;
+      const currentConfigApiSpecId = configApiSpecIdRef.current;
+      const currentSpecExistsInNewData = currentSelectedApiSpecId && data.some(s => s.id === currentSelectedApiSpecId);
+      const shouldAutoSelect = data.length > 0 && (!currentSelectedApiSpecId || !currentSpecExistsInNewData) && !isRestoringRef.current && !currentConfigApiSpecId;
+      console.log('[loadApiSpecs] Auto-select check: data.length > 0:', data.length > 0, '!selectedApiSpecIdRef.current:', !currentSelectedApiSpecId, 'specExistsInData:', currentSpecExistsInNewData, '!isRestoringRef.current:', !isRestoringRef.current, '!configApiSpecIdRef.current:', !currentConfigApiSpecId);
+      console.log('[loadApiSpecs] Will auto-select:', shouldAutoSelect);
+      if (shouldAutoSelect) {
+        console.log('[loadApiSpecs] AUTO-SELECTING first spec:', data[0].id, data[0].name);
         setSelectedApiSpecId(data[0].id);
       }
+    } else if (error) {
+      console.error('[loadApiSpecs] Error loading specs:', error);
     }
   };
 
@@ -487,8 +614,24 @@ export default function ApiEndpointConfigSection({ config, onChange, allSteps = 
     return Array.from(variables);
   };
 
-  const getAvailableVariables = (): Array<{ name: string; stepName: string; source: 'extraction' | 'workflow'; dataType?: string }> => {
-    const variables: Array<{ name: string; stepName: string; source: 'extraction' | 'workflow'; dataType?: string }> = [];
+  const getAvailableVariables = (): Array<{ name: string; stepName: string; source: 'extraction' | 'workflow' | 'execute'; dataType?: string }> => {
+    console.log('[getAvailableVariables] Called');
+    console.log('[getAvailableVariables] allSteps:', allSteps);
+    console.log('[getAvailableVariables] currentStepOrder:', currentStepOrder);
+    console.log('[getAvailableVariables] executeButtonFields:', executeButtonFields);
+
+    const variables: Array<{ name: string; stepName: string; source: 'extraction' | 'workflow' | 'execute'; dataType?: string }> = [];
+
+    if (executeButtonFields && executeButtonFields.length > 0) {
+      console.log('[getAvailableVariables] Adding execute button fields');
+      executeButtonFields.forEach((field) => {
+        variables.push({
+          name: `execute.${field.fieldKey}`,
+          stepName: field.name,
+          source: 'execute'
+        });
+      });
+    }
 
     if (extractionType && extractionType.fieldMappings) {
       extractionType.fieldMappings.forEach((mapping: any) => {
@@ -503,28 +646,49 @@ export default function ApiEndpointConfigSection({ config, onChange, allSteps = 
       });
     }
 
-    if (allSteps && currentStepOrder) {
-      const previousSteps = allSteps.filter(s => s.stepOrder < currentStepOrder);
+    console.log('[getAvailableVariables] Checking workflow response mappings...');
+    console.log('[getAvailableVariables] allSteps is truthy:', !!allSteps);
+    console.log('[getAvailableVariables] currentStepOrder !== undefined:', currentStepOrder !== undefined);
+    console.log('[getAvailableVariables] currentStepOrder !== null:', currentStepOrder !== null);
+
+    if (allSteps && currentStepOrder !== undefined && currentStepOrder !== null) {
+      console.log('[getAvailableVariables] Inside workflow check block');
+      const previousSteps = allSteps.filter(s => {
+        const result = s.stepOrder < currentStepOrder;
+        console.log(`[getAvailableVariables] Step "${s.stepName}" order ${s.stepOrder} < ${currentStepOrder}? ${result}`);
+        return result;
+      });
+      console.log('[getAvailableVariables] previousSteps after filter:', previousSteps);
 
       previousSteps.forEach(step => {
         const stepName = step.stepName || step.step_name || 'Unknown Step';
         const config = step.configJson || step.config_json;
+        console.log(`[getAvailableVariables] Processing step "${stepName}"`);
+        console.log(`[getAvailableVariables] Step config:`, config);
+        console.log(`[getAvailableVariables] Step responseDataMappings:`, config?.responseDataMappings);
 
         if (config && config.responseDataMappings && Array.isArray(config.responseDataMappings)) {
+          console.log(`[getAvailableVariables] Found responseDataMappings in "${stepName}":`, config.responseDataMappings);
           config.responseDataMappings.forEach((mapping: any) => {
             if (mapping.updatePath) {
+              console.log(`[getAvailableVariables] Adding variable: response.${mapping.updatePath}`);
               variables.push({
-                name: mapping.updatePath,
+                name: `response.${mapping.updatePath}`,
                 stepName: stepName,
                 source: 'workflow',
                 dataType: undefined
               });
             }
           });
+        } else {
+          console.log(`[getAvailableVariables] No responseDataMappings found in "${stepName}"`);
         }
       });
+    } else {
+      console.log('[getAvailableVariables] Skipped workflow check - condition not met');
     }
 
+    console.log('[getAvailableVariables] Final variables array:', variables);
     return variables;
   };
 
@@ -601,9 +765,25 @@ export default function ApiEndpointConfigSection({ config, onChange, allSteps = 
       };
 
       extractFields(template);
-      setRequestBodyFieldMappings(fieldMappings);
-    } catch (error) {
-      alert('Invalid JSON template. Please check the JSON syntax.');
+      const existingFieldNames = new Set(requestBodyFieldMappings.map(m => m.fieldName));
+      const newMappings = fieldMappings.filter(m => !existingFieldNames.has(m.fieldName));
+      setRequestBodyFieldMappings([...requestBodyFieldMappings, ...newMappings]);
+      setJsonParseError(null);
+    } catch (error: any) {
+      let errorMessage = 'Invalid JSON format. Please check the syntax.';
+      if (error?.message) {
+        const positionMatch = error.message.match(/position (\d+)/i);
+        if (positionMatch) {
+          const position = parseInt(positionMatch[1], 10);
+          const lines = requestBodyTemplate.substring(0, position).split('\n');
+          const lineNumber = lines.length;
+          const columnNumber = lines[lines.length - 1].length + 1;
+          errorMessage = `JSON parse error at line ${lineNumber}, column ${columnNumber}: ${error.message}`;
+        } else {
+          errorMessage = `JSON parse error: ${error.message}`;
+        }
+      }
+      setJsonParseError(errorMessage);
     }
   };
 
@@ -644,6 +824,7 @@ export default function ApiEndpointConfigSection({ config, onChange, allSteps = 
       apiEndpointId: apiSourceType === 'main' ? 'main' : undefined,
       secondaryApiId: apiSourceType === 'secondary' ? selectedSecondaryApiId : undefined,
       httpMethod,
+      apiSpecId: selectedApiSpecId,
       apiSpecEndpointId: selectedEndpoint?.id,
       apiPath: manualApiEntry ? manualApiPath : (selectedEndpoint?.path || ''),
       queryParameterConfig,
@@ -654,7 +835,12 @@ export default function ApiEndpointConfigSection({ config, onChange, allSteps = 
       manualApiEntry,
       escapeSingleQuotesInBody,
       requestBodyTemplate: requestBodyTemplate || undefined,
-      requestBodyFieldMappings: requestBodyFieldMappings.length > 0 ? requestBodyFieldMappings : undefined
+      requestBodyFieldMappings: requestBodyFieldMappings.length > 0 ? requestBodyFieldMappings : undefined,
+      arrayProcessingMode: arrayProcessingMode !== 'none' ? arrayProcessingMode : undefined,
+      arraySourceGroupId: (arrayProcessingMode !== 'none' && arrayProcessingMode !== 'single_array' && arrayProcessingMode !== 'conditional_hardcode') ? arraySourceGroupId : undefined,
+      stopOnError: arrayProcessingMode === 'loop' ? stopOnError : undefined,
+      wrapBodyInArray: (arrayProcessingMode === 'loop' && wrapBodyInArray) || arrayProcessingMode === 'single_array' ? true : undefined,
+      conditionalArrayMappings: arrayProcessingMode === 'conditional_hardcode' && conditionalArrayMappings.length > 0 ? conditionalArrayMappings : undefined
     };
 
     if (!newConfig.apiSourceType || !newConfig.httpMethod) {
@@ -682,6 +868,8 @@ export default function ApiEndpointConfigSection({ config, onChange, allSteps = 
                 onChange={(e) => {
                   setApiSourceType(e.target.value as 'main' | 'secondary');
                   setSelectedSecondaryApiId('');
+                  setSelectedApiSpecId('');
+                  setSelectedEndpoint(null);
                 }}
                 className="mr-2"
               />
@@ -692,7 +880,11 @@ export default function ApiEndpointConfigSection({ config, onChange, allSteps = 
                 type="radio"
                 value="secondary"
                 checked={apiSourceType === 'secondary'}
-                onChange={(e) => setApiSourceType(e.target.value as 'main' | 'secondary')}
+                onChange={(e) => {
+                  setApiSourceType(e.target.value as 'main' | 'secondary');
+                  setSelectedApiSpecId('');
+                  setSelectedEndpoint(null);
+                }}
                 className="mr-2"
               />
               <span className="text-sm text-gray-700 dark:text-gray-300">Secondary API</span>
@@ -709,6 +901,8 @@ export default function ApiEndpointConfigSection({ config, onChange, allSteps = 
                 setSelectedSecondaryApiId(value);
                 const api = secondaryApis.find(a => a.id === value);
                 setSelectedSecondaryApi(api || null);
+                setSelectedApiSpecId('');
+                setSelectedEndpoint(null);
               }}
               options={secondaryApis.map(api => ({
                 value: api.id,
@@ -739,10 +933,14 @@ export default function ApiEndpointConfigSection({ config, onChange, allSteps = 
 
         {apiSpecs.length > 0 && (
           <div>
+            {console.log('[Render] API Specification dropdown - selectedApiSpecId:', selectedApiSpecId, 'apiSpecs:', apiSpecs.map(s => ({ id: s.id, name: s.name })))}
             <Select
               label="API Specification"
               value={selectedApiSpecId}
-              onValueChange={setSelectedApiSpecId}
+              onValueChange={(value) => {
+                console.log('[Select:onValueChange] API Specification changed to:', value);
+                setSelectedApiSpecId(value);
+              }}
               options={apiSpecs.map(spec => ({
                 value: spec.id,
                 label: spec.name
@@ -978,11 +1176,36 @@ export default function ApiEndpointConfigSection({ config, onChange, allSteps = 
 
           <textarea
             value={requestBodyTemplate}
-            onChange={(e) => setRequestBodyTemplate(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 font-mono text-sm dark:bg-gray-700 dark:text-gray-100"
+            onChange={(e) => {
+              setRequestBodyTemplate(e.target.value);
+              if (jsonParseError) setJsonParseError(null);
+            }}
+            className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 font-mono text-sm dark:bg-gray-700 dark:text-gray-100 ${
+              jsonParseError ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
+            }`}
             rows={8}
             placeholder={`{\n  "customLabel": "AAAAAA",\n  "customDefId": 0,\n  "customValue": "string"\n}`}
           />
+
+          {jsonParseError && (
+            <div className="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+              <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-red-800 dark:text-red-200">Invalid JSON</p>
+                <p className="text-sm text-red-600 dark:text-red-300 mt-1 font-mono">{jsonParseError}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setJsonParseError(null)}
+                className="text-red-400 hover:text-red-600 dark:hover:text-red-300"
+              >
+                <span className="sr-only">Dismiss</span>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          )}
 
           {requestBodyFieldMappings.length > 0 && (
             <div className="space-y-3">
@@ -1109,6 +1332,374 @@ export default function ApiEndpointConfigSection({ config, onChange, allSteps = 
                   <strong>Field Mappings:</strong> Use "Hardcoded" for fixed values or "Variable" to insert data from previous workflow steps. Variables use the format {'{{'} variableName {'}}'}.
                 </p>
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {arrayGroups.length > 0 && (
+        <div className="space-y-4 p-4 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-md">
+          <div className="flex items-center space-x-2">
+            <Repeat className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+            <h4 className="text-sm font-medium text-orange-900 dark:text-orange-100">
+              Array Processing
+            </h4>
+          </div>
+          <p className="text-xs text-orange-700 dark:text-orange-300">
+            Configure how this API endpoint handles data from array groups (multiple rows of data).
+          </p>
+
+          <div>
+            <Select
+              label="Processing Mode"
+              value={arrayProcessingMode}
+              onValueChange={(value) => setArrayProcessingMode(value as 'none' | 'loop' | 'batch' | 'single_array' | 'conditional_hardcode')}
+              options={[
+                { value: 'none', label: 'None - Standard single request' },
+                { value: 'loop', label: 'Loop - One API call per row' },
+                { value: 'batch', label: 'Batch - Single API call with array' },
+                { value: 'single_array', label: 'Single - Array body, no group' },
+                { value: 'conditional_hardcode', label: 'Conditional - Based on variable' }
+              ]}
+              searchable={false}
+            />
+          </div>
+
+          {arrayProcessingMode !== 'none' && arrayProcessingMode !== 'single_array' && arrayProcessingMode !== 'conditional_hardcode' && (
+            <>
+              <div>
+                <Select
+                  label="Source Array Group"
+                  value={arraySourceGroupId}
+                  onValueChange={setArraySourceGroupId}
+                  options={arrayGroups.map(group => ({
+                    value: group.id,
+                    label: group.name
+                  }))}
+                  required
+                />
+                <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
+                  Select the array group containing the rows to process.
+                </p>
+              </div>
+
+              {arrayProcessingMode === 'loop' && (
+                <>
+                  <div className="flex items-center space-x-3 p-3 bg-white dark:bg-gray-800 rounded-md border border-orange-200 dark:border-orange-700">
+                    <input
+                      type="checkbox"
+                      id="stopOnError"
+                      checked={stopOnError}
+                      onChange={(e) => setStopOnError(e.target.checked)}
+                      className="w-4 h-4 text-orange-600 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded focus:ring-orange-500"
+                    />
+                    <div className="flex-1">
+                      <label htmlFor="stopOnError" className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">
+                        Stop on first error
+                      </label>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        If disabled, all rows will be processed even if some fail.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-3 p-3 bg-white dark:bg-gray-800 rounded-md border border-orange-200 dark:border-orange-700">
+                    <input
+                      type="checkbox"
+                      id="wrapBodyInArray"
+                      checked={wrapBodyInArray}
+                      onChange={(e) => setWrapBodyInArray(e.target.checked)}
+                      className="w-4 h-4 text-orange-600 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded focus:ring-orange-500"
+                    />
+                    <div className="flex-1">
+                      <label htmlFor="wrapBodyInArray" className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">
+                        Wrap request body in array
+                      </label>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        Enable this when the API expects the request body to be a JSON array (e.g., [{'{'}"field": "value"{'}'}]).
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <div className="p-3 bg-white dark:bg-gray-800 rounded-md border border-orange-200 dark:border-orange-700">
+                <div className="flex items-start space-x-2">
+                  <Layers className="w-4 h-4 text-orange-600 dark:text-orange-400 mt-0.5" />
+                  <div className="text-xs text-gray-600 dark:text-gray-400">
+                    {arrayProcessingMode === 'loop' ? (
+                      <p>
+                        <strong>Loop Mode:</strong> The API will be called once for each row in the array.
+                        Variables like <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">{'{{execute.fieldName}}'}</code> will
+                        resolve to each row's values in sequence.
+                      </p>
+                    ) : (
+                      <p>
+                        <strong>Batch Mode:</strong> All rows will be sent in a single API call as an array.
+                        Use <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">{'{{arrayData}}'}</code> in your request body
+                        to include the array of rows.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {arrayProcessingMode === 'single_array' && (
+            <div className="p-3 bg-white dark:bg-gray-800 rounded-md border border-orange-200 dark:border-orange-700">
+              <div className="flex items-start space-x-2">
+                <Layers className="w-4 h-4 text-orange-600 dark:text-orange-400 mt-0.5" />
+                <div className="text-xs text-gray-600 dark:text-gray-400">
+                  <p>
+                    <strong>Single Array Mode:</strong> Makes a single API call with the request body wrapped in an array.
+                    Use hardcoded field mappings. The body will be sent as <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">[{'{'}"field": "value"{'}'}]</code>.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {arrayProcessingMode === 'conditional_hardcode' && (
+            <div className="space-y-4">
+              <div className="p-3 bg-white dark:bg-gray-800 rounded-md border border-orange-200 dark:border-orange-700">
+                <div className="flex items-start space-x-2">
+                  <Layers className="w-4 h-4 text-orange-600 dark:text-orange-400 mt-0.5" />
+                  <div className="text-xs text-gray-600 dark:text-gray-400">
+                    <p>
+                      <strong>Conditional Mode:</strong> Define multiple conditions based on form field values.
+                      For each condition that evaluates to true, an API call will be made with the associated field mappings wrapped in an array.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Conditional Field Mappings
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newMapping: ConditionalArrayMapping = {
+                      id: crypto.randomUUID(),
+                      variable: '',
+                      operator: 'equals',
+                      expectedValue: '',
+                      fieldMappings: []
+                    };
+                    setConditionalArrayMappings([...conditionalArrayMappings, newMapping]);
+                  }}
+                  className="flex items-center px-3 py-1 text-sm bg-orange-600 text-white rounded-md hover:bg-orange-700"
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  Add Condition
+                </button>
+              </div>
+
+              {conditionalArrayMappings.length === 0 && (
+                <div className="p-4 text-center text-gray-500 dark:text-gray-400 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-md">
+                  <p className="text-sm">No conditions defined yet.</p>
+                  <p className="text-xs mt-1">Click "Add Condition" to create a conditional field mapping.</p>
+                </div>
+              )}
+
+              {conditionalArrayMappings.map((condition, conditionIndex) => (
+                <div
+                  key={condition.id}
+                  className="p-4 bg-white dark:bg-gray-800 border-2 border-orange-300 dark:border-orange-600 rounded-lg space-y-4"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-orange-700 dark:text-orange-300">
+                      Condition {conditionIndex + 1}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setConditionalArrayMappings(conditionalArrayMappings.filter((_, i) => i !== conditionIndex));
+                      }}
+                      className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                        Variable
+                      </label>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="text"
+                          value={condition.variable}
+                          onChange={(e) => {
+                            const updated = [...conditionalArrayMappings];
+                            updated[conditionIndex].variable = e.target.value;
+                            setConditionalArrayMappings(updated);
+                          }}
+                          className="flex-1 px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded text-sm font-mono dark:bg-gray-700 dark:text-gray-100"
+                          placeholder="execute.fieldName"
+                        />
+                        <button
+                          ref={getButtonRef(`cond_var_${conditionIndex}`)}
+                          type="button"
+                          onClick={() => setOpenVariableDropdown(openVariableDropdown === `cond_var_${conditionIndex}` ? null : `cond_var_${conditionIndex}`)}
+                          className="p-1.5 text-gray-600 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                          title="Insert variable"
+                        >
+                          <Braces className="w-4 h-4" />
+                        </button>
+                        <VariableDropdown
+                          isOpen={openVariableDropdown === `cond_var_${conditionIndex}`}
+                          onClose={() => setOpenVariableDropdown(null)}
+                          triggerRef={getButtonRef(`cond_var_${conditionIndex}`)}
+                          variables={getAvailableVariables()}
+                          onSelect={(varName) => {
+                            const updated = [...conditionalArrayMappings];
+                            updated[conditionIndex].variable = varName;
+                            setConditionalArrayMappings(updated);
+                            setOpenVariableDropdown(null);
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <Select
+                        label="Operator"
+                        value={condition.operator}
+                        onValueChange={(value) => {
+                          const updated = [...conditionalArrayMappings];
+                          updated[conditionIndex].operator = value as 'equals' | 'not_equals' | 'contains' | 'not_contains';
+                          setConditionalArrayMappings(updated);
+                        }}
+                        options={[
+                          { value: 'equals', label: 'Equals (=)' },
+                          { value: 'not_equals', label: 'Not Equals (!=)' },
+                          { value: 'contains', label: 'Contains' },
+                          { value: 'not_contains', label: 'Not Contains' }
+                        ]}
+                        searchable={false}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                        Expected Value
+                      </label>
+                      <input
+                        type="text"
+                        value={condition.expectedValue}
+                        onChange={(e) => {
+                          const updated = [...conditionalArrayMappings];
+                          updated[conditionIndex].expectedValue = e.target.value;
+                          setConditionalArrayMappings(updated);
+                        }}
+                        className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded text-sm dark:bg-gray-700 dark:text-gray-100"
+                        placeholder="True, EMAIL, etc."
+                      />
+                    </div>
+                  </div>
+
+                  <div className="border-t border-gray-200 dark:border-gray-700 pt-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                        Field Mappings (when condition is true)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = [...conditionalArrayMappings];
+                          updated[conditionIndex].fieldMappings.push({
+                            fieldName: '',
+                            type: 'hardcoded',
+                            value: '',
+                            dataType: 'string'
+                          });
+                          setConditionalArrayMappings(updated);
+                        }}
+                        className="flex items-center px-2 py-1 text-xs bg-gray-600 text-white rounded hover:bg-gray-700"
+                      >
+                        <Plus className="w-3 h-3 mr-1" />
+                        Add Field
+                      </button>
+                    </div>
+
+                    {condition.fieldMappings.length === 0 && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400 italic">
+                        No field mappings defined. Click "Add Field" to add mappings.
+                      </p>
+                    )}
+
+                    <div className="space-y-2">
+                      {condition.fieldMappings.map((mapping, mappingIndex) => (
+                        <div
+                          key={mappingIndex}
+                          className="flex items-center space-x-2 p-2 bg-gray-50 dark:bg-gray-700 rounded"
+                        >
+                          <input
+                            type="text"
+                            value={mapping.fieldName}
+                            onChange={(e) => {
+                              const updated = [...conditionalArrayMappings];
+                              updated[conditionIndex].fieldMappings[mappingIndex].fieldName = e.target.value;
+                              setConditionalArrayMappings(updated);
+                            }}
+                            className="w-32 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-xs font-mono dark:bg-gray-600 dark:text-gray-100"
+                            placeholder="fieldName"
+                          />
+                          <select
+                            value={mapping.type}
+                            onChange={(e) => {
+                              const updated = [...conditionalArrayMappings];
+                              updated[conditionIndex].fieldMappings[mappingIndex].type = e.target.value as 'hardcoded' | 'variable';
+                              setConditionalArrayMappings(updated);
+                            }}
+                            className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-xs dark:bg-gray-600 dark:text-gray-100"
+                          >
+                            <option value="hardcoded">Hardcoded</option>
+                            <option value="variable">Variable</option>
+                          </select>
+                          <input
+                            type="text"
+                            value={mapping.value}
+                            onChange={(e) => {
+                              const updated = [...conditionalArrayMappings];
+                              updated[conditionIndex].fieldMappings[mappingIndex].value = e.target.value;
+                              setConditionalArrayMappings(updated);
+                            }}
+                            className="flex-1 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-xs dark:bg-gray-600 dark:text-gray-100"
+                            placeholder={mapping.type === 'hardcoded' ? 'value' : '{{variable}}'}
+                          />
+                          <select
+                            value={mapping.dataType || 'string'}
+                            onChange={(e) => {
+                              const updated = [...conditionalArrayMappings];
+                              updated[conditionIndex].fieldMappings[mappingIndex].dataType = e.target.value as 'string' | 'number' | 'integer' | 'datetime' | 'boolean';
+                              setConditionalArrayMappings(updated);
+                            }}
+                            className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-xs dark:bg-gray-600 dark:text-gray-100"
+                          >
+                            <option value="string">String</option>
+                            <option value="integer">Integer</option>
+                            <option value="number">Number</option>
+                            <option value="boolean">Boolean</option>
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = [...conditionalArrayMappings];
+                              updated[conditionIndex].fieldMappings = updated[conditionIndex].fieldMappings.filter((_, i) => i !== mappingIndex);
+                              setConditionalArrayMappings(updated);
+                            }}
+                            className="p-1 text-red-500 hover:text-red-700"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
