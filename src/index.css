@@ -325,6 +325,15 @@ select option {
   z-index: 9999 !important;
 }
 
+#datepicker-portal {
+  position: relative;
+  z-index: 9999;
+}
+
+#datepicker-portal .react-datepicker-popper {
+  z-index: 9999 !important;
+}
+
 .react-datepicker {
   font-family: inherit;
   border: 1px solid rgb(var(--color-border-primary));
@@ -511,4 +520,26 @@ select option {
 
 .react-datepicker__time-container .react-datepicker__time .react-datepicker__time-box ul.react-datepicker__time-list::-webkit-scrollbar-thumb:hover {
   background: rgb(var(--color-text-tertiary));
+}
+
+/* React Flow - Remove default node wrapper styling to prevent black border */
+.react-flow__node {
+  border: none !important;
+  outline: none !important;
+  padding: 0 !important;
+  background: transparent !important;
+}
+
+/* Hide default selection box (nodes have custom selected styling) */
+.react-flow__node.selected {
+  box-shadow: none !important;
+  outline: none !important;
+  border: none !important;
+}
+
+.react-flow__node.selected .react-flow__node-default,
+.react-flow__node.selected .react-flow__node-input,
+.react-flow__node.selected .react-flow__node-output,
+.react-flow__node.selected > div {
+  box-shadow: none !important;
 }
