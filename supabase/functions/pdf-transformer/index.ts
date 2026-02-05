@@ -142,12 +142,10 @@ interface TransformationRequest {
   pageIndex?: number
 }
 
-// Generate unique request ID for tracing
 function generateRequestId(): string {
   return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 }
 
-// Helper function to get object size in bytes
 function getObjectSize(obj: any): number {
   try {
     return JSON.stringify(obj).length
@@ -156,7 +154,6 @@ function getObjectSize(obj: any): number {
   }
 }
 
-// Helper function to check for circular references
 function hasCircularReference(obj: any, seen = new WeakSet()): boolean {
   try {
     if (obj === null || typeof obj !== 'object') {
@@ -180,7 +177,6 @@ function hasCircularReference(obj: any, seen = new WeakSet()): boolean {
   }
 }
 
-// Helper function to normalize boolean values to proper case (True/False)
 function normalizeBooleanValue(value: any): string {
   console.log(`TRACE [normalizeBooleanValue]: Input value: ${JSON.stringify(value)}, type: ${typeof value}`)
 
@@ -194,7 +190,6 @@ function normalizeBooleanValue(value: any): string {
     const lowerValue = value.trim().toLowerCase()
     console.log(`TRACE [normalizeBooleanValue]: String value (lowercased): ${lowerValue}`)
 
-    // Handle common boolean representations
     if (lowerValue === 'true' || lowerValue === 't' || lowerValue === 'yes' || lowerValue === 'y' || lowerValue === '1') {
       console.log(`TRACE [normalizeBooleanValue]: String matched TRUE pattern`)
       return 'True'
@@ -204,22 +199,18 @@ function normalizeBooleanValue(value: any): string {
       return 'False'
     }
 
-    // If it's already in proper case format, return as is
     if (value === 'True' || value === 'False') {
       console.log(`TRACE [normalizeBooleanValue]: Already in proper case: ${value}`)
       return value
     }
   }
 
-  // Default to False for any other value
-  console.warn(`⚠️ WARNING [normalizeBooleanValue]: Invalid boolean value "${value}", defaulting to False`)
+  console.warn(`WARNING [normalizeBooleanValue]: Invalid boolean value "${value}", defaulting to False`)
   return 'False'
 }
 
-// Configuration for chunked processing to avoid stack overflow
 const CHUNK_SIZE = 8192
 
-// Helper function to decode base64 in chunks to avoid stack overflow
 function decodeBase64InChunks(base64String: string): Uint8Array {
   const binaryString = atob(base64String)
   const bytes = new Uint8Array(binaryString.length)
@@ -231,7 +222,6 @@ function decodeBase64InChunks(base64String: string): Uint8Array {
   return bytes
 }
 
-// Helper function to encode bytes to base64 in chunks to avoid stack overflow
 function encodeBase64InChunks(bytes: Uint8Array): string {
   let result = ''
 
@@ -243,7 +233,6 @@ function encodeBase64InChunks(bytes: Uint8Array): string {
   return btoa(result)
 }
 
-// Helper function to extract a specific page from a PDF
 async function extractSpecificPage(pdfBase64: string, pageNumber: number): Promise<string> {
   const funcName = 'extractSpecificPage'
   console.log(`INFO [${funcName}]: START - Extracting page ${pageNumber}`)
@@ -253,24 +242,20 @@ async function extractSpecificPage(pdfBase64: string, pageNumber: number): Promi
     console.log(`TRACE [${funcName}]: Decoding base64 to bytes using chunked approach...`)
     const startDecode = Date.now()
 
-    // Decode base64 to bytes using chunked approach
     const pdfBytes = decodeBase64InChunks(pdfBase64)
     console.log(`TRACE [${funcName}]: Base64 decode completed in ${Date.now() - startDecode}ms, resulting bytes: ${pdfBytes.length}`)
 
-    // Load the PDF document
     console.log(`TRACE [${funcName}]: Loading PDF document...`)
     const startLoad = Date.now()
     const pdfDoc = await PDFDocument.load(pdfBytes)
     const totalPages = pdfDoc.getPageCount()
     console.log(`TRACE [${funcName}]: PDF loaded in ${Date.now() - startLoad}ms, total pages: ${totalPages}`)
 
-    // Validate page number
     if (pageNumber < 1 || pageNumber > totalPages) {
       console.warn(`WARNING [${funcName}]: Invalid page number ${pageNumber} (PDF has ${totalPages} pages), using page 1 as fallback`)
       pageNumber = 1
     }
 
-    // Create a new PDF with only the requested page
     console.log(`TRACE [${funcName}]: Creating single-page PDF for page ${pageNumber}...`)
     const startCreate = Date.now()
     const singlePageDoc = await PDFDocument.create()
@@ -278,7 +263,6 @@ async function extractSpecificPage(pdfBase64: string, pageNumber: number): Promi
     singlePageDoc.addPage(copiedPage)
     console.log(`TRACE [${funcName}]: Single-page PDF created in ${Date.now() - startCreate}ms`)
 
-    // Convert back to base64 using chunked approach
     console.log(`TRACE [${funcName}]: Saving and encoding single-page PDF using chunked approach...`)
     const startSave = Date.now()
     const singlePageBytes = await singlePageDoc.save()
@@ -298,12 +282,10 @@ async function extractSpecificPage(pdfBase64: string, pageNumber: number): Promi
   }
 }
 
-// Helper function to group field mappings by page number
 function groupFieldsByPage(fieldMappings: FieldMapping[]): Map<number, FieldMapping[]> {
   const pageGroups = new Map<number, FieldMapping[]>()
 
   for (const mapping of fieldMappings) {
-    // Default to page 1 if not specified
     const pageNum = mapping.pageNumberInGroup || 1
 
     if (!pageGroups.has(pageNum)) {
@@ -313,7 +295,7 @@ function groupFieldsByPage(fieldMappings: FieldMapping[]): Map<number, FieldMapp
     pageGroups.get(pageNum)!.push(mapping)
   }
 
-  console.log(`📊 Field mappings grouped by page:`)
+  console.log(`Field mappings grouped by page:`)
   for (const [pageNum, fields] of pageGroups.entries()) {
     console.log(`   Page ${pageNum}: ${fields.length} fields - ${fields.map(f => f.fieldName).join(', ')}`)
   }
@@ -448,14 +430,12 @@ serve(async (req: Request) => {
     const genAI = new GoogleGenerativeAI(apiKey)
     const model = genAI.getGenerativeModel({ model: modelName })
 
-    // Combine instructions
     const fullInstructions = additionalInstructions
       ? `${transformationType.defaultInstructions}\n\nAdditional Instructions: ${additionalInstructions}`
       : transformationType.defaultInstructions
 
     console.log('Full instructions length:', fullInstructions.length);
 
-    // NEW APPROACH: Process fields page by page to ensure accurate extraction
     console.log('=== PAGE-AWARE FIELD EXTRACTION ===')
 
     let extractedData: any = {}
@@ -463,15 +443,12 @@ serve(async (req: Request) => {
     if (transformationType.fieldMappings && transformationType.fieldMappings.length > 0) {
       console.log('Processing field mappings:', transformationType.fieldMappings.length);
 
-      // First, handle all hardcoded fields (no AI needed)
       for (const mapping of transformationType.fieldMappings) {
         if (mapping.type === 'hardcoded') {
-          console.log(`✓ Hardcoded field "${mapping.fieldName}": ${mapping.value}`)
-          // Apply boolean normalization for hardcoded boolean fields
+          console.log(`Hardcoded field "${mapping.fieldName}": ${mapping.value}`)
           if (mapping.dataType === 'boolean') {
             extractedData[mapping.fieldName] = normalizeBooleanValue(mapping.value)
           } else if (mapping.dataType === 'string' || !mapping.dataType) {
-            // Convert hardcoded string fields to uppercase
             extractedData[mapping.fieldName] = typeof mapping.value === 'string' && mapping.value !== ''
               ? mapping.value.toUpperCase()
               : mapping.value
@@ -481,20 +458,16 @@ serve(async (req: Request) => {
         }
       }
 
-      // Group remaining fields by page number for AI extraction
       const aiFields = transformationType.fieldMappings.filter(m => m.type === 'ai' || m.type === 'mapped')
 
       if (aiFields.length > 0) {
         const pageGroups = groupFieldsByPage(aiFields)
 
-        // Process each page group separately
         for (const [pageNum, pageFields] of pageGroups.entries()) {
-          console.log(`\n📄 Processing Page ${pageNum} with ${pageFields.length} fields`)
+          console.log(`\nProcessing Page ${pageNum} with ${pageFields.length} fields`)
 
-          // Extract the specific page from the PDF
           const pageSpecificPdfBase64 = await extractSpecificPage(pdfBase64, pageNum)
 
-          // Build field mapping instructions for this specific page
           let fieldMappingInstructions = '\n\nFIELD EXTRACTION INSTRUCTIONS:\n'
           fieldMappingInstructions += `IMPORTANT: You are analyzing a single page extracted from a larger document. Extract ONLY from the content visible on THIS page.\n\n`
 
@@ -504,15 +477,16 @@ serve(async (req: Request) => {
                                   mapping.dataType === 'number' ? ' (format as number)' :
                                   mapping.dataType === 'integer' ? ' (format as integer)' :
                                   mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' :
-                                  mapping.dataType === 'boolean' ? ' (format as boolean: respond with ONLY "True" or "False" in proper case - capital T or F, lowercase remaining letters)' : ''
+                                  mapping.dataType === 'boolean' ? ' (format as boolean: respond with ONLY "True" or "False" in proper case - capital T or F, lowercase remaining letters)' :
+                                  mapping.dataType === 'zip_postal' ? ' (format as US zip code XXXXX or Canadian postal code X1X 1X1)' : ''
               fieldMappingInstructions += `- "${mapping.fieldName}": Look in the region at coordinates ${mapping.value} (use these coordinates as a hint to locate the field)${dataTypeNote}\n`
             } else {
-              // AI type
               const dataTypeNote = mapping.dataType === 'string' ? ' (format as UPPER CASE string)' :
                                   mapping.dataType === 'number' ? ' (format as number)' :
                                   mapping.dataType === 'integer' ? ' (format as integer)' :
                                   mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' :
-                                  mapping.dataType === 'boolean' ? ' (format as boolean: respond with ONLY "True" or "False" in proper case - capital T or F, lowercase remaining letters)' : ''
+                                  mapping.dataType === 'boolean' ? ' (format as boolean: respond with ONLY "True" or "False" in proper case - capital T or F, lowercase remaining letters)' :
+                                  mapping.dataType === 'zip_postal' ? ' (format as US zip code XXXXX or Canadian postal code X1X 1X1)' : ''
               fieldMappingInstructions += `- "${mapping.fieldName}": ${mapping.value || 'Extract from PDF document'}${dataTypeNote}\n`
             }
           })
@@ -544,7 +518,7 @@ IMPORTANT GUIDELINES:
 Please provide only the JSON output without any additional explanation or formatting.
 `
 
-          console.log(`🤖 Calling Gemini AI for Page ${pageNum}...`)
+          console.log(`Calling Gemini AI for Page ${pageNum}...`)
           console.log(`   Fields to extract: ${pageFields.map(f => f.fieldName).join(', ')}`)
 
           const result = await model.generateContent([
@@ -560,35 +534,29 @@ Please provide only the JSON output without any additional explanation or format
           const response = await result.response
           let extractedContent = response.text()
 
-          console.log(`✅ Page ${pageNum} AI response received (length: ${extractedContent.length})`)
+          console.log(`Page ${pageNum} AI response received (length: ${extractedContent.length})`)
 
-          // Clean up the response
           extractedContent = extractedContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
 
-          // Parse and merge with existing data
           try {
             const parsedResponse = JSON.parse(extractedContent)
             const pageData = parsedResponse.extractedData || parsedResponse || {}
 
-            // Apply boolean normalization and string uppercase conversion
             pageFields.forEach(field => {
               if (field.dataType === 'boolean' && pageData.hasOwnProperty(field.fieldName)) {
                 pageData[field.fieldName] = normalizeBooleanValue(pageData[field.fieldName])
               } else if ((field.dataType === 'string' || !field.dataType) && pageData.hasOwnProperty(field.fieldName)) {
-                // Convert string fields to uppercase
                 if (typeof pageData[field.fieldName] === 'string' && pageData[field.fieldName] !== '') {
                   pageData[field.fieldName] = pageData[field.fieldName].toUpperCase()
                 }
               }
             })
 
-            // Merge page-specific data into final result
             Object.assign(extractedData, pageData)
 
-            console.log(`✅ Page ${pageNum} data extracted successfully:`, Object.keys(pageData).join(', '))
+            console.log(`Page ${pageNum} data extracted successfully:`, Object.keys(pageData).join(', '))
           } catch (parseError) {
-            console.error(`❌ Failed to parse Page ${pageNum} response:`, parseError)
-            // Set empty values for failed fields
+            console.error(`Failed to parse Page ${pageNum} response:`, parseError)
             pageFields.forEach(field => {
               if (!extractedData.hasOwnProperty(field.fieldName)) {
                 extractedData[field.fieldName] = ''
@@ -598,10 +566,9 @@ Please provide only the JSON output without any additional explanation or format
         }
       }
 
-      // Apply function-based fields after all AI extraction is complete
       const functionFields = transformationType.fieldMappings.filter(m => m.type === 'function' && m.functionId)
       if (functionFields.length > 0) {
-        console.log(`\n🔧 Processing ${functionFields.length} function-based fields`)
+        console.log(`\nProcessing ${functionFields.length} function-based fields`)
 
         const functionIds = [...new Set(functionFields.map(m => m.functionId))]
         const { data: functions, error: funcError } = await supabase
@@ -610,21 +577,21 @@ Please provide only the JSON output without any additional explanation or format
           .in('id', functionIds)
 
         if (funcError) {
-          console.error('❌ Error loading functions:', funcError)
+          console.error('Error loading functions:', funcError)
         } else if (functions && functions.length > 0) {
-          console.log(`✓ Loaded ${functions.length} functions`)
+          console.log(`Loaded ${functions.length} functions`)
           const functionsById = new Map(functions.map(f => [f.id, f]))
 
           for (const mapping of functionFields) {
             const func = functionsById.get(mapping.functionId!)
             if (func) {
               try {
-                console.log(`✓ Evaluating function "${func.function_name}" for field "${mapping.fieldName}"`)
+                console.log(`Evaluating function "${func.function_name}" for field "${mapping.fieldName}"`)
                 const result = evaluateFunction(func.function_logic, extractedData)
                 extractedData[mapping.fieldName] = result
-                console.log(`  └─ Result: ${JSON.stringify(result)}`)
+                console.log(`  Result: ${JSON.stringify(result)}`)
               } catch (err) {
-                console.error(`❌ Error evaluating function for field "${mapping.fieldName}":`, err)
+                console.error(`Error evaluating function for field "${mapping.fieldName}":`, err)
                 extractedData[mapping.fieldName] = func.function_logic?.default || null
               }
             }
@@ -632,8 +599,7 @@ Please provide only the JSON output without any additional explanation or format
         }
       }
     } else {
-      // No field mappings - use legacy single-pass extraction
-      console.log('⚠️ No field mappings defined, using legacy extraction mode')
+      console.log('No field mappings defined, using legacy extraction mode')
 
       const prompt = `
 You are a data extraction AI for PDF transformation and renaming. Please analyze the provided PDF document and extract the requested information according to the following instructions:
@@ -679,21 +645,17 @@ Please provide only the JSON output without any additional explanation or format
       console.log('=== AI RESPONSE ANALYSIS (Legacy) ===')
       console.log('Raw AI response length:', extractedContent.length)
 
-      // Clean up the response
       extractedContent = extractedContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
 
-      // Parse the extracted data
       try {
         const parsedResponse = JSON.parse(extractedContent)
         extractedData = parsedResponse.extractedData || parsedResponse || {}
 
-        // Ensure extractedData is always a valid object
         if (typeof extractedData !== 'object' || extractedData === null || Array.isArray(extractedData)) {
           console.warn('Invalid extracted data format, using fallback object')
           extractedData = {}
         }
 
-        // Ensure we have at least some basic data structure
         if (Object.keys(extractedData).length === 0) {
           console.warn('Extracted data is empty, creating fallback structure')
           extractedData = {
@@ -708,7 +670,6 @@ Please provide only the JSON output without any additional explanation or format
         console.error('=== CRITICAL JSON PARSE ERROR (Legacy) ===')
         console.error('Parse error:', parseError)
 
-        // Create a valid fallback structure
         extractedData = {
           documentType: 'unknown',
           extractionFailed: true,
@@ -728,7 +689,6 @@ Please provide only the JSON output without any additional explanation or format
     console.log(`TRACE [VALIDATION]: Extracted data type: ${typeof extractedData} - ${requestId}`)
     console.log(`TRACE [VALIDATION]: Extracted data is array: ${Array.isArray(extractedData)} - ${requestId}`)
 
-    // Check for circular references
     console.log(`TRACE [VALIDATION]: Checking for circular references - ${requestId}`)
     const hasCircular = hasCircularReference(extractedData)
     console.log(`TRACE [VALIDATION]: Has circular reference: ${hasCircular} - ${requestId}`)
@@ -736,7 +696,6 @@ Please provide only the JSON output without any additional explanation or format
       console.error(`ERROR [VALIDATION]: Circular reference detected in extractedData! - ${requestId}`)
     }
 
-    // Log full extracted data structure
     try {
       const dataPreview = JSON.stringify(extractedData, null, 2)
       console.log(`TRACE [VALIDATION]: Full extracted data structure (first 1000 chars): ${dataPreview.substring(0, 1000)} - ${requestId}`)
@@ -744,7 +703,6 @@ Please provide only the JSON output without any additional explanation or format
       console.error(`ERROR [VALIDATION]: Cannot preview extracted data: ${previewError} - ${requestId}`)
     }
 
-    // Validate that the final extracted data can be serialized to JSON
     let finalJsonString: string
     try {
       console.log(`TRACE [VALIDATION]: Attempting JSON.stringify on extractedData - ${requestId}`)
@@ -755,7 +713,6 @@ Please provide only the JSON output without any additional explanation or format
       console.log(`TRACE [VALIDATION]: Serialized JSON preview (first 200 chars): ${finalJsonString.substring(0, 200)} - ${requestId}`)
       console.log(`TRACE [VALIDATION]: Serialized JSON preview (last 200 chars): ${finalJsonString.substring(Math.max(0, finalJsonString.length - 200))} - ${requestId}`)
 
-      // Save extracted fields to extraction_group_data if session tracking is enabled
       if (sessionId && groupOrder !== undefined && pageIndex !== undefined) {
         try {
           console.log(`INFO [GROUP_DATA]: Saving extracted fields for session ${sessionId}, group ${groupOrder}, page ${pageIndex} - ${requestId}`)
@@ -795,7 +752,6 @@ Please provide only the JSON output without any additional explanation or format
       console.error(`ERROR [VALIDATION]: Serialize error message: ${serializeError instanceof Error ? serializeError.message : String(serializeError)}`)
       console.error(`ERROR [VALIDATION]: Stack trace:`, serializeError instanceof Error ? serializeError.stack : 'No stack trace available')
 
-      // Create an even simpler fallback
       console.log(`TRACE [VALIDATION]: Creating minimal fallback structure - ${requestId}`)
       extractedData = {
         error: 'Serialization failed',
@@ -806,7 +762,6 @@ Please provide only the JSON output without any additional explanation or format
       console.log(`INFO [VALIDATION]: Fallback JSON created, length: ${finalJsonString.length} - ${requestId}`)
     }
     
-    // Retrieve and merge previous group data if this is a "Follow Previous Group"
     let mergedData = { ...extractedData }
     if (sessionId && groupOrder && groupOrder > 1 && pageIndex !== undefined && pageIndex > 0) {
       try {
@@ -815,7 +770,6 @@ Please provide only the JSON output without any additional explanation or format
         const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
         if (supabaseUrl && supabaseServiceKey) {
-          // Query for the immediately preceding page index only
           const prevGroupsResponse = await fetch(
             `${supabaseUrl}/rest/v1/extraction_group_data?session_id=eq.${sessionId}&page_index=eq.${pageIndex - 1}`,
             {
@@ -832,7 +786,7 @@ Please provide only the JSON output without any additional explanation or format
             console.log(`INFO [PREV_GROUPS]: Found ${prevGroups.length} record(s) for preceding page - ${requestId}`)
 
             if (prevGroups.length > 0) {
-              const prevGroup = prevGroups[0] // Should only be one result
+              const prevGroup = prevGroups[0]
               const groupPrefix = `group${prevGroup.group_order}_`
               const prevFields = prevGroup.extracted_fields || {}
 
@@ -853,7 +807,6 @@ Please provide only the JSON output without any additional explanation or format
       }
     }
 
-    // Generate new filename using the template
     console.log('===============================================')
     console.log(`INFO [FILENAME]: FILENAME GENERATION - ${requestId}`)
     console.log('===============================================')
@@ -861,7 +814,6 @@ Please provide only the JSON output without any additional explanation or format
     console.log(`TRACE [FILENAME]: Original filename template: ${newFilename} - ${requestId}`)
     console.log(`TRACE [FILENAME]: Number of placeholders to replace: ${Object.keys(mergedData).length} - ${requestId}`)
 
-    // Replace placeholders in filename template with extracted data (including previous group data)
     for (const [key, value] of Object.entries(mergedData)) {
       const placeholder = `{{${key}}}`
       if (newFilename.includes(placeholder)) {
@@ -871,13 +823,11 @@ Please provide only the JSON output without any additional explanation or format
       }
     }
 
-    // Ensure the filename ends with .pdf
     if (!newFilename.toLowerCase().endsWith('.pdf')) {
       console.log(`TRACE [FILENAME]: Adding .pdf extension - ${requestId}`)
       newFilename += '.pdf'
     }
 
-    // Remove any remaining unreplaced placeholders
     const remainingPlaceholders = newFilename.match(/\{\{[^}]+\}\}/g)
     if (remainingPlaceholders) {
       console.log(`WARNING [FILENAME]: Found ${remainingPlaceholders.length} unreplaced placeholders: ${remainingPlaceholders.join(', ')} - ${requestId}`)
@@ -910,7 +860,6 @@ Please provide only the JSON output without any additional explanation or format
     const responseHasCircular = hasCircularReference(responseData)
     console.log(`TRACE [RESPONSE]: Response has circular reference: ${responseHasCircular} - ${requestId}`)
 
-    // Validate response can be serialized
     let responseJson: string;
     try {
       console.log(`TRACE [RESPONSE]: Attempting to serialize response to JSON - ${requestId}`)
@@ -960,12 +909,10 @@ Please provide only the JSON output without any additional explanation or format
     console.error(`ERROR [MAIN]: Error message: ${error instanceof Error ? error.message : String(error)}`)
     console.error(`ERROR [MAIN]: Stack trace:`, error instanceof Error ? error.stack : 'No stack trace available')
 
-    // Provide more detailed error information
     let errorDetails = "Unknown error";
     if (error instanceof Error) {
       errorDetails = error.message;
 
-      // Check for specific error types and provide better messages
       if (error.message.includes("Unexpected end of JSON input")) {
         console.error(`ERROR [MAIN]: Detected JSON parsing error - AI returned incomplete JSON`)
         errorDetails = "The AI returned invalid or incomplete JSON data. This usually happens when the PDF content is unclear or the extraction instructions need to be more specific. Please try with a clearer PDF or adjust your transformation instructions.";
