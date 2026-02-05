@@ -291,6 +291,7 @@ export default function MultiPageProcessor({
           traceTypeValue: currentExtractionType.traceTypeValue,
           apiKey: geminiApiKey,
           arraySplitConfigs: currentExtractionType.arraySplitConfigs,
+          arrayEntryConfigs: currentExtractionType.arrayEntryConfigs,
           functions
         });
       }
