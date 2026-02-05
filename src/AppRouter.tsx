@@ -13,6 +13,7 @@ import ClientUsersPage from './components/ClientUsersPage';
 import DriverCheckinPage from './components/DriverCheckinPage';
 import PasswordSetupPage from './components/PasswordSetupPage';
 import PasswordResetPage from './components/PasswordResetPage';
+import PublicExecutePage from './components/PublicExecutePage';
 import LayoutRouter from './components/LayoutRouter';
 import PrivateRoute from './components/router/PrivateRoute';
 import RoleBasedRoute from './components/router/RoleBasedRoute';
@@ -20,6 +21,7 @@ import NotFound from './components/router/NotFound';
 
 import ExtractPage from './components/ExtractPage';
 import TransformPage from './components/TransformPage';
+import ExecutePage from './components/ExecutePage';
 import SettingsPage from './components/SettingsPage';
 import LogsPage from './components/LogsPage';
 import TypeSetupPage from './components/TypeSetupPage';
@@ -195,10 +197,14 @@ function AppContent() {
     );
   }
 
-  const publicPaths = ['/client/login', '/client', '/password-setup', '/reset-password', '/driver-checkin', '/checkin', '/help'];
+  const publicPaths = ['/client/login', '/client', '/password-setup', '/reset-password', '/driver-checkin', '/checkin', '/help', '/execute'];
   const isPublicPath = publicPaths.some(p => location.pathname === p || location.pathname.startsWith(p + '/'));
 
   if (!isAuthenticated || !user) {
+    const handleAdminLogin = async (username: string, password: string) => {
+      return login(username, password, 'admin');
+    };
+
     if (isPublicPath) {
       return (
         <Routes>
@@ -207,6 +213,7 @@ function AppContent() {
           <Route path="/password-setup" element={<PasswordSetupPage />} />
           <Route path="/reset-password" element={<PasswordResetPage />} />
           <Route path="/help" element={<HelpPage />} />
+          <Route path="/execute/:slug" element={<PublicExecutePage />} />
           <Route path="/client/login" element={
             <ClientPortalLogin
               companyBranding={companyBranding}
@@ -225,7 +232,7 @@ function AppContent() {
         </Routes>
       );
     }
-    return <LoginPage companyBranding={companyBranding} onLogin={login} />;
+    return <LoginPage companyBranding={companyBranding} onLogin={handleAdminLogin} />;
   }
 
   return (
@@ -234,6 +241,7 @@ function AppContent() {
       <Route path="/checkin" element={<DriverCheckinPage />} />
       <Route path="/password-setup" element={<PasswordSetupPage />} />
       <Route path="/reset-password" element={<PasswordResetPage />} />
+      <Route path="/execute/:slug" element={<PublicExecutePage />} />
 
       <Route path="/" element={
         <PrivateRoute isAuthenticated={isAuthenticated} user={user}>
@@ -292,6 +300,20 @@ function AppContent() {
                 onNavigateToSettings={() => {}}
                 getUserTransformationTypes={getUserTransformationTypes}
               />
+            </LayoutRouter>
+          </RoleBasedRoute>
+        </PrivateRoute>
+      } />
+
+      <Route path="/execute" element={
+        <PrivateRoute isAuthenticated={isAuthenticated} user={user}>
+          <RoleBasedRoute
+            user={user}
+            customCheck={(u) => u.role === 'admin' || u.role === 'user'}
+            deniedMessage="You do not have permission to access the Execute page."
+          >
+            <LayoutRouter user={user} companyBranding={companyBranding} onLogout={logout}>
+              <ExecutePage user={user} />
             </LayoutRouter>
           </RoleBasedRoute>
         </PrivateRoute>
@@ -761,7 +783,7 @@ function AppContent() {
 
 interface ClientPortalLoginProps {
   companyBranding?: any;
-  onLogin: (username: string, password: string) => Promise<{ success: boolean; message?: string }>;
+  onLogin: (username: string, password: string, loginType?: 'admin' | 'client') => Promise<{ success: boolean; message?: string }>;
   isAuthenticated: boolean;
   user: any;
 }
@@ -781,7 +803,7 @@ function ClientPortalLogin({ companyBranding, onLogin, isAuthenticated, user }: 
   }, [isAuthenticated, user, navigate]);
 
   const handleClientLogin = async (username: string, password: string) => {
-    const result = await onLogin(username, password);
+    const result = await onLogin(username, password, 'client');
     return {
       ...result,
       isClientUser: result.success
