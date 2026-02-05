@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Settings, FileText, LogOut, User, HelpCircle, Menu, BarChart3, RefreshCw, Database, Building, Package, ClipboardCheck, Building2, DollarSign, Users as UsersIcon, BookUser, ClipboardList, Brain, MapPin, Receipt } from 'lucide-react';
+import { Settings, FileText, LogOut, User, HelpCircle, Menu, BarChart3, RefreshCw, Database, Building, Package, ClipboardCheck, Building2, DollarSign, Users as UsersIcon, BookUser, ClipboardList, Brain, MapPin, Receipt, Play } from 'lucide-react';
 import type { User as UserType } from '../types';
 import type { CompanyBranding } from '../types';
 import DarkModeToggle from './DarkModeToggle';
@@ -109,6 +109,14 @@ export default function LayoutRouter({ children, user, companyBranding, onLogout
       label: 'Transform',
       icon: RefreshCw,
       path: '/transform',
+      requiresPermission: false,
+      roles: ['admin', 'user']
+    },
+    {
+      id: 'execute',
+      label: 'Execute',
+      icon: Play,
+      path: '/execute',
       requiresPermission: false,
       roles: ['admin', 'user']
     },
@@ -246,6 +254,7 @@ export default function LayoutRouter({ children, user, companyBranding, onLogout
     if (path === '/checkin-setup') return 'Check-In Setup';
     if (path === '/client-setup') return 'Client Setup';
     if (path === '/transform') return 'Transform & Rename';
+    if (path === '/execute') return 'Execute';
     if (path === '/types') return 'Type Setup';
     if (path === '/settings') return 'Settings';
     if (path === '/logs') return 'Activity Logs';
@@ -266,6 +275,7 @@ export default function LayoutRouter({ children, user, companyBranding, onLogout
     if (path === '/checkin-setup') return 'Configure driver check-in system and manage driver information';
     if (path === '/client-setup') return 'Manage client companies and their users';
     if (path === '/transform') return 'Extract data from PDFs to intelligently rename files';
+    if (path === '/execute') return 'Run configured actions with custom parameters';
     if (path === '/types') return 'Configure extraction types, transformation types, and workflows';
     if (path === '/settings') return 'Configure Parse-It settings and preferences';
     if (path === '/logs') return 'Monitor system activity and processing logs';
