@@ -59,10 +59,11 @@ export interface FieldMappingFunction {
 
 export interface FieldMapping {
   fieldName: string;
-  type: 'ai' | 'mapped' | 'hardcoded' | 'function';
+  type: 'ai' | 'mapped' | 'hardcoded' | 'function' | 'order_entry';
   value: string;
-  dataType?: 'string' | 'number' | 'integer' | 'datetime' | 'phone' | 'boolean';
+  dataType?: 'string' | 'number' | 'integer' | 'datetime' | 'phone' | 'boolean' | 'zip_postal';
   maxLength?: number;
+  dateOnly?: boolean;
   removeIfNull?: boolean;
   isWorkflowOnly?: boolean;
   functionId?: string;
@@ -75,6 +76,46 @@ export interface ArraySplitConfig {
   splitBasedOnField: string;
   splitStrategy: 'one_per_entry' | 'divide_evenly';
   defaultToOneIfMissing?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ArrayEntryField {
+  id?: string;
+  arrayEntryId?: string;
+  fieldName: string;
+  fieldType: 'hardcoded' | 'extracted' | 'mapped';
+  hardcodedValue?: string;
+  extractionInstruction?: string;
+  dataType?: 'string' | 'number' | 'integer' | 'boolean' | 'datetime';
+  maxLength?: number;
+  removeIfNull?: boolean;
+  fieldOrder: number;
+  createdAt?: string;
+}
+
+export interface ArrayEntryConditionRule {
+  fieldPath: string;
+  operator: 'equals' | 'notEquals' | 'contains' | 'notContains' | 'greaterThan' | 'lessThan' | 'greaterThanOrEqual' | 'lessThanOrEqual' | 'isEmpty' | 'isNotEmpty';
+  value: string;
+}
+
+export interface ArrayEntryConditions {
+  enabled: boolean;
+  logic: 'AND' | 'OR';
+  rules: ArrayEntryConditionRule[];
+}
+
+export interface ArrayEntryConfig {
+  id?: string;
+  extractionTypeId?: string;
+  targetArrayField: string;
+  entryOrder: number;
+  isEnabled: boolean;
+  fields: ArrayEntryField[];
+  conditions?: ArrayEntryConditions;
+  isRepeating?: boolean;
+  repeatInstruction?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -101,6 +142,7 @@ export interface ExtractionType {
   defaultUploadMode?: 'manual' | 'auto';
   lockUploadMode?: boolean;
   arraySplitConfigs?: ArraySplitConfig[];
+  arrayEntryConfigs?: ArrayEntryConfig[];
   pageProcessingMode?: 'all' | 'single' | 'range';
   pageProcessingSinglePage?: number;
   pageProcessingRangeStart?: number;
@@ -117,7 +159,7 @@ export interface TransformationFieldMapping {
   fieldName: string;
   type: 'ai' | 'mapped' | 'hardcoded' | 'function';
   value: string;
-  dataType?: 'string' | 'number' | 'integer' | 'datetime' | 'phone' | 'boolean';
+  dataType?: 'string' | 'number' | 'integer' | 'datetime' | 'phone' | 'boolean' | 'zip_postal';
   maxLength?: number;
   pageNumberInGroup?: number;
   functionId?: string;
@@ -189,6 +231,7 @@ export interface ApiConfig {
   path: string;
   password: string;
   googleApiKey: string;
+  googlePlacesApiKey: string;
   orderDisplayFields: string;
   customOrderDisplayFields: OrderDisplayMapping[];
 }
@@ -214,6 +257,24 @@ export interface WorkflowStep {
   nextStepOnSuccessId?: string;
   nextStepOnFailureId?: string;
   escapeSingleQuotesInBody?: boolean;
+  userResponseTemplate?: string;
+}
+
+export type ExecuteButtonStepType = 'api_call' | 'api_endpoint' | 'data_transform' | 'sftp_upload' | 'conditional_check' | 'email_action' | 'rename_file';
+
+export interface ExecuteButtonStep {
+  id: string;
+  buttonId: string;
+  stepOrder: number;
+  stepType: ExecuteButtonStepType;
+  stepName: string;
+  configJson: any;
+  nextStepOnSuccessId?: string;
+  nextStepOnFailureId?: string;
+  escapeSingleQuotesInBody?: boolean;
+  isEnabled: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface ApiEndpointStepConfig {
@@ -322,6 +383,7 @@ export interface UserPermissions {
   extractionLogs: boolean;
   userManagement: boolean;
   workflowManagement: boolean;
+  executeSetup: boolean;
 }
 
 export interface User {
@@ -342,6 +404,7 @@ export interface User {
   hasAddressBookAccess?: boolean;
   hasTrackTraceAccess?: boolean;
   hasInvoiceAccess?: boolean;
+  hasExecuteSetupAccess?: boolean;
   createdAt?: string;
   lastLogin?: string;
   invitationSentAt?: string;
@@ -605,7 +668,7 @@ export interface ClientAddress {
   updatedAt: string;
 }
 
-export type OrderEntryFieldType = 'text' | 'number' | 'date' | 'datetime' | 'phone' | 'dropdown' | 'file' | 'boolean' | 'zip' | 'postal_code' | 'province' | 'state';
+export type OrderEntryFieldType = 'text' | 'number' | 'date' | 'datetime' | 'phone' | 'dropdown' | 'file' | 'boolean' | 'zip' | 'postal_code' | 'zip_postal' | 'province' | 'state';
 
 export interface OrderEntryConfig {
   id: string;
@@ -644,9 +707,23 @@ export interface OrderEntryFieldGroup {
   arrayMinRows: number;
   arrayMaxRows: number;
   arrayJsonPath: string;
+  hideAddRow: boolean;
   createdAt: string;
   updatedAt: string;
 }
+
+export interface DropdownOptionVisibilityRule {
+  dependsOnField: string;
+  showWhenValues: string[];
+}
+
+export interface DropdownOption {
+  value: string;
+  description: string;
+  visibilityRules?: DropdownOptionVisibilityRule[];
+}
+
+export type DropdownDisplayMode = 'description_only' | 'value_and_description';
 
 export interface OrderEntryField {
   id: string;
@@ -661,7 +738,8 @@ export interface OrderEntryField {
   minValue?: number;
   maxValue?: number;
   defaultValue: string;
-  dropdownOptions: string[];
+  dropdownOptions: string[] | DropdownOption[];
+  dropdownDisplayMode?: DropdownDisplayMode;
   jsonPath: string;
   isArrayField: boolean;
   arrayMinRows: number;
@@ -670,6 +748,7 @@ export interface OrderEntryField {
   validationRegex: string;
   validationErrorMessage: string;
   fieldOrder: number;
+  copyFromField?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -991,22 +1070,182 @@ export interface TraceNumbersSectionConfig {
   fieldMappings: TraceNumberFieldMapping[];
 }
 
+export interface TrackTraceTimelineChildStatus {
+  id: string;
+  timelineStatusId: string;
+  statusValue: string;
+  displayOrder: number;
+  createdAt: string;
+}
+
+export interface TrackTraceTimelineStatus {
+  id: string;
+  templateId: string;
+  name: string;
+  displayOrder: number;
+  locationField?: string;
+  dateField?: string;
+  createdAt: string;
+  updatedAt: string;
+  childStatuses?: TrackTraceTimelineChildStatus[];
+}
+
+export interface TimelineSectionConfig {
+  statusField: string;
+}
+
+export interface BarcodeDetailsFieldMapping {
+  id?: string;
+  label: string;
+  apiField: string;
+  showTotal: boolean;
+  isRequired?: boolean;
+  displayOrder: number;
+  groupId?: string;
+  groupSeparator?: string;
+  valueSuffix?: string;
+}
+
+export interface BarcodeDetailsImageConfig {
+  id?: string;
+  apiUrl: string;
+  authConfigId?: string;
+  sourceField: string;
+}
+
+export interface BarcodeDetailsSectionConfig {
+  apiSourceType: 'main' | 'secondary';
+  secondaryApiId?: string;
+  apiSpecId?: string;
+  apiSpecEndpointId?: string;
+  responseArrayPath?: string;
+  nestedArrayPath?: string;
+  secondaryEndpointId?: string;
+  secondaryParamField?: string;
+  fieldMappings: BarcodeDetailsFieldMapping[];
+  imageConfig?: BarcodeDetailsImageConfig;
+}
+
+export interface RouteSummaryField {
+  id?: string;
+  groupId?: string;
+  label: string;
+  apiField: string;
+  displayOrder: number;
+  gridColumn?: number;
+}
+
+export interface RouteSummaryGroup {
+  id?: string;
+  templateId?: string;
+  name: string;
+  rowIndex: number;
+  displayOrder: number;
+  apiSpecEndpointId?: string;
+  apiSourceType?: 'main' | 'secondary';
+  secondaryApiId?: string;
+  authConfigId?: string;
+  fields: RouteSummaryField[];
+}
+
+export interface RouteSummarySectionConfig {
+  groups: RouteSummaryGroup[];
+}
+
+export interface ShipmentSummaryField {
+  id?: string;
+  groupId?: string;
+  label: string;
+  apiField: string;
+  displayOrder: number;
+}
+
+export interface ShipmentSummaryGroup {
+  id?: string;
+  templateId?: string;
+  name: string;
+  displayOrder: number;
+  fields: ShipmentSummaryField[];
+}
+
+export interface ShipmentSummaryConfig {
+  id?: string;
+  templateId: string;
+  headerFieldName: string;
+  showTimelineStatus: boolean;
+  tempControlledField: string;
+  tempControlledLabel: string;
+  hazardousField: string;
+  hazardousLabel: string;
+}
+
+export interface ShipmentSummarySectionConfig {
+  config?: ShipmentSummaryConfig;
+  groups: ShipmentSummaryGroup[];
+}
+
 export interface TrackTraceTemplateSection {
   id: string;
   templateId: string;
   sectionType: TrackTraceTemplateSectionType;
   displayOrder: number;
   isEnabled: boolean;
-  config: Record<string, unknown> | TraceNumbersSectionConfig;
+  config: Record<string, unknown> | TraceNumbersSectionConfig | TimelineSectionConfig | BarcodeDetailsSectionConfig | RouteSummarySectionConfig;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface TrackTraceDocumentFilter {
+  id: string;
+  documentConfigId: string;
+  fieldName: string;
+  valueType: 'variable' | 'static';
+  variableName?: string;
+  staticValue?: string;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TrackTraceDocumentConfig {
+  id: string;
+  templateId: string;
+  name: string;
+  searchApiUrl: string;
+  getDocumentApiUrl: string;
+  docIdField: string;
+  docNameField: string;
+  docTypeField?: string;
+  docSizeField?: string;
+  authConfigId?: string;
+  sortOrder: number;
+  isEnabled: boolean;
+  emailEnabled: boolean;
+  emailSubject?: string;
+  emailTemplate?: string;
+  createdAt: string;
+  updatedAt: string;
+  filters?: TrackTraceDocumentFilter[];
+}
+
+export interface FetchedDocument {
+  id: string;
+  name: string;
+  type: string;
+  size: string;
+  configId: string;
+  getDocumentUrl: string;
+  authConfigId?: string;
+  emailEnabled?: boolean;
+  emailSubject?: string;
+  emailTemplate?: string;
 }
 
 export interface OrderEntryTemplate {
   id: string;
   name: string;
   description?: string;
-  workflowId?: string;
+  extractionTypeId?: string;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -1044,7 +1283,8 @@ export interface OrderEntryTemplateField {
   minValue?: number;
   maxValue?: number;
   defaultValue?: string;
-  dropdownOptions: string[];
+  dropdownOptions: string[] | DropdownOption[];
+  dropdownDisplayMode?: DropdownDisplayMode;
   jsonPath?: string;
   isArrayField: boolean;
   arrayMinRows: number;
