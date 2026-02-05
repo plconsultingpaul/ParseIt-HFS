@@ -703,23 +703,6 @@ export default function EmailMonitoringSettings({
               <p className="text-sm text-gray-500 dark:text-gray-400">Configure your email provider settings</p>
             </div>
           </div>
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => updateConfig('isEnabled', !localConfig.isEnabled)}
-              className={`p-2 rounded-lg transition-colors duration-200 ${
-                localConfig.isEnabled 
-                  ? 'bg-green-100 text-green-600 hover:bg-green-200' 
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              {localConfig.isEnabled ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-            </button>
-            <span className={`text-sm font-medium ${
-              localConfig.isEnabled ? 'text-green-600' : 'text-gray-600'
-            }`}>
-              {localConfig.isEnabled ? 'Enabled' : 'Disabled'}
-            </span>
-          </div>
         </div>
 
         {/* AI Auto-Detect Toggle */}
@@ -908,11 +891,30 @@ export default function EmailMonitoringSettings({
 
         {/* Separate Monitoring Credentials Section */}
         <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 mb-4 bg-gray-50 dark:bg-gray-700/50">
-          <div className="mb-4">
-            <h5 className="font-medium text-gray-900 dark:text-gray-100">Separate Monitoring Credentials (Optional)</h5>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Use different credentials for reading emails. If left empty, the send credentials above will be used.
-            </p>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h5 className="font-medium text-gray-900 dark:text-gray-100">Separate Monitoring Credentials (Optional)</h5>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Use different credentials for reading emails. If left empty, the send credentials above will be used.
+              </p>
+            </div>
+            <div className="flex items-center space-x-2 ml-4 flex-shrink-0">
+              <button
+                onClick={() => updateConfig('isEnabled', !localConfig.isEnabled)}
+                className={`p-2 rounded-lg transition-colors duration-200 ${
+                  localConfig.isEnabled
+                    ? 'bg-green-100 text-green-600 hover:bg-green-200'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {localConfig.isEnabled ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
+              </button>
+              <span className={`text-sm font-medium ${
+                localConfig.isEnabled ? 'text-green-600' : 'text-gray-600'
+              }`}>
+                {localConfig.isEnabled ? 'Enabled' : 'Disabled'}
+              </span>
+            </div>
           </div>
 
           {localConfig.provider === 'office365' ? (
