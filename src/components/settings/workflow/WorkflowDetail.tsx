@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Plus, ArrowUp, ArrowDown, Trash2, Save, Settings, AlertTriangle, X } from 'lucide-react';
+import { Plus, ArrowUp, ArrowDown, Trash2, Save, Settings, AlertTriangle, X, Copy } from 'lucide-react';
 import type { ExtractionWorkflow, WorkflowStep, ApiConfig } from '../../../types';
 import StepConfigForm from './StepConfigForm';
+import StepCopyModal from './StepCopyModal';
 
 interface WorkflowDetailProps {
   workflow: ExtractionWorkflow;
@@ -18,6 +19,7 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
   const [isSaving, setIsSaving] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [stepToDelete, setStepToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [showCopyModal, setShowCopyModal] = useState(false);
 
   // Check if workflow has a temporary ID (not yet saved)
   const isTemporaryWorkflow = workflow.id.startsWith('temp-');
@@ -80,6 +82,24 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
     console.log('Step configJson:', step.configJson);
     setEditingStep(step);
     setShowStepForm(true);
+  };
+
+  const handleCopyStep = async (copiedStep: WorkflowStep) => {
+    const maxStepOrder = localSteps.length > 0 ? Math.max(...localSteps.map(s => s.stepOrder)) : 0;
+    const stepWithOrder = {
+      ...copiedStep,
+      stepOrder: maxStepOrder + 100
+    };
+
+    const updatedSteps = [...localSteps, stepWithOrder];
+    setLocalSteps(updatedSteps);
+    setShowCopyModal(false);
+
+    try {
+      await handleSaveStepsToDatabase(updatedSteps);
+    } catch (error) {
+      console.log('Copy failed, keeping modal closed');
+    }
   };
 
   const handleSaveStep = async (step: WorkflowStep) => {
@@ -367,6 +387,8 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
         return 'Rename File';
       case 'email_action':
         return 'Email Action';
+      case 'multipart_form_upload':
+        return 'Multipart Form';
       default:
         return 'Unknown';
     }
@@ -436,6 +458,15 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
         />
       )}
 
+      {/* Step Copy Modal */}
+      {showCopyModal && (
+        <StepCopyModal
+          currentWorkflowId={workflow.id}
+          onCopy={handleCopyStep}
+          onCancel={() => setShowCopyModal(false)}
+        />
+      )}
+
       {/* Header */}
       <div className="p-6 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center justify-between">
@@ -446,6 +477,14 @@ export default function WorkflowDetail({ workflow, steps, apiConfig, onUpdateSte
             </p>
           </div>
           <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setShowCopyModal(true)}
+              disabled={isTemporaryWorkflow}
+              className="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2"
+            >
+              <Copy className="h-4 w-4" />
+              <span>Copy Step</span>
+            </button>
             <button
               onClick={handleAddStep}
               disabled={isTemporaryWorkflow}
