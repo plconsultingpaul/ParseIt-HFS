@@ -414,7 +414,6 @@ export default function PageGroupCard({
   const getStepStatus = (step: WorkflowStep) => {
     if (!workflowExecutionLog) return 'pending';
 
-    // First check if we have actual step logs for this step
     const stepLog = workflowStepLogs.find(log => log.stepId === step.id);
     if (stepLog) {
       if (stepLog.status === 'completed') return 'completed';
@@ -423,15 +422,15 @@ export default function PageGroupCard({
       if (stepLog.status === 'skipped') return 'skipped';
     }
 
-    // Fallback to old logic if step logs aren't loaded yet
+    if (workflowStepLogs.length > 0) {
+      return 'skipped';
+    }
+
     const currentStepId = workflowExecutionLog.currentStepId;
     const isCurrentStep = step.id === currentStepId;
     const status = workflowExecutionLog.status;
 
     if (status === 'completed') {
-      if (workflowStepLogs.length > 0) {
-        return 'skipped';
-      }
       return 'completed';
     }
 
@@ -470,18 +469,7 @@ export default function PageGroupCard({
   };
 
   const getStepStatusIcon = (status: string, stepOrder: number) => {
-    switch (status) {
-      case 'completed':
-        return '✓';
-      case 'running':
-        return '⟳';
-      case 'failed':
-        return '✗';
-      case 'skipped':
-        return '⊘';
-      default:
-        return stepOrder.toString();
-    }
+    return stepOrder.toString();
   };
 
   // Calculate combined file size
