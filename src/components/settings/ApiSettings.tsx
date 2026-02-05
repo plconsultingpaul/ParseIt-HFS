@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Key, Globe, TestTube, Link, FileText, Settings, Sparkles } from 'lucide-react';
+import { Save, Key, Globe, TestTube, Link, FileText, Settings, Sparkles, MapPin, Shield } from 'lucide-react';
 import type { ApiConfig, SecondaryApiConfig } from '../../types';
 import SecondaryApiSettings from './SecondaryApiSettings';
 import ApiSpecsSettings from './ApiSpecsSettings';
 import GeminiConfigSettings from './GeminiConfigSettings';
+import GooglePlacesSettings from './GooglePlacesSettings';
+import ApiAuthSettings from './ApiAuthSettings';
 import { fetchSecondaryApiConfigs } from '../../services/configService';
 
 interface ApiSettingsProps {
@@ -11,7 +13,7 @@ interface ApiSettingsProps {
   onUpdateApiConfig: (config: ApiConfig) => Promise<void>;
 }
 
-type ApiTab = 'configuration' | 'gemini' | 'specs';
+type ApiTab = 'configuration' | 'gemini' | 'specs' | 'places' | 'authentication';
 
 export default function ApiSettings({ apiConfig, onUpdateApiConfig }: ApiSettingsProps) {
   const [activeTab, setActiveTab] = useState<ApiTab>('configuration');
@@ -182,6 +184,32 @@ export default function ApiSettings({ apiConfig, onUpdateApiConfig }: ApiSetting
               Gemini AI
             </div>
           </button>
+          <button
+            onClick={() => setActiveTab('places')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'places'
+                ? 'border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <MapPin className="w-4 h-4" />
+              Google Places
+            </div>
+          </button>
+          <button
+            onClick={() => setActiveTab('authentication')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'authentication'
+                ? 'border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Shield className="w-4 h-4" />
+              Authentication
+            </div>
+          </button>
         </nav>
       </div>
 
@@ -325,6 +353,14 @@ export default function ApiSettings({ apiConfig, onUpdateApiConfig }: ApiSetting
 
       {activeTab === 'specs' && (
         <ApiSpecsSettings apiConfig={localConfig} secondaryApis={secondaryApis} />
+      )}
+
+      {activeTab === 'places' && (
+        <GooglePlacesSettings apiConfig={localConfig} onUpdateApiConfig={onUpdateApiConfig} />
+      )}
+
+      {activeTab === 'authentication' && (
+        <ApiAuthSettings />
       )}
     </div>
   );
