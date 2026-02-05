@@ -55,7 +55,9 @@ function AppContent() {
     getUserExtractionTypes,
     updateUserExtractionTypes,
     getUserTransformationTypes,
-    updateUserTransformationTypes
+    updateUserTransformationTypes,
+    getUserExecuteCategories,
+    updateUserExecuteCategories
   } = useAuth();
 
   const {
@@ -625,6 +627,8 @@ function AppContent() {
                 updateUserExtractionTypes={updateUserExtractionTypes}
                 getUserTransformationTypes={getUserTransformationTypes}
                 updateUserTransformationTypes={updateUserTransformationTypes}
+                getUserExecuteCategories={getUserExecuteCategories}
+                updateUserExecuteCategories={updateUserExecuteCategories}
                 onUpdateExtractionTypes={handleUpdateExtractionTypes}
                 onDeleteExtractionType={handleDeleteExtractionType}
                 onUpdateTransformationTypes={handleUpdateTransformationTypes}
