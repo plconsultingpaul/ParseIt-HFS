@@ -91,12 +91,116 @@ function normalizeBooleanValue(value: any): string {
   return 'False';
 }
 
+function getNestedValue(obj: Record<string, any>, path: string): any {
+  const parts = path.split('.');
+  let current: any = obj;
+  for (const part of parts) {
+    if (current === null || current === undefined) {
+      return undefined;
+    }
+    current = current[part];
+  }
+  return current;
+}
+
+function evaluateArrayEntryConditions(
+  conditions: ArrayEntryConditions | undefined,
+  orderData: Record<string, any>,
+  wfoData: Record<string, any>
+): boolean {
+  if (!conditions || !conditions.enabled || conditions.rules.length === 0) {
+    return true;
+  }
+
+  const results = conditions.rules.map(rule => {
+    let value = getNestedValue(orderData, rule.fieldPath);
+    if (value === undefined) {
+      value = getNestedValue(wfoData, rule.fieldPath);
+    }
+
+    const strValue = value !== undefined && value !== null ? String(value) : '';
+    const compareValue = rule.value || '';
+
+    switch (rule.operator) {
+      case 'equals':
+        return strValue.toLowerCase() === compareValue.toLowerCase();
+      case 'notEquals':
+        return strValue.toLowerCase() !== compareValue.toLowerCase();
+      case 'contains':
+        return strValue.toLowerCase().includes(compareValue.toLowerCase());
+      case 'notContains':
+        return !strValue.toLowerCase().includes(compareValue.toLowerCase());
+      case 'greaterThan': {
+        const numValue = parseFloat(strValue);
+        const numCompare = parseFloat(compareValue);
+        return !isNaN(numValue) && !isNaN(numCompare) && numValue > numCompare;
+      }
+      case 'lessThan': {
+        const numValue = parseFloat(strValue);
+        const numCompare = parseFloat(compareValue);
+        return !isNaN(numValue) && !isNaN(numCompare) && numValue < numCompare;
+      }
+      case 'greaterThanOrEqual': {
+        const numValue = parseFloat(strValue);
+        const numCompare = parseFloat(compareValue);
+        return !isNaN(numValue) && !isNaN(numCompare) && numValue >= numCompare;
+      }
+      case 'lessThanOrEqual': {
+        const numValue = parseFloat(strValue);
+        const numCompare = parseFloat(compareValue);
+        return !isNaN(numValue) && !isNaN(numCompare) && numValue <= numCompare;
+      }
+      case 'isEmpty':
+        return strValue === '' || strValue === 'null' || strValue === 'undefined';
+      case 'isNotEmpty':
+        return strValue !== '' && strValue !== 'null' && strValue !== 'undefined';
+      default:
+        return true;
+    }
+  });
+
+  return conditions.logic === 'AND'
+    ? results.every(r => r)
+    : results.some(r => r);
+}
+
 export interface ArraySplitConfig {
   id?: string;
   targetArrayField: string;
   splitBasedOnField: string;
   splitStrategy: 'one_per_entry' | 'divide_evenly';
   defaultToOneIfMissing?: boolean;
+}
+
+export interface ArrayEntryField {
+  fieldName: string;
+  fieldType: 'hardcoded' | 'extracted' | 'mapped';
+  hardcodedValue?: string;
+  extractionInstruction?: string;
+  dataType?: 'string' | 'number' | 'integer' | 'datetime';
+}
+
+export interface ArrayEntryConditionRule {
+  fieldPath: string;
+  operator: 'equals' | 'notEquals' | 'contains' | 'notContains' | 'greaterThan' | 'lessThan' | 'greaterThanOrEqual' | 'lessThanOrEqual' | 'isEmpty' | 'isNotEmpty';
+  value: string;
+}
+
+export interface ArrayEntryConditions {
+  enabled: boolean;
+  logic: 'AND' | 'OR';
+  rules: ArrayEntryConditionRule[];
+}
+
+export interface ArrayEntryConfig {
+  id?: string;
+  targetArrayField: string;
+  entryOrder: number;
+  isEnabled: boolean;
+  fields: ArrayEntryField[];
+  conditions?: ArrayEntryConditions;
+  isRepeating?: boolean;
+  repeatInstruction?: string;
 }
 
 export interface ExtractionRequest {
@@ -111,6 +215,7 @@ export interface ExtractionRequest {
   traceTypeValue?: string;
   apiKey: string;
   arraySplitConfigs?: ArraySplitConfig[];
+  arrayEntryConfigs?: ArrayEntryConfig[];
   functions?: FieldMappingFunction[];
 }
 
@@ -145,6 +250,7 @@ export async function extractDataFromPDF({
   traceTypeValue,
   apiKey,
   arraySplitConfigs = [],
+  arrayEntryConfigs = [],
   functions = []
 }: ExtractionRequest): Promise<ExtractionResult> {
   if (!apiKey) {
@@ -197,26 +303,28 @@ PROVINCE AND STATE FORMATTING RULES:
     if (isJsonFormat && regularMappings.length > 0) {
       fieldMappingInstructions = '\n\nFIELD MAPPING INSTRUCTIONS:\n';
       regularMappings.forEach(mapping => {
+        const getDateTimeNote = (m: any) => m.dateOnly
+          ? ' (as date string in yyyy-MM-dd format)'
+          : ' (as datetime string in yyyy-MM-ddThh:mm:ss format)';
         if (mapping.type === 'hardcoded') {
           const dataTypeNote = mapping.dataType === 'string' ? ' (as UPPER CASE string)' :
                               mapping.dataType === 'number' ? ' (format as number)' :
                               mapping.dataType === 'integer' ? ' (format as integer)' :
-                              mapping.dataType === 'datetime' ? ' (as datetime string in yyyy-MM-ddThh:mm:ss format)' :
+                              mapping.dataType === 'datetime' ? getDateTimeNote(mapping) :
                               mapping.dataType === 'phone' ? ' (as formatted phone number XXX-XXX-XXXX)' : '';
           fieldMappingInstructions += `- "${mapping.fieldName}": Always use the EXACT hardcoded value "${mapping.value}"${dataTypeNote}\n`;
         } else if (mapping.type === 'mapped') {
           const dataTypeNote = mapping.dataType === 'string' ? ' (format as UPPER CASE string)' :
                               mapping.dataType === 'number' ? ' (format as number)' :
                               mapping.dataType === 'integer' ? ' (format as integer)' :
-                              mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' :
+                              mapping.dataType === 'datetime' ? getDateTimeNote(mapping) :
                               mapping.dataType === 'phone' ? ' (format as phone number XXX-XXX-XXXX)' : '';
           fieldMappingInstructions += `- "${mapping.fieldName}": Extract data from PDF coordinates ${mapping.value}${dataTypeNote}\n`;
         } else {
-          // AI type - use default instructions behavior
           const dataTypeNote = mapping.dataType === 'string' ? ' (format as UPPER CASE string)' :
                               mapping.dataType === 'number' ? ' (format as number)' :
                               mapping.dataType === 'integer' ? ' (format as integer)' :
-                              mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' :
+                              mapping.dataType === 'datetime' ? getDateTimeNote(mapping) :
                               mapping.dataType === 'phone' ? ' (format as phone number XXX-XXX-XXXX)' : '';
           fieldMappingInstructions += `- "${mapping.fieldName}": ${mapping.value || 'Extract from PDF document'}${dataTypeNote}\n`;
         }
@@ -266,43 +374,126 @@ PROVINCE AND STATE FORMATTING RULES:
       });
     }
 
+    // Build array entry extraction instructions for JSON
+    // This extracts values for array entry fields that need AI extraction
+    let arrayEntryExtractionInstructions = '';
+    const enabledArrayEntries = arrayEntryConfigs.filter(e => e.isEnabled);
+    console.log(`[PROMPT DEBUG] Total array entry configs: ${arrayEntryConfigs.length}`);
+    console.log(`[PROMPT DEBUG] Enabled array entries: ${enabledArrayEntries.length}`);
+    enabledArrayEntries.forEach(entry => {
+      console.log(`[PROMPT DEBUG]   Entry: ${entry.targetArrayField}[${entry.entryOrder}], isRepeating: ${entry.isRepeating}`);
+      entry.fields.forEach(field => {
+        console.log(`[PROMPT DEBUG]     Field: ${field.fieldName}, fieldType: "${field.fieldType}", hardcodedValue: "${field.hardcodedValue}", extractionInstruction: "${field.extractionInstruction}"`);
+      });
+    });
+
+    if (isJsonFormat && enabledArrayEntries.length > 0) {
+      // Separate repeating and non-repeating entries
+      const repeatingEntries = enabledArrayEntries.filter(e => e.isRepeating);
+      const staticEntries = enabledArrayEntries.filter(e => !e.isRepeating);
+
+      console.log(`[PROMPT DEBUG] Repeating entries: ${repeatingEntries.length}`);
+      console.log(`[PROMPT DEBUG] Static entries: ${staticEntries.length}`);
+
+      // Handle static (non-repeating) entries - extract as standalone fields
+      const staticExtractedFields = staticEntries.flatMap(entry =>
+        entry.fields
+          .filter(f => f.fieldType === 'extracted' && f.extractionInstruction)
+          .map(f => ({
+            key: `__ARRAY_ENTRY_${entry.targetArrayField}_${entry.entryOrder}_${f.fieldName}__`,
+            instruction: f.extractionInstruction,
+            dataType: f.dataType || 'string'
+          }))
+      );
+      console.log(`[PROMPT DEBUG] Static extracted fields to send to AI: ${staticExtractedFields.length}`);
+      staticExtractedFields.forEach(f => {
+        console.log(`[PROMPT DEBUG]   Key: ${f.key}, Instruction: "${f.instruction}"`);
+      });
+
+      if (staticExtractedFields.length > 0) {
+        arrayEntryExtractionInstructions = '\n\nARRAY ENTRY FIELD EXTRACTIONS:\n';
+        arrayEntryExtractionInstructions += 'Extract these additional values as standalone fields in the workflow-only data section:\n';
+        staticExtractedFields.forEach(({ key, instruction, dataType }) => {
+          const dataTypeNote = dataType === 'string' ? ' (as UPPER CASE string)' :
+                              dataType === 'number' ? ' (format as number)' :
+                              dataType === 'integer' ? ' (format as integer)' :
+                              dataType === 'datetime' ? ' (as datetime string in yyyy-MM-ddThh:mm:ss format)' : '';
+          arrayEntryExtractionInstructions += `- "${key}": ${instruction}${dataTypeNote}\n`;
+        });
+        console.log('[PROMPT DEBUG] Built arrayEntryExtractionInstructions:', arrayEntryExtractionInstructions);
+      }
+
+      // Handle repeating entries - extract as arrays
+      if (repeatingEntries.length > 0) {
+        arrayEntryExtractionInstructions += '\n\nREPEATING ARRAY EXTRACTIONS:\n';
+        arrayEntryExtractionInstructions += 'For each of the following, find ALL matching rows in the PDF and return an ARRAY of objects:\n\n';
+
+        repeatingEntries.forEach(entry => {
+          const arrayKey = `__REPEATING_ARRAY_${entry.targetArrayField}__`;
+          arrayEntryExtractionInstructions += `- "${arrayKey}": ${entry.repeatInstruction || 'Find all matching rows'}\n`;
+          arrayEntryExtractionInstructions += `  Return as an array of objects, where each object has these fields:\n`;
+
+          entry.fields.forEach(field => {
+            const dataTypeNote = field.dataType === 'string' ? ' (UPPER CASE string)' :
+                                field.dataType === 'number' ? ' (number)' :
+                                field.dataType === 'integer' ? ' (integer)' :
+                                field.dataType === 'datetime' ? ' (datetime yyyy-MM-ddThh:mm:ss)' : '';
+            if (field.fieldType === 'hardcoded') {
+              arrayEntryExtractionInstructions += `    - "${field.fieldName}": Always "${field.hardcodedValue}"${dataTypeNote}\n`;
+            } else {
+              arrayEntryExtractionInstructions += `    - "${field.fieldName}": ${field.extractionInstruction}${dataTypeNote}\n`;
+            }
+          });
+          arrayEntryExtractionInstructions += '\n';
+        });
+      }
+    }
+
     // Build workflow-only field instructions
     let wfoInstructions = '';
     if (wfoMappings.length > 0) {
       wfoInstructions = '\n\nWORKFLOW-ONLY FIELDS (SEPARATE EXTRACTION):\n';
       wfoInstructions += 'Extract these additional fields as standalone variables for workflow use (NOT part of the main template structure):\n';
       wfoMappings.forEach(mapping => {
+        const getDateTimeNote = (m: any) => m.dateOnly
+          ? ' (as date string in yyyy-MM-dd format)'
+          : ' (as datetime string in yyyy-MM-ddThh:mm:ss format)';
         if (mapping.type === 'hardcoded') {
           const dataTypeNote = mapping.dataType === 'string' ? ' (as UPPER CASE string)' :
                               mapping.dataType === 'number' ? ' (format as number)' :
                               mapping.dataType === 'integer' ? ' (format as integer)' :
-                              mapping.dataType === 'datetime' ? ' (as datetime string in yyyy-MM-ddThh:mm:ss format)' :
+                              mapping.dataType === 'datetime' ? getDateTimeNote(mapping) :
                               mapping.dataType === 'phone' ? ' (as formatted phone number XXX-XXX-XXXX)' : '';
           wfoInstructions += `- "${mapping.fieldName}": Always use the EXACT hardcoded value "${mapping.value}"${dataTypeNote}\n`;
         } else if (mapping.type === 'mapped') {
           const dataTypeNote = mapping.dataType === 'string' ? ' (format as UPPER CASE string)' :
                               mapping.dataType === 'number' ? ' (format as number)' :
                               mapping.dataType === 'integer' ? ' (format as integer)' :
-                              mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' :
+                              mapping.dataType === 'datetime' ? getDateTimeNote(mapping) :
                               mapping.dataType === 'phone' ? ' (format as phone number XXX-XXX-XXXX)' : '';
           wfoInstructions += `- "${mapping.fieldName}": Extract data from PDF coordinates ${mapping.value}${dataTypeNote}\n`;
         } else {
           const dataTypeNote = mapping.dataType === 'string' ? ' (format as UPPER CASE string)' :
                               mapping.dataType === 'number' ? ' (format as number)' :
                               mapping.dataType === 'integer' ? ' (format as integer)' :
-                              mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' :
+                              mapping.dataType === 'datetime' ? getDateTimeNote(mapping) :
                               mapping.dataType === 'phone' ? ' (format as phone number XXX-XXX-XXXX)' : '';
           wfoInstructions += `- "${mapping.fieldName}": ${mapping.value || 'Extract from PDF document'}${dataTypeNote}\n`;
         }
       });
     }
 
-    const hasWFOFields = wfoMappings.length > 0;
+    const hasArrayEntryExtractions = arrayEntryExtractionInstructions.length > 0;
+    const hasWFOFields = wfoMappings.length > 0 || hasArrayEntryExtractions;
+    console.log('[PROMPT DEBUG] hasArrayEntryExtractions:', hasArrayEntryExtractions);
+    console.log('[PROMPT DEBUG] hasWFOFields:', hasWFOFields);
+    console.log('[PROMPT DEBUG] wfoMappings.length:', wfoMappings.length);
+    console.log('[PROMPT DEBUG] arrayEntryExtractionInstructions.length:', arrayEntryExtractionInstructions.length);
     const prompt = `
 You are a data extraction AI. Please analyze the provided PDF document and extract the requested information according to the following instructions:
 
 EXTRACTION INSTRUCTIONS:
-${fullInstructions}${fieldMappingInstructions}${parseitIdInstructions}${traceTypeInstructions}${xmlParseitIdInstructions}${xmlTraceTypeInstructions}${arraySplitInstructions}${wfoInstructions}${postalCodeRules}
+${fullInstructions}${fieldMappingInstructions}${parseitIdInstructions}${traceTypeInstructions}${xmlParseitIdInstructions}${xmlTraceTypeInstructions}${arraySplitInstructions}${arrayEntryExtractionInstructions}${wfoInstructions}${postalCodeRules}
 
 OUTPUT FORMAT:
 ${hasWFOFields ? 'You need to extract TWO separate data structures from the PDF:\n\n1. MAIN TEMPLATE DATA:\n' : ''}Please format the extracted data as ${outputFormat} following this EXACT ${templateLabel} structure:
@@ -321,6 +512,13 @@ IMPORTANT GUIDELINES:
 
 Please provide only the ${outputFormat} output without any additional explanation or formatting.
 `;
+
+    // Log key sections of the prompt for debugging
+    if (arrayEntryExtractionInstructions.length > 0) {
+      console.log('[PROMPT DEBUG] ====== ARRAY ENTRY EXTRACTION SECTION IN PROMPT ======');
+      console.log(arrayEntryExtractionInstructions);
+      console.log('[PROMPT DEBUG] ====================================================');
+    }
 
     const result = await withRetry(
       () => model.generateContent([
@@ -359,7 +557,8 @@ Please provide only the ${outputFormat} output without any additional explanatio
               : JSON.stringify(wrapper.workflowOnlyData);
             console.log('[extractDataFromPDF] Successfully parsed dual-structure response');
             console.log('[extractDataFromPDF] Template data length:', templateData.length);
-            console.log('[extractDataFromPDF] WFO data:', workflowOnlyData);
+            console.log('[extractDataFromPDF] WFO data (raw from AI):', workflowOnlyData);
+            console.log('[extractDataFromPDF] WFO data keys:', Object.keys(wrapper.workflowOnlyData));
           } else {
             console.warn('[extractDataFromPDF] Wrapper missing expected fields, using full response as template');
             templateData = extractedContent;
@@ -427,6 +626,16 @@ Please provide only the ${outputFormat} output without any additional explanatio
                     current[finalField] = mapping.value;
                   } else {
                     current[finalField] = currentDateTime;
+                  }
+                }
+
+                // For dateOnly fields, ensure time is set to 00:00:00
+                if (mapping.dateOnly && current[finalField]) {
+                  const dateValue = String(current[finalField]);
+                  if (/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+                    current[finalField] = `${dateValue}T00:00:00`;
+                  } else if (/^\d{4}-\d{2}-\d{2}T/.test(dateValue)) {
+                    current[finalField] = `${dateValue.slice(0, 10)}T00:00:00`;
                   }
                 }
               } else if (mapping.dataType === 'phone') {
@@ -813,6 +1022,193 @@ Please provide only the ${outputFormat} output without any additional explanatio
           console.log(`[STEP 5] Skipped: functions array is empty`);
         }
 
+        // STEP 6: Construct arrays from array entry configs
+        if (enabledArrayEntries.length > 0) {
+          console.log('[STEP 6] Processing array entry configs');
+          console.log('[STEP 6 DEBUG] Raw workflowOnlyData string:', workflowOnlyData);
+
+          // Parse workflowOnlyData to get extracted values
+          let wfoData: Record<string, any> = {};
+          try {
+            wfoData = JSON.parse(workflowOnlyData);
+            console.log('[STEP 6 DEBUG] Parsed wfoData successfully');
+            console.log('[STEP 6 DEBUG] wfoData keys:', Object.keys(wfoData));
+            console.log('[STEP 6 DEBUG] wfoData full contents:', JSON.stringify(wfoData, null, 2));
+          } catch (parseErr) {
+            console.warn('[STEP 6] Failed to parse workflowOnlyData for array entries:', parseErr);
+          }
+
+          // Separate repeating and static entries
+          const repeatingEntries = enabledArrayEntries.filter(e => e.isRepeating);
+          const staticEntries = enabledArrayEntries.filter(e => !e.isRepeating);
+
+          // Group static entries by target array field
+          const staticEntriesByArray = new Map<string, ArrayEntryConfig[]>();
+          staticEntries.forEach(entry => {
+            if (!staticEntriesByArray.has(entry.targetArrayField)) {
+              staticEntriesByArray.set(entry.targetArrayField, []);
+            }
+            staticEntriesByArray.get(entry.targetArrayField)!.push(entry);
+          });
+
+          // Process each order
+          jsonData.orders.forEach((order: any) => {
+            // Track which arrays were populated by our repeating entry processing
+            const populatedByRepeatingEntry = new Set<string>();
+
+            // Process repeating entries first - they come from AI as arrays
+            repeatingEntries.forEach(entry => {
+              const repeatingKey = `__REPEATING_ARRAY_${entry.targetArrayField}__`;
+              const extractedArray = wfoData[repeatingKey];
+
+              if (Array.isArray(extractedArray) && extractedArray.length > 0) {
+                // Process each extracted row, applying data type conversions
+                const processedArray = extractedArray.map((row: Record<string, any>) => {
+                  const processedRow: Record<string, any> = {};
+
+                  entry.fields.forEach(field => {
+                    let value: any;
+                    if (field.fieldType === 'hardcoded') {
+                      value = field.hardcodedValue || '';
+                    } else {
+                      value = row[field.fieldName];
+                      if (value === undefined || value === null) {
+                        value = '';
+                      }
+                    }
+
+                    // Apply data type conversions
+                    if (field.dataType === 'number') {
+                      value = parseFloat(String(value)) || 0;
+                    } else if (field.dataType === 'integer') {
+                      value = parseInt(String(value)) || 0;
+                    } else if (field.dataType === 'string' && value) {
+                      value = String(value).toUpperCase();
+                    }
+
+                    processedRow[field.fieldName] = value;
+                  });
+
+                  return processedRow;
+                }).filter((row: Record<string, any>) =>
+                  Object.values(row).some(v => v !== '' && v !== null && v !== undefined && v !== 0)
+                );
+
+                if (processedArray.length > 0) {
+                  order[entry.targetArrayField] = processedArray;
+                  populatedByRepeatingEntry.add(entry.targetArrayField);
+                  console.log(`[STEP 6] Constructed repeating ${entry.targetArrayField} array with ${processedArray.length} entries`);
+                }
+
+                // Clean up the temporary key
+                delete wfoData[repeatingKey];
+              } else {
+                console.log(`[STEP 6] No repeating data found for ${entry.targetArrayField}`);
+              }
+            });
+
+            // Process static entries
+            staticEntriesByArray.forEach((entries, arrayField) => {
+              // Only skip if a repeating entry from our config populated this array
+              // (not if the AI just put data directly into the template)
+              if (populatedByRepeatingEntry.has(arrayField)) {
+                console.log(`[STEP 6] Skipping static entries for ${arrayField} - already populated by repeating entry`);
+                return;
+              }
+
+              // Sort entries by entry order
+              const sortedEntries = [...entries].sort((a, b) => a.entryOrder - b.entryOrder);
+
+              console.log(`[STEP 6 DEBUG] Processing static entries for array: ${arrayField}`);
+              console.log(`[STEP 6 DEBUG] Number of entries: ${sortedEntries.length}`);
+              console.log(`[STEP 6 DEBUG] wfoData keys:`, Object.keys(wfoData));
+              console.log(`[STEP 6 DEBUG] wfoData contents:`, JSON.stringify(wfoData, null, 2));
+
+              // Build the array from entry configs
+              const constructedArray: any[] = [];
+
+              sortedEntries.forEach(entry => {
+                console.log(`[STEP 6 DEBUG] Processing entry ${entry.entryOrder} for ${entry.targetArrayField}`);
+                console.log(`[STEP 6 DEBUG]   isRepeating: ${entry.isRepeating}`);
+                console.log(`[STEP 6 DEBUG]   fields count: ${entry.fields.length}`);
+
+                if (!evaluateArrayEntryConditions(entry.conditions, order, wfoData)) {
+                  console.log(`[STEP 6] Skipping array entry ${entry.entryOrder} for ${entry.targetArrayField} - conditions not met`);
+                  return;
+                }
+
+                const entryObj: Record<string, any> = {};
+
+                entry.fields.forEach(field => {
+                  console.log(`[STEP 6 DEBUG]   Field: ${field.fieldName}`);
+                  console.log(`[STEP 6 DEBUG]     fieldType: "${field.fieldType}" (type: ${typeof field.fieldType})`);
+                  console.log(`[STEP 6 DEBUG]     hardcodedValue: "${field.hardcodedValue}"`);
+                  console.log(`[STEP 6 DEBUG]     extractionInstruction: "${field.extractionInstruction}"`);
+                  console.log(`[STEP 6 DEBUG]     dataType: "${field.dataType}"`);
+
+                  if (field.fieldType === 'hardcoded') {
+                    console.log(`[STEP 6 DEBUG]     -> Using HARDCODED path`);
+                    // Use the hardcoded value
+                    let value: any = field.hardcodedValue || '';
+                    console.log(`[STEP 6 DEBUG]     -> Initial hardcoded value: "${value}"`);
+                    // Convert based on data type
+                    if (field.dataType === 'number') {
+                      value = parseFloat(value) || 0;
+                    } else if (field.dataType === 'integer') {
+                      value = parseInt(value) || 0;
+                    } else if (field.dataType === 'string') {
+                      value = String(value).toUpperCase();
+                    }
+                    console.log(`[STEP 6 DEBUG]     -> Final value: "${value}"`);
+                    entryObj[field.fieldName] = value;
+                  } else if (field.fieldType === 'extracted' || field.fieldType === 'mapped') {
+                    console.log(`[STEP 6 DEBUG]     -> Using EXTRACTED/MAPPED path`);
+                    // Get the extracted value from workflowOnlyData
+                    const extractionKey = `__ARRAY_ENTRY_${entry.targetArrayField}_${entry.entryOrder}_${field.fieldName}__`;
+                    console.log(`[STEP 6 DEBUG]     -> Looking for key: "${extractionKey}"`);
+                    console.log(`[STEP 6 DEBUG]     -> Key exists in wfoData: ${extractionKey in wfoData}`);
+                    let value: any = wfoData[extractionKey] || '';
+                    console.log(`[STEP 6 DEBUG]     -> Retrieved value: "${value}"`);
+                    // Convert based on data type
+                    if (field.dataType === 'number') {
+                      value = parseFloat(value) || 0;
+                    } else if (field.dataType === 'integer') {
+                      value = parseInt(value) || 0;
+                    } else if (field.dataType === 'string' && value) {
+                      value = String(value).toUpperCase();
+                    }
+                    console.log(`[STEP 6 DEBUG]     -> Final value: "${value}"`);
+                    entryObj[field.fieldName] = value;
+
+                    // Remove the temporary key from workflowOnlyData
+                    delete wfoData[extractionKey];
+                  } else {
+                    console.log(`[STEP 6 DEBUG]     -> UNKNOWN fieldType: "${field.fieldType}" - field will be SKIPPED!`);
+                  }
+                });
+
+                console.log(`[STEP 6 DEBUG]   Constructed entryObj:`, JSON.stringify(entryObj));
+
+                // Only add non-empty entries (entries must have at least one non-empty field value)
+                const hasNonEmptyValue = Object.values(entryObj).some(v => v !== '' && v !== null && v !== undefined);
+                if (hasNonEmptyValue) {
+                  constructedArray.push(entryObj);
+                }
+              });
+
+              // Set the constructed array on the order
+              if (constructedArray.length > 0) {
+                order[arrayField] = constructedArray;
+                console.log(`[STEP 6] Constructed ${arrayField} array with ${constructedArray.length} entries`);
+                console.log(`[STEP 6 DEBUG] Final array:`, JSON.stringify(order[arrayField], null, 2));
+              }
+            });
+          });
+
+          // Update workflowOnlyData to remove used extraction keys
+          workflowOnlyData = JSON.stringify(wfoData);
+        }
+
         templateData = JSON.stringify(jsonData);
       } catch (parseError) {
         console.warn('Could not parse JSON for post-processing:', parseError);
@@ -967,25 +1363,28 @@ PROVINCE AND STATE FORMATTING RULES:
     if (regularMappings.length > 0) {
       fieldMappingInstructions = '\n\nFIELD MAPPING INSTRUCTIONS:\n';
       regularMappings.forEach(mapping => {
+        const getDateTimeNote = (m: any) => m.dateOnly
+          ? ' (as date string in yyyy-MM-dd format)'
+          : ' (as datetime string in yyyy-MM-ddThh:mm:ss format)';
         if (mapping.type === 'hardcoded') {
           const dataTypeNote = mapping.dataType === 'string' ? ' (as UPPER CASE string)' :
                               mapping.dataType === 'number' ? ' (format as number)' :
                               mapping.dataType === 'integer' ? ' (format as integer)' :
-                              mapping.dataType === 'datetime' ? ' (as datetime string in yyyy-MM-ddThh:mm:ss format)' :
+                              mapping.dataType === 'datetime' ? getDateTimeNote(mapping) :
                               mapping.dataType === 'phone' ? ' (as formatted phone number XXX-XXX-XXXX)' : '';
           fieldMappingInstructions += `- "${mapping.fieldName}": Always use the EXACT hardcoded value "${mapping.value}"${dataTypeNote}\n`;
         } else if (mapping.type === 'mapped') {
           const dataTypeNote = mapping.dataType === 'string' ? ' (format as UPPER CASE string)' :
                               mapping.dataType === 'number' ? ' (format as number)' :
                               mapping.dataType === 'integer' ? ' (format as integer)' :
-                              mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' :
+                              mapping.dataType === 'datetime' ? getDateTimeNote(mapping) :
                               mapping.dataType === 'phone' ? ' (format as phone number XXX-XXX-XXXX)' : '';
           fieldMappingInstructions += `- "${mapping.fieldName}": Extract data from PDF coordinates ${mapping.value}${dataTypeNote}\n`;
         } else {
           const dataTypeNote = mapping.dataType === 'string' ? ' (format as UPPER CASE string)' :
                               mapping.dataType === 'number' ? ' (format as number)' :
                               mapping.dataType === 'integer' ? ' (format as integer)' :
-                              mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' :
+                              mapping.dataType === 'datetime' ? getDateTimeNote(mapping) :
                               mapping.dataType === 'phone' ? ' (format as phone number XXX-XXX-XXXX)' : '';
           fieldMappingInstructions += `- "${mapping.fieldName}": ${mapping.value || 'Extract from PDF document'}${dataTypeNote}\n`;
         }
@@ -1025,25 +1424,28 @@ PROVINCE AND STATE FORMATTING RULES:
       wfoInstructions = '\n\nWORKFLOW-ONLY FIELDS (SEPARATE EXTRACTION):\n';
       wfoInstructions += 'Extract these additional fields as standalone variables for workflow use (NOT part of the main template structure):\n';
       wfoMappings.forEach(mapping => {
+        const getDateTimeNote = (m: any) => m.dateOnly
+          ? ' (as date string in yyyy-MM-dd format)'
+          : ' (as datetime string in yyyy-MM-ddThh:mm:ss format)';
         if (mapping.type === 'hardcoded') {
           const dataTypeNote = mapping.dataType === 'string' ? ' (as UPPER CASE string)' :
                               mapping.dataType === 'number' ? ' (format as number)' :
                               mapping.dataType === 'integer' ? ' (format as integer)' :
-                              mapping.dataType === 'datetime' ? ' (as datetime string in yyyy-MM-ddThh:mm:ss format)' :
+                              mapping.dataType === 'datetime' ? getDateTimeNote(mapping) :
                               mapping.dataType === 'phone' ? ' (as formatted phone number XXX-XXX-XXXX)' : '';
           wfoInstructions += `- "${mapping.fieldName}": Always use the EXACT hardcoded value "${mapping.value}"${dataTypeNote}\n`;
         } else if (mapping.type === 'mapped') {
           const dataTypeNote = mapping.dataType === 'string' ? ' (format as UPPER CASE string)' :
                               mapping.dataType === 'number' ? ' (format as number)' :
                               mapping.dataType === 'integer' ? ' (format as integer)' :
-                              mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' :
+                              mapping.dataType === 'datetime' ? getDateTimeNote(mapping) :
                               mapping.dataType === 'phone' ? ' (format as phone number XXX-XXX-XXXX)' : '';
           wfoInstructions += `- "${mapping.fieldName}": Extract data from PDF coordinates ${mapping.value}${dataTypeNote}\n`;
         } else {
           const dataTypeNote = mapping.dataType === 'string' ? ' (format as UPPER CASE string)' :
                               mapping.dataType === 'number' ? ' (format as number)' :
                               mapping.dataType === 'integer' ? ' (format as integer)' :
-                              mapping.dataType === 'datetime' ? ' (format as datetime in yyyy-MM-ddThh:mm:ss format)' :
+                              mapping.dataType === 'datetime' ? getDateTimeNote(mapping) :
                               mapping.dataType === 'phone' ? ' (format as phone number XXX-XXX-XXXX)' : '';
           wfoInstructions += `- "${mapping.fieldName}": ${mapping.value || 'Extract from PDF document'}${dataTypeNote}\n`;
         }
@@ -1175,6 +1577,16 @@ Please provide only the JSON output without any additional explanation or format
                   current[finalField] = mapping.value;
                 } else {
                   current[finalField] = currentDateTime;
+                }
+              }
+
+              // For dateOnly fields, ensure time is set to 00:00:00
+              if (mapping.dateOnly && current[finalField]) {
+                const dateValue = String(current[finalField]);
+                if (/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+                  current[finalField] = `${dateValue}T00:00:00`;
+                } else if (/^\d{4}-\d{2}-\d{2}T/.test(dateValue)) {
+                  current[finalField] = `${dateValue.slice(0, 10)}T00:00:00`;
                 }
               }
             } else if (mapping.dataType === 'phone') {
