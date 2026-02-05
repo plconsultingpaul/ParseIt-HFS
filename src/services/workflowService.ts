@@ -149,6 +149,7 @@ export async function fetchWorkflowSteps(): Promise<WorkflowStep[]> {
       configJson: step.config_json || {},
       nextStepOnSuccessId: step.next_step_on_success_id,
       nextStepOnFailureId: step.next_step_on_failure_id,
+      userResponseTemplate: step.user_response_template,
       createdAt: step.created_at,
       updatedAt: step.updated_at
     }));
@@ -207,7 +208,8 @@ export async function updateWorkflowSteps(workflowId: string, steps: WorkflowSte
           step_name: step.stepName,
           config_json: step.configJson || {},
           next_step_on_success_id: step.nextStepOnSuccessId || null,
-          next_step_on_failure_id: step.nextStepOnFailureId || null
+          next_step_on_failure_id: step.nextStepOnFailureId || null,
+          user_response_template: step.userResponseTemplate || null
         };
 
         // Only include id if it's a valid UUID (from copy operation)
@@ -261,6 +263,7 @@ export async function updateWorkflowSteps(workflowId: string, steps: WorkflowSte
             config_json: step.configJson || {},
             next_step_on_success_id: step.nextStepOnSuccessId || null,
             next_step_on_failure_id: step.nextStepOnFailureId || null,
+            user_response_template: step.userResponseTemplate || null,
             updated_at: new Date().toISOString()
           })
           .eq('id', step.id)
