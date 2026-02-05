@@ -21,6 +21,17 @@ interface ExtractionResult {
   confidenceScores: Record<string, number>;
 }
 
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, chunk as unknown as number[]);
+  }
+  return btoa(binary);
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, {
@@ -31,6 +42,12 @@ Deno.serve(async (req: Request) => {
 
   try {
     const { pdfId, storageUrl, fields } = await req.json();
+
+    console.log("[DEBUG] Received extraction request:", {
+      pdfId,
+      storageUrl: storageUrl?.substring(0, 100) + "...",
+      fieldCount: fields?.length || 0,
+    });
 
     if (!pdfId || !storageUrl || !fields) {
       return new Response(
@@ -56,12 +73,13 @@ Deno.serve(async (req: Request) => {
       .maybeSingle();
 
     if (!activeKeyData || !activeKeyData.api_key) {
+      console.log("[DEBUG] No active Gemini API key found");
       return new Response(
         JSON.stringify({
           error: "Gemini API key not configured. Please add your Google Gemini API key in Settings → Gemini Configuration"
         }),
         {
-          status: 500,
+          status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         }
       );
@@ -93,9 +111,9 @@ Deno.serve(async (req: Request) => {
     }
 
     const pdfBuffer = await pdfResponse.arrayBuffer();
-    const pdfBase64 = btoa(
-      String.fromCharCode(...new Uint8Array(pdfBuffer))
-    );
+    console.log("[DEBUG] PDF downloaded, size:", pdfBuffer.byteLength, "bytes");
+
+    const pdfBase64 = arrayBufferToBase64(pdfBuffer);
 
     console.log("Initializing Gemini AI with model:", modelName);
     const genAI = new GoogleGenerativeAI(geminiApiKey);
@@ -122,8 +140,10 @@ Deno.serve(async (req: Request) => {
         ]);
 
         const response = await result.response;
+        console.log("[DEBUG] Gemini API call successful, parsing response...");
         const text = response.text();
 
+        console.log("[DEBUG] Raw Gemini response length:", text.length, "chars");
         console.log("Raw Gemini response:", text);
 
         const extractionResult = parseGeminiResponse(text, fields);
@@ -154,14 +174,15 @@ Deno.serve(async (req: Request) => {
 
     throw lastError || new Error("Extraction failed after retries");
   } catch (error: any) {
-    console.error("Extraction error:", error);
+    console.error("[DEBUG] Extraction error:", error.message);
+    console.error("[DEBUG] Full error stack:", error.stack);
 
     return new Response(
       JSON.stringify({
         error: error.message || "Failed to extract data from PDF",
       }),
       {
-        status: 500,
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );
@@ -225,10 +246,13 @@ function parseGeminiResponse(
   try {
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
+      console.error("[DEBUG] No JSON found in Gemini response text");
       throw new Error("No JSON found in response");
     }
 
+    console.log("[DEBUG] Extracted JSON from response, length:", jsonMatch[0].length);
     const parsed = JSON.parse(jsonMatch[0]);
+    console.log("[DEBUG] JSON parsed successfully, data keys:", Object.keys(parsed.data || {}));
 
     const extractedData: Record<string, any> = {};
     const confidenceScores: Record<string, number> = {};
