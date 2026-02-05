@@ -6,7 +6,6 @@ import ClientUsersManagementSettings from './settings/ClientUsersManagementSetti
 import OrderEntryConfigSettings from './settings/OrderEntryConfigSettings';
 import OrderEntrySubmissionsPage from './OrderEntrySubmissionsPage';
 import TrackTraceTemplatesSettings from './settings/TrackTraceTemplatesSettings';
-import { useSupabaseData } from '../hooks/useSupabaseData';
 
 interface ClientSetupPageProps {
   currentUser: User;
@@ -31,7 +30,6 @@ export default function ClientSetupPage({
   deleteUser,
   updateUserPassword
 }: ClientSetupPageProps) {
-  const { workflows } = useSupabaseData();
   const isClientUser = currentUser.role === 'client';
   const isClientAdmin = isClientUser && currentUser.isClientAdmin === true;
   const hasSystemUserManagement = currentUser.permissions.userManagement === true;
@@ -80,7 +78,6 @@ export default function ClientSetupPage({
         return (!isClientUser && hasSystemUserManagement) ? (
           <OrderEntryConfigSettings
             currentUser={currentUser}
-            workflows={workflows}
           />
         ) : <PermissionDenied />;
       case 'submissions':
