@@ -5,6 +5,7 @@ import { executeApiCall, executeApiEndpoint } from "./steps/api.ts";
 import { executeEmailAction } from "./steps/email.ts";
 import { executeConditionalCheck, executeJsonTransform, executeRename } from "./steps/logic.ts";
 import { executeSftpUpload } from "./steps/upload.ts";
+import { executeMultipartFormUpload } from "./steps/multipart.ts";
 import { sendSuccessNotificationIfEnabled, sendFailureNotificationIfEnabled } from "./steps/notifications.ts";
 
 Deno.serve(async (req) => {
@@ -315,7 +316,8 @@ Deno.serve(async (req) => {
       pdfStoragePath: requestData.pdfStoragePath,
       pdfBase64: requestData.pdfBase64,
       userId: requestData.userId,
-      senderEmail: requestData.senderEmail || null,
+      senderEmail: requestData.senderEmail || requestData.submitterEmail || null,
+      submitterEmail: requestData.submitterEmail || null,
       extractionTypeName: typeDetails?.name || 'Unknown',
       timestamp: formattedTimestamp,
       ...workflowOnlyFields
@@ -398,7 +400,7 @@ Deno.serve(async (req) => {
           const stepDurationMs = Date.now() - stepStartMs;
 
           if (workflowExecutionLogId) {
-            await createStepLog(supabaseUrl, supabaseServiceKey, workflowExecutionLogId, requestData.workflowId, step, 'skipped', stepStartTime, stepEndTime, stepDurationMs, skipReason, stepInputData, stepOutputData);
+            await createStepLog(supabaseUrl, supabaseServiceKey, workflowExecutionLogId, requestData.workflowId, step, 'skipped', stepStartTime, stepEndTime, stepDurationMs, skipReason, stepInputData, stepOutputData, contextData);
           }
           continue;
         }
@@ -459,6 +461,10 @@ Deno.serve(async (req) => {
             stepOutputData = await executeJsonTransform(step, contextData);
             break;
 
+          case 'multipart_form_upload':
+            stepOutputData = await executeMultipartFormUpload(step, contextData, supabaseUrl, supabaseServiceKey);
+            break;
+
           default:
             console.warn(`⚠️ Unknown step type: ${step.step_type}`);
             throw new Error(`Unknown step type: ${step.step_type}`);
@@ -470,7 +476,7 @@ Deno.serve(async (req) => {
         console.log(`✅ Step ${step.step_order} completed successfully in ${stepDurationMs}ms`);
 
         if (workflowExecutionLogId) {
-          await createStepLog(supabaseUrl, supabaseServiceKey, workflowExecutionLogId, requestData.workflowId, step, 'completed', stepStartTime, stepEndTime, stepDurationMs, null, stepInputData, stepOutputData);
+          await createStepLog(supabaseUrl, supabaseServiceKey, workflowExecutionLogId, requestData.workflowId, step, 'completed', stepStartTime, stepEndTime, stepDurationMs, null, stepInputData, stepOutputData, contextData);
         }
 
       } catch (stepError) {
@@ -478,9 +484,10 @@ Deno.serve(async (req) => {
         const stepEndTime = new Date().toISOString();
         const stepDurationMs = Date.now() - stepStartMs;
         const errorMessage = stepError instanceof Error ? stepError.message : 'Unknown error';
+        const errorOutputData = (stepError as any)?.outputData || null;
 
         if (workflowExecutionLogId) {
-          await createStepLog(supabaseUrl, supabaseServiceKey, workflowExecutionLogId, requestData.workflowId, step, 'failed', stepStartTime, stepEndTime, stepDurationMs, errorMessage, stepInputData, null);
+          await createStepLog(supabaseUrl, supabaseServiceKey, workflowExecutionLogId, requestData.workflowId, step, 'failed', stepStartTime, stepEndTime, stepDurationMs, errorMessage, stepInputData, errorOutputData, contextData);
         }
 
         throw stepError;
@@ -524,7 +531,8 @@ Deno.serve(async (req) => {
       success: true,
       extractionLogId: extractionLogId,
       workflowExecutionLogId: workflowExecutionLogId,
-      finalContext: contextData
+      finalContext: contextData,
+      lastApiResponse: lastApiResponse
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
