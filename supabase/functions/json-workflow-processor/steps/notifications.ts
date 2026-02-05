@@ -131,7 +131,8 @@ export async function sendFailureNotificationIfEnabled(
     error_message: errorMessage,
     pdf_filename: contextData.originalPdfFilename || contextData.pdfFilename || 'unknown.pdf',
     extraction_type_name: extractionType.name,
-    sender_email: contextData.senderEmail || 'unknown'
+    sender_email: contextData.senderEmail || contextData.submitterEmail || 'unknown',
+    submitter_email: contextData.submitterEmail || contextData.senderEmail || 'unknown'
   };
 
   // Determine recipient email
@@ -319,11 +320,12 @@ export async function sendSuccessNotificationIfEnabled(
     ...contextData,
     pdf_filename: contextData.originalPdfFilename || contextData.pdfFilename || 'unknown.pdf',
     extraction_type_name: extractionType.name,
-    sender_email: contextData.senderEmail || 'unknown'
+    sender_email: contextData.senderEmail || contextData.submitterEmail || 'unknown',
+    submitter_email: contextData.submitterEmail || contextData.senderEmail || 'unknown'
   };
 
-  // Determine recipient email (default to sender_email for success notifications)
-  let recipientEmail = extractionType.success_recipient_email_override || template.recipient_email || contextData.senderEmail;
+  // Determine recipient email (default to sender_email or submitter_email for success notifications)
+  let recipientEmail = extractionType.success_recipient_email_override || template.recipient_email || contextData.senderEmail || contextData.submitterEmail;
 
   if (!recipientEmail) {
     console.log('⚠️ No recipient email configured for success notifications');
