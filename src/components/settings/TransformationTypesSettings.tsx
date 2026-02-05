@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Trash2, Save, FileText, Code, Database, Map, Brain, RefreshCw, Copy } from 'lucide-react';
+import { Plus, Trash2, Save, FileText, Code, Database, Map, Brain, RefreshCw, Copy, Download, Upload, CheckCircle, XCircle } from 'lucide-react';
 import type { TransformationType, TransformationFieldMapping, PageGroupConfig } from '../../types';
 import { useSupabaseData } from '../../hooks/useSupabaseData';
 import MappingPage from '../MappingPage';
 import PageGroupConfigEditor from './PageGroupConfigEditor';
 import Select from '../common/Select';
+import { exportTransformationType, importTransformationType, ExportedTransformationType } from '../../services/typeService';
 
 interface TransformationTypesSettingsProps {
   transformationTypes: TransformationType[];
@@ -43,6 +44,13 @@ export default function TransformationTypesSettings({
   // Add error boundary state
   const [hasError, setHasError] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  // Export/Import state
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importError, setImportError] = useState('');
+  const [importSuccess, setImportSuccess] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Error boundary effect
   useEffect(() => {
@@ -84,6 +92,77 @@ export default function TransformationTypesSettings({
     setShowAddModal(true);
     setNewTypeName('');
     setNameError('');
+  };
+
+  const handleExport = async () => {
+    const selectedType = localTransformationTypes[selectedTypeIndex];
+    if (!selectedType || selectedType.id.startsWith('temp-')) {
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      const exportData = await exportTransformationType(selectedType);
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '_').split('.')[0];
+      const safeName = selectedType.name.replace(/[^a-zA-Z0-9]/g, '_');
+      link.href = url;
+      link.download = `${timestamp}_Transform_${safeName}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Export failed:', error);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    setImportError('');
+    setImportSuccess('');
+
+    try {
+      const text = await file.text();
+      const exportData: ExportedTransformationType = JSON.parse(text);
+
+      if (exportData.exportType !== 'transformation' || !exportData.exportVersion) {
+        throw new Error('Invalid export file format');
+      }
+
+      const result = await importTransformationType(exportData);
+
+      if (result.success) {
+        setImportSuccess(`Successfully imported "${exportData.typeName}"`);
+        setTimeout(() => setImportSuccess(''), 5000);
+        if (refreshData) {
+          await refreshData();
+        }
+      } else {
+        setImportError(result.error || 'Import failed');
+        setTimeout(() => setImportError(''), 5000);
+      }
+    } catch (error: any) {
+      console.error('Import failed:', error);
+      setImportError(error.message || 'Failed to import file');
+      setTimeout(() => setImportError(''), 5000);
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
   };
 
   const handleCopyTypeClick = () => {
@@ -725,6 +804,31 @@ export default function TransformationTypesSettings({
               <span>Copy Type</span>
             </button>
           )}
+          {localTransformationTypes.length > 0 && selectedTypeIndex >= 0 && localTransformationTypes[selectedTypeIndex] && !localTransformationTypes[selectedTypeIndex].id.startsWith('temp-') && (
+            <button
+              onClick={handleExport}
+              disabled={isExporting}
+              className="px-4 py-2 bg-teal-600 hover:bg-teal-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
+            >
+              <Download className="h-4 w-4" />
+              <span>{isExporting ? 'Exporting...' : 'Export'}</span>
+            </button>
+          )}
+          <button
+            onClick={handleImportClick}
+            disabled={isImporting}
+            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
+          >
+            <Upload className="h-4 w-4" />
+            <span>{isImporting ? 'Importing...' : 'Import'}</span>
+          </button>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleImportFile}
+            accept=".json"
+            className="hidden"
+          />
           <button
             onClick={handleAddTypeClick}
             className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-lg transition-colors duration-200 flex items-center space-x-2"
@@ -770,6 +874,26 @@ export default function TransformationTypesSettings({
             <span className="font-semibold text-red-800 dark:text-red-300">Error</span>
           </div>
           <p className="text-red-700 dark:text-red-400 text-sm mt-1">{error}</p>
+        </div>
+      )}
+
+      {importSuccess && (
+        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg p-4">
+          <div className="flex items-center space-x-2">
+            <CheckCircle className="h-4 w-4 text-green-500" />
+            <span className="font-semibold text-green-800 dark:text-green-300">Import Successful!</span>
+          </div>
+          <p className="text-green-700 dark:text-green-400 text-sm mt-1">{importSuccess}</p>
+        </div>
+      )}
+
+      {importError && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-4">
+          <div className="flex items-center space-x-2">
+            <XCircle className="h-4 w-4 text-red-500" />
+            <span className="font-semibold text-red-800 dark:text-red-300">Import Failed</span>
+          </div>
+          <p className="text-red-700 dark:text-red-400 text-sm mt-1">{importError}</p>
         </div>
       )}
 
@@ -1122,14 +1246,15 @@ export default function TransformationTypesSettings({
                         <Select
                           label="Data Type"
                           value={mapping.dataType || 'string'}
-                          onValueChange={(value) => updateFieldMapping(selectedTypeIndex, mappingIndex, 'dataType', value as 'string' | 'number' | 'integer' | 'boolean')}
+                          onValueChange={(value) => updateFieldMapping(selectedTypeIndex, mappingIndex, 'dataType', value as 'string' | 'number' | 'integer' | 'boolean' | 'zip_postal')}
                           options={[
                             { value: 'string', label: 'String' },
                             { value: 'number', label: 'Number' },
                             { value: 'integer', label: 'Integer' },
                             { value: 'datetime', label: 'DateTime' },
                             { value: 'phone', label: 'Phone Number' },
-                            { value: 'boolean', label: 'Boolean' }
+                            { value: 'boolean', label: 'Boolean' },
+                            { value: 'zip_postal', label: 'Zip/Postal Code' }
                           ]}
                           searchable={false}
                         />
