@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Trash2, Edit2, Copy, GripVertical, ChevronDown, ChevronRight, Check, Loader2, AlertCircle, FileText, ChevronsDown, ChevronsRight, Eye } from 'lucide-react';
-import type { OrderEntryTemplate, OrderEntryFieldGroup, OrderEntryField, OrderEntryFieldLayout, Workflow } from '../../types';
+import { Plus, Trash2, Edit2, Copy, GripVertical, ChevronDown, ChevronRight, Check, Loader2, AlertCircle, FileText, ChevronsDown, ChevronsRight, Eye, Braces } from 'lucide-react';
+import type { OrderEntryTemplate, OrderEntryFieldGroup, OrderEntryField, OrderEntryFieldLayout, ExtractionType, FieldMapping, DropdownOption } from '../../types';
 import { supabase } from '../../lib/supabase';
 import Select from '../common/Select';
 import FieldTypeIcon, { FieldTypeBadge } from '../common/FieldTypeIcon';
@@ -12,12 +12,12 @@ import LayoutDesigner from './LayoutDesigner';
 import FormPreviewModal from './FormPreviewModal';
 
 interface OrderEntryTemplatesSettingsProps {
-  workflows: Workflow[];
+  extractionTypes: ExtractionType[];
 }
 
-type OrderEntryFieldType = 'text' | 'number' | 'date' | 'datetime' | 'phone' | 'dropdown' | 'file' | 'boolean' | 'zip' | 'postal_code' | 'province' | 'state';
+type OrderEntryFieldType = 'text' | 'number' | 'date' | 'datetime' | 'phone' | 'dropdown' | 'file' | 'boolean' | 'zip' | 'postal_code' | 'zip_postal' | 'province' | 'state';
 
-export default function OrderEntryTemplatesSettings({ workflows }: OrderEntryTemplatesSettingsProps) {
+export default function OrderEntryTemplatesSettings({ extractionTypes }: OrderEntryTemplatesSettingsProps) {
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState<OrderEntryTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
@@ -78,7 +78,7 @@ export default function OrderEntryTemplatesSettings({ workflows }: OrderEntryTem
         id: t.id,
         name: t.name,
         description: t.description,
-        workflowId: t.workflow_id,
+        extractionTypeId: t.extraction_type_id,
         isActive: t.is_active,
         createdAt: t.created_at,
         updatedAt: t.updated_at
@@ -134,6 +134,7 @@ export default function OrderEntryTemplatesSettings({ workflows }: OrderEntryTem
         arrayMinRows: g.array_min_rows || 1,
         arrayMaxRows: g.array_max_rows || 10,
         arrayJsonPath: g.array_json_path || '',
+        hideAddRow: g.hide_add_row || false,
         createdAt: g.created_at,
         updatedAt: g.updated_at
       }));
@@ -153,6 +154,7 @@ export default function OrderEntryTemplatesSettings({ workflows }: OrderEntryTem
         maxValue: f.max_value,
         defaultValue: f.default_value,
         dropdownOptions: f.dropdown_options || [],
+        dropdownDisplayMode: f.dropdown_display_mode || 'description_only',
         jsonPath: f.json_path,
         isArrayField: f.is_array_field,
         arrayMinRows: f.array_min_rows,
@@ -161,6 +163,7 @@ export default function OrderEntryTemplatesSettings({ workflows }: OrderEntryTem
         validationRegex: f.validation_regex,
         validationErrorMessage: f.validation_error_message,
         fieldOrder: f.field_order,
+        copyFromField: f.copy_from_field,
         createdAt: f.created_at,
         updatedAt: f.updated_at
       }));
@@ -177,10 +180,30 @@ export default function OrderEntryTemplatesSettings({ workflows }: OrderEntryTem
         updatedAt: l.updated_at
       }));
 
+      const previousGroupIds = new Set(fieldGroups.map(g => g.id));
+
       setFieldGroups(groups);
       setFields(fieldsData);
       setFieldLayouts(layouts);
-      setCollapsedGroups(new Set(groups.map((g: OrderEntryFieldGroup) => g.id)));
+
+      setCollapsedGroups(prev => {
+        if (prev.size === 0 && previousGroupIds.size === 0) {
+          return new Set(groups.map((g: OrderEntryFieldGroup) => g.id));
+        }
+        const currentGroupIds = new Set(groups.map((g: OrderEntryFieldGroup) => g.id));
+        const preserved = new Set<string>();
+        prev.forEach(id => {
+          if (currentGroupIds.has(id)) {
+            preserved.add(id);
+          }
+        });
+        groups.forEach((g: OrderEntryFieldGroup) => {
+          if (!previousGroupIds.has(g.id)) {
+            preserved.add(g.id);
+          }
+        });
+        return preserved;
+      });
     } catch (err: any) {
       setError(err.message);
       toast.error('Failed to load template data');
@@ -200,7 +223,7 @@ export default function OrderEntryTemplatesSettings({ workflows }: OrderEntryTem
         .insert([{
           name: editingTemplate.name.trim(),
           description: editingTemplate.description?.trim() || null,
-          workflow_id: editingTemplate.workflowId || null,
+          extraction_type_id: editingTemplate.extractionTypeId || null,
           is_active: editingTemplate.isActive ?? true,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
@@ -235,7 +258,7 @@ export default function OrderEntryTemplatesSettings({ workflows }: OrderEntryTem
         .update({
           name: editingTemplate.name.trim(),
           description: editingTemplate.description?.trim() || null,
-          workflow_id: editingTemplate.workflowId || null,
+          extraction_type_id: editingTemplate.extractionTypeId || null,
           is_active: editingTemplate.isActive ?? true,
           updated_at: new Date().toISOString()
         })
@@ -295,7 +318,7 @@ export default function OrderEntryTemplatesSettings({ workflows }: OrderEntryTem
         .insert([{
           name: editingTemplate.name.trim(),
           description: editingTemplate.description?.trim() || 'Copied from global configuration',
-          workflow_id: editingTemplate.workflowId || null,
+          extraction_type_id: editingTemplate.extractionTypeId || null,
           is_active: true,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
@@ -442,6 +465,7 @@ export default function OrderEntryTemplatesSettings({ workflows }: OrderEntryTem
         array_min_rows: editingGroup.arrayMinRows || 1,
         array_max_rows: editingGroup.arrayMaxRows || 10,
         array_json_path: editingGroup.arrayJsonPath || null,
+        hide_add_row: editingGroup.hideAddRow || false,
         updated_at: new Date().toISOString()
       };
 
@@ -498,8 +522,14 @@ export default function OrderEntryTemplatesSettings({ workflows }: OrderEntryTem
     setIsSaving(true);
     try {
       const cleanedDropdownOptions = (editingField.dropdownOptions || [])
-        .map((o: string) => o.trim())
-        .filter((o: string) => o.length > 0);
+        .filter((opt: string | DropdownOption) => {
+          if (typeof opt === 'string') return opt.trim().length > 0;
+          return opt.value?.trim().length > 0;
+        })
+        .map((opt: string | DropdownOption) => {
+          if (typeof opt === 'string') return { value: opt.trim(), description: opt.trim() };
+          return { value: opt.value?.trim() || '', description: opt.description?.trim() || opt.value?.trim() || '' };
+        });
 
       const fieldData = {
         template_id: selectedTemplateId,
@@ -515,6 +545,7 @@ export default function OrderEntryTemplatesSettings({ workflows }: OrderEntryTem
         max_value: editingField.maxValue || null,
         default_value: editingField.defaultValue || null,
         dropdown_options: cleanedDropdownOptions,
+        dropdown_display_mode: editingField.dropdownDisplayMode || 'description_only',
         json_path: editingField.jsonPath || null,
         is_array_field: editingField.isArrayField || false,
         array_min_rows: editingField.arrayMinRows || 1,
@@ -523,6 +554,7 @@ export default function OrderEntryTemplatesSettings({ workflows }: OrderEntryTem
         validation_regex: editingField.validationRegex || null,
         validation_error_message: editingField.validationErrorMessage || null,
         field_order: editingField.fieldOrder || fields.filter(f => f.fieldGroupId === editingField.fieldGroupId).length,
+        copy_from_field: editingField.copyFromField || null,
         updated_at: new Date().toISOString()
       };
 
@@ -644,6 +676,30 @@ export default function OrderEntryTemplatesSettings({ workflows }: OrderEntryTem
       saveLayoutToDatabase(layouts, selectedTemplateId);
     }, 800);
   }, [selectedTemplateId, fieldLayouts]);
+
+  const handleGroupOrderChange = useCallback(async (updatedGroups: OrderEntryFieldGroup[]) => {
+    if (!selectedTemplateId) return;
+
+    setFieldGroups(updatedGroups);
+    setLayoutSaveStatus('saving');
+
+    try {
+      for (const group of updatedGroups) {
+        const { error } = await supabase
+          .from('order_entry_template_field_groups')
+          .update({ group_order: group.groupOrder })
+          .eq('id', group.id);
+
+        if (error) throw error;
+      }
+      setLayoutSaveStatus('saved');
+      setTimeout(() => setLayoutSaveStatus('idle'), 2000);
+    } catch (error) {
+      console.error('Error saving group order:', error);
+      setLayoutSaveStatus('error');
+      toast.error('Failed to save group order');
+    }
+  }, [selectedTemplateId]);
 
   const toggleGroupCollapse = (groupId: string) => {
     const newCollapsed = new Set(collapsedGroups);
@@ -768,28 +824,38 @@ export default function OrderEntryTemplatesSettings({ workflows }: OrderEntryTem
               />
             </div>
             {selectedTemplate && (
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => {
-                    setEditingTemplate(selectedTemplate);
-                    setShowEditModal(true);
-                  }}
-                  className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                  title="Edit template"
-                >
-                  <Edit2 className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => {
-                    setTemplateToDelete(selectedTemplate);
-                    setShowDeleteModal(true);
-                  }}
-                  className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                  title="Delete template"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
+              <>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => {
+                      setEditingTemplate(selectedTemplate);
+                      setShowEditModal(true);
+                    }}
+                    className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                    title="Edit template"
+                  >
+                    <Edit2 className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      setTemplateToDelete(selectedTemplate);
+                      setShowDeleteModal(true);
+                    }}
+                    className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                    title="Delete template"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="ml-4 pl-4 border-l border-gray-300 dark:border-gray-600">
+                  <span className="text-xs text-gray-500 dark:text-gray-400">Extraction Type:</span>
+                  <span className="ml-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {selectedTemplate.extractionTypeId
+                      ? extractionTypes.find(et => et.id === selectedTemplate.extractionTypeId)?.name || 'Unknown'
+                      : 'None'}
+                  </span>
+                </div>
+              </>
             )}
           </div>
         )}
@@ -973,6 +1039,11 @@ export default function OrderEntryTemplatesSettings({ workflows }: OrderEntryTem
                                       Required
                                     </span>
                                   )}
+                                  {field.jsonPath && (
+                                    <span className="text-xs px-2 py-0.5 bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 rounded font-mono">
+                                      {field.jsonPath}
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -1058,6 +1129,7 @@ export default function OrderEntryTemplatesSettings({ workflows }: OrderEntryTem
                 fieldGroups={fieldGroups}
                 layouts={fieldLayouts}
                 onLayoutChange={handleLayoutChange}
+                onGroupOrderChange={handleGroupOrderChange}
               />
             </div>
           )}
@@ -1072,7 +1144,7 @@ export default function OrderEntryTemplatesSettings({ workflows }: OrderEntryTem
           onSave={handleCreateTemplate}
           onClose={() => { setShowCreateModal(false); setEditingTemplate(null); }}
           isSaving={isSaving}
-          workflows={workflows}
+          extractionTypes={extractionTypes}
         />,
         document.body
       )}
@@ -1085,7 +1157,7 @@ export default function OrderEntryTemplatesSettings({ workflows }: OrderEntryTem
           onSave={handleUpdateTemplate}
           onClose={() => { setShowEditModal(false); setEditingTemplate(null); }}
           isSaving={isSaving}
-          workflows={workflows}
+          extractionTypes={extractionTypes}
         />,
         document.body
       )}
@@ -1108,7 +1180,7 @@ export default function OrderEntryTemplatesSettings({ workflows }: OrderEntryTem
           onSave={handleCopyFromGlobal}
           onClose={() => { setShowCopyFromGlobalModal(false); setEditingTemplate(null); }}
           isSaving={isSaving}
-          workflows={workflows}
+          extractionTypes={extractionTypes}
           saveButtonText="Create and Copy"
         />,
         document.body
@@ -1132,6 +1204,12 @@ export default function OrderEntryTemplatesSettings({ workflows }: OrderEntryTem
           onSave={handleSaveField}
           onClose={() => { setShowFieldModal(false); setEditingField(null); }}
           isSaving={isSaving}
+          extractionTypeFieldMappings={
+            selectedTemplate?.extractionTypeId
+              ? extractionTypes.find(et => et.id === selectedTemplate.extractionTypeId)?.fieldMappings || []
+              : []
+          }
+          allFields={fields}
         />,
         document.body
       )}
@@ -1156,11 +1234,11 @@ interface TemplateModalProps {
   onSave: () => void;
   onClose: () => void;
   isSaving: boolean;
-  workflows: Workflow[];
+  extractionTypes: ExtractionType[];
   saveButtonText?: string;
 }
 
-function TemplateModal({ title, template, onChange, onSave, onClose, isSaving, workflows, saveButtonText = 'Save' }: TemplateModalProps) {
+function TemplateModal({ title, template, onChange, onSave, onClose, isSaving, extractionTypes, saveButtonText = 'Save' }: TemplateModalProps) {
   if (!template) return null;
 
   return (
@@ -1199,17 +1277,20 @@ function TemplateModal({ title, template, onChange, onSave, onClose, isSaving, w
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Workflow
+              Extraction Type (for processing)
             </label>
             <Select
-              value={template.workflowId || '__none__'}
-              onValueChange={(value) => onChange({ ...template, workflowId: value === '__none__' ? undefined : value })}
+              value={template.extractionTypeId || '__none__'}
+              onValueChange={(value) => onChange({ ...template, extractionTypeId: value === '__none__' ? undefined : value })}
               options={[
-                { value: '__none__', label: 'No workflow' },
-                ...workflows.filter(w => w.isActive).map(w => ({ value: w.id, label: w.name }))
+                { value: '__none__', label: 'No extraction type' },
+                ...extractionTypes.map(et => ({ value: et.id, label: et.name }))
               ]}
               searchable
             />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Links to an Extraction Type for JSON Template, Field Mappings, and Workflow processing
+            </p>
           </div>
 
           <div className="flex items-center space-x-2">
@@ -1440,6 +1521,18 @@ function GroupModal({ group, onChange, onSave, onClose, isSaving }: GroupModalPr
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+                <label className="flex items-center mt-4 pt-4 border-t border-blue-200 dark:border-blue-800">
+                  <input
+                    type="checkbox"
+                    checked={group.hideAddRow || false}
+                    onChange={(e) => onChange({ ...group, hideAddRow: e.target.checked })}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-2"
+                  />
+                  <div>
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Hide Add Row Button</span>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Fixed rows only - users cannot add or remove rows</p>
+                  </div>
+                </label>
               </div>
             )}
           </div>
@@ -1473,9 +1566,31 @@ interface FieldModalProps {
   onSave: () => void;
   onClose: () => void;
   isSaving: boolean;
+  extractionTypeFieldMappings?: FieldMapping[];
+  allFields: OrderEntryField[];
 }
 
-function FieldModal({ field, onChange, onSave, onClose, isSaving }: FieldModalProps) {
+function FieldModal({ field, onChange, onSave, onClose, isSaving, extractionTypeFieldMappings = [], allFields }: FieldModalProps) {
+  const [showFieldMappingDropdown, setShowFieldMappingDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const orderEntryFieldMappings = extractionTypeFieldMappings.filter(m => m.type === 'order_entry');
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowFieldMappingDropdown(false);
+      }
+    };
+
+    if (showFieldMappingDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showFieldMappingDropdown]);
+
   if (!field) return null;
 
   const fieldTypes: { value: OrderEntryFieldType; label: string }[] = [
@@ -1484,8 +1599,9 @@ function FieldModal({ field, onChange, onSave, onClose, isSaving }: FieldModalPr
     { value: 'date', label: 'Date' },
     { value: 'datetime', label: 'Date & Time' },
     { value: 'phone', label: 'Phone' },
-    { value: 'zip', label: 'Zip Code' },
-    { value: 'postal_code', label: 'Postal Code' },
+    { value: 'zip', label: 'Zip Code (US)' },
+    { value: 'postal_code', label: 'Postal Code (CA)' },
+    { value: 'zip_postal', label: 'Zip/Postal Code (US or CA)' },
     { value: 'province', label: 'Province' },
     { value: 'state', label: 'State' },
     { value: 'dropdown', label: 'Dropdown' },
@@ -1545,13 +1661,53 @@ function FieldModal({ field, onChange, onSave, onClose, isSaving }: FieldModalPr
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 JSON Path for API
               </label>
-              <input
-                type="text"
-                value={field.jsonPath || ''}
-                onChange={(e) => onChange({ ...field, jsonPath: e.target.value })}
-                placeholder="e.g., order.shipper.name"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
-              />
+              <div className="relative" ref={dropdownRef}>
+                <div className="flex">
+                  <input
+                    type="text"
+                    value={field.jsonPath || ''}
+                    onChange={(e) => onChange({ ...field, jsonPath: e.target.value })}
+                    placeholder="e.g., order.shipper.name"
+                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-l-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowFieldMappingDropdown(!showFieldMappingDropdown)}
+                    disabled={orderEntryFieldMappings.length === 0}
+                    className={`px-3 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-lg transition-colors ${
+                      orderEntryFieldMappings.length === 0
+                        ? 'bg-gray-100 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
+                        : 'bg-gray-50 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-500'
+                    }`}
+                    title={orderEntryFieldMappings.length === 0 ? 'No Order Entry type field mappings available' : 'Select from Order Entry field mappings'}
+                  >
+                    <Braces className="h-4 w-4" />
+                  </button>
+                </div>
+                {showFieldMappingDropdown && orderEntryFieldMappings.length > 0 && (
+                  <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {orderEntryFieldMappings.map((mapping, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => {
+                          onChange({ ...field, jsonPath: mapping.fieldName });
+                          setShowFieldMappingDropdown(false);
+                        }}
+                        className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors flex items-center justify-between"
+                      >
+                        <span className="font-mono text-gray-900 dark:text-gray-100">{mapping.fieldName}</span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">{mapping.type}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {orderEntryFieldMappings.length === 0 && (
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Link an Extraction Type with Order Entry type field mappings
+                </p>
+              )}
             </div>
           </div>
 
@@ -1582,17 +1738,77 @@ function FieldModal({ field, onChange, onSave, onClose, isSaving }: FieldModalPr
           </div>
 
           {field.fieldType === 'dropdown' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Dropdown Options (one per line)
-              </label>
-              <textarea
-                value={(field.dropdownOptions || []).join('\n')}
-                onChange={(e) => onChange({ ...field, dropdownOptions: e.target.value.split('\n') })}
-                placeholder="Option 1&#10;Option 2&#10;Option 3"
-                rows={4}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
+            <div className="space-y-4">
+              <Select
+                label="Display Mode"
+                value={field.dropdownDisplayMode || 'description_only'}
+                onValueChange={(value) => onChange({ ...field, dropdownDisplayMode: value as 'description_only' | 'value_and_description' })}
+                options={[
+                  { value: 'description_only', label: 'Show description only' },
+                  { value: 'value_and_description', label: 'Show value and description' }
+                ]}
+                helpText="Controls how options appear to users in the dropdown"
+                searchable={false}
               />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Dropdown Options
+                </label>
+                <div className="space-y-2">
+                  {(field.dropdownOptions || []).map((opt: string | DropdownOption, index: number) => {
+                    const optValue = typeof opt === 'string' ? opt : opt.value;
+                    const optDesc = typeof opt === 'string' ? opt : opt.description;
+                    return (
+                      <div key={index} className="flex gap-2 items-center">
+                        <input
+                          type="text"
+                          value={optValue}
+                          onChange={(e) => {
+                            const newOptions = [...(field.dropdownOptions || [])];
+                            newOptions[index] = { value: e.target.value, description: optDesc };
+                            onChange({ ...field, dropdownOptions: newOptions });
+                          }}
+                          placeholder="Value"
+                          className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 text-sm"
+                        />
+                        <input
+                          type="text"
+                          value={optDesc}
+                          onChange={(e) => {
+                            const newOptions = [...(field.dropdownOptions || [])];
+                            newOptions[index] = { value: optValue, description: e.target.value };
+                            onChange({ ...field, dropdownOptions: newOptions });
+                          }}
+                          placeholder="Description"
+                          className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 text-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newOptions = (field.dropdownOptions || []).filter((_: string | DropdownOption, i: number) => i !== index);
+                            onChange({ ...field, dropdownOptions: newOptions });
+                          }}
+                          className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newOptions = [...(field.dropdownOptions || []), { value: '', description: '' }];
+                      onChange({ ...field, dropdownOptions: newOptions });
+                    }}
+                    className="flex items-center gap-2 px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Option
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">Value is sent to the API. Description is what users see.</p>
+              </div>
             </div>
           )}
 
@@ -1647,6 +1863,26 @@ function FieldModal({ field, onChange, onSave, onClose, isSaving }: FieldModalPr
                 <span className="text-sm text-gray-700 dark:text-gray-300">Required</span>
               </label>
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Copy From Field
+            </label>
+            <Select
+              value={field.copyFromField || '__none__'}
+              onValueChange={(value) => onChange({ ...field, copyFromField: value === '__none__' ? undefined : value })}
+              options={[
+                { value: '__none__', label: 'None' },
+                ...allFields
+                  .filter(f => f.id !== field.id && f.fieldType === field.fieldType)
+                  .map(f => ({ value: f.fieldName, label: `${f.fieldLabel} (${f.fieldName})` }))
+              ]}
+              searchable
+            />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Auto-populate this field when the selected field is filled in (must be same field type)
+            </p>
           </div>
         </div>
 
