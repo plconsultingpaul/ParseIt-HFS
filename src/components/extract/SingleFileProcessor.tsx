@@ -172,6 +172,7 @@ export default function SingleFileProcessor({
         parseitIdMapping: currentExtractionType.parseitIdMapping,
         apiKey: geminiApiKey,
         arraySplitConfigs: currentExtractionType.arraySplitConfigs,
+        arrayEntryConfigs: currentExtractionType.arrayEntryConfigs,
         functions
       });
 
@@ -215,6 +216,7 @@ export default function SingleFileProcessor({
           traceTypeValue: currentExtractionType.traceTypeValue,
           apiKey: geminiApiKey,
           arraySplitConfigs: currentExtractionType.arraySplitConfigs,
+          arrayEntryConfigs: currentExtractionType.arrayEntryConfigs,
           functions
         });
         dataToSend = extractResult.templateData;
