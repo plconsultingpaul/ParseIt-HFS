@@ -15,6 +15,7 @@ export function useOrderEntryForm(options: UseOrderEntryFormOptions = {}) {
   const [error, setError] = useState<string | null>(null);
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [templateName, setTemplateName] = useState<string | null>(null);
+  const [extractionTypeId, setExtractionTypeId] = useState<string | null>(null);
 
   useEffect(() => {
     loadFormConfiguration();
@@ -25,18 +26,48 @@ export function useOrderEntryForm(options: UseOrderEntryFormOptions = {}) {
       setLoading(true);
       setError(null);
 
+      console.log('[useOrderEntryForm] ========== LOADING FORM CONFIGURATION ==========');
+      console.log('[useOrderEntryForm] Client ID passed:', options.clientId);
+
       let assignedTemplateId: string | null = null;
 
       if (options.clientId) {
+        console.log('[useOrderEntryForm] Looking up client template assignment...');
         const { data: clientData, error: clientError } = await supabase
           .from('clients')
           .select('order_entry_template_id')
           .eq('id', options.clientId)
           .maybeSingle();
 
-        if (clientError) throw clientError;
+        if (clientError) {
+          console.error('[useOrderEntryForm] Client lookup error:', clientError);
+          throw clientError;
+        }
         assignedTemplateId = clientData?.order_entry_template_id || null;
+        console.log('[useOrderEntryForm] Client assigned template ID:', assignedTemplateId);
       }
+
+      if (!assignedTemplateId) {
+        console.log('[useOrderEntryForm] No template assigned - checking for default template...');
+        const { data: defaultTemplate, error: defaultError } = await supabase
+          .from('order_entry_templates')
+          .select('id, name, extraction_type_id')
+          .eq('is_active', true)
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+
+        if (defaultError) {
+          console.error('[useOrderEntryForm] Default template lookup error:', defaultError);
+        } else if (defaultTemplate) {
+          console.log('[useOrderEntryForm] Found default template:', defaultTemplate);
+          assignedTemplateId = defaultTemplate.id;
+        } else {
+          console.log('[useOrderEntryForm] No default template found');
+        }
+      }
+
+      console.log('[useOrderEntryForm] Final template ID to load:', assignedTemplateId);
 
       if (assignedTemplateId) {
         await loadFromTemplate(assignedTemplateId);
@@ -53,6 +84,8 @@ export function useOrderEntryForm(options: UseOrderEntryFormOptions = {}) {
   };
 
   const loadFromTemplate = async (templateIdParam: string) => {
+    console.log('[useOrderEntryForm] loadFromTemplate() called with templateId:', templateIdParam);
+
     const { data: templateData, error: templateError } = await supabase
       .from('order_entry_templates')
       .select('*')
@@ -60,15 +93,27 @@ export function useOrderEntryForm(options: UseOrderEntryFormOptions = {}) {
       .eq('is_active', true)
       .maybeSingle();
 
+    console.log('[useOrderEntryForm] Template query result:', { templateData, templateError });
+
     if (templateError) throw templateError;
 
     if (!templateData) {
+      console.log('[useOrderEntryForm] Template not found or not active, falling back to global config');
       await loadFromGlobalConfig();
       return;
     }
 
+    console.log('[useOrderEntryForm] ========== TEMPLATE DATA ==========');
+    console.log('[useOrderEntryForm] Template ID:', templateData.id);
+    console.log('[useOrderEntryForm] Template Name:', templateData.name);
+    console.log('[useOrderEntryForm] Extraction Type ID from DB:', templateData.extraction_type_id);
+    console.log('[useOrderEntryForm] Raw template data:', JSON.stringify(templateData, null, 2));
+
     setTemplateId(templateData.id);
     setTemplateName(templateData.name);
+    setExtractionTypeId(templateData.extraction_type_id || null);
+
+    console.log('[useOrderEntryForm] State set - extractionTypeId:', templateData.extraction_type_id || null);
 
     const [groupsRes, fieldsRes, layoutsRes, configRes] = await Promise.all([
       supabase
@@ -119,6 +164,7 @@ export function useOrderEntryForm(options: UseOrderEntryFormOptions = {}) {
       arrayMinRows: g.array_min_rows || 1,
       arrayMaxRows: g.array_max_rows || 10,
       arrayJsonPath: g.array_json_path || '',
+      hideAddRow: g.hide_add_row || false,
       createdAt: g.created_at,
       updatedAt: g.updated_at
     }));
@@ -145,6 +191,7 @@ export function useOrderEntryForm(options: UseOrderEntryFormOptions = {}) {
       validationRegex: f.validation_regex,
       validationErrorMessage: f.validation_error_message,
       fieldOrder: f.field_order,
+      copyFromField: f.copy_from_field,
       createdAt: f.created_at,
       updatedAt: f.updated_at
     }));
@@ -173,6 +220,8 @@ export function useOrderEntryForm(options: UseOrderEntryFormOptions = {}) {
   const loadFromGlobalConfig = async () => {
     setTemplateId(null);
     setTemplateName(null);
+    setExtractionTypeId(null);
+    console.log('[useOrderEntryForm] Loading from global config (no template)');
 
     const [configRes, groupsRes, fieldsRes, layoutsRes] = await Promise.all([
       supabase.from('order_entry_config').select('*').maybeSingle(),
@@ -212,6 +261,7 @@ export function useOrderEntryForm(options: UseOrderEntryFormOptions = {}) {
       arrayMinRows: g.array_min_rows || 1,
       arrayMaxRows: g.array_max_rows || 10,
       arrayJsonPath: g.array_json_path || '',
+      hideAddRow: g.hide_add_row || false,
       createdAt: g.created_at,
       updatedAt: g.updated_at
     }));
@@ -238,6 +288,7 @@ export function useOrderEntryForm(options: UseOrderEntryFormOptions = {}) {
       validationRegex: f.validation_regex,
       validationErrorMessage: f.validation_error_message,
       fieldOrder: f.field_order,
+      copyFromField: f.copy_from_field,
       createdAt: f.created_at,
       updatedAt: f.updated_at
     }));
@@ -272,6 +323,7 @@ export function useOrderEntryForm(options: UseOrderEntryFormOptions = {}) {
     error,
     templateId,
     templateName,
+    extractionTypeId,
     reload: loadFormConfiguration
   };
 }
