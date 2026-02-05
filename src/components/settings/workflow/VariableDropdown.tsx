@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 interface Variable {
   name: string;
   stepName: string;
-  source?: 'extraction' | 'workflow';
+  source?: 'extraction' | 'workflow' | 'execute';
   dataType?: string;
 }
 
@@ -96,8 +96,10 @@ export default function VariableDropdown({
 
   if (!isOpen) return null;
 
+  const executeVariables = variables.filter(v => v.source === 'execute');
   const extractionVariables = variables.filter(v => v.source === 'extraction');
-  const workflowVariables = variables.filter(v => v.source === 'workflow' || !v.source);
+  const responseVariables = variables.filter(v => v.source === 'workflow' && v.name.startsWith('response.'));
+  const workflowVariables = variables.filter(v => (v.source === 'workflow' && !v.name.startsWith('response.')) || (!v.source && !executeVariables.length));
 
   const dropdown = (
     <div
@@ -116,6 +118,54 @@ export default function VariableDropdown({
         </div>
       ) : (
         <div>
+          {executeVariables.length > 0 && (
+            <div className="border-b border-gray-200 dark:border-gray-700">
+              <div className="px-3 py-2 bg-green-50 dark:bg-green-900/20">
+                <span className="text-xs font-semibold text-green-700 dark:text-green-300 uppercase tracking-wide">
+                  Execute Button Fields
+                </span>
+              </div>
+              <div>
+                {executeVariables.map((variable, idx) => (
+                  <button
+                    key={`execute-${idx}`}
+                    type="button"
+                    onClick={() => onSelect(variable.name)}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-green-50 dark:hover:bg-green-900/20 flex flex-col border-b border-gray-100 dark:border-gray-700 last:border-b-0"
+                  >
+                    <span className="font-mono text-gray-900 dark:text-gray-100">{variable.name}</span>
+                    <span className="text-xs text-green-600 dark:text-green-400">
+                      {variable.stepName}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {responseVariables.length > 0 && (
+            <div className="border-b border-gray-200 dark:border-gray-700">
+              <div className="px-3 py-2 bg-cyan-50 dark:bg-cyan-900/20">
+                <span className="text-xs font-semibold text-cyan-700 dark:text-cyan-300 uppercase tracking-wide">
+                  API Response Data
+                </span>
+              </div>
+              <div>
+                {responseVariables.map((variable, idx) => (
+                  <button
+                    key={`response-${idx}`}
+                    type="button"
+                    onClick={() => onSelect(variable.name)}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-cyan-50 dark:hover:bg-cyan-900/20 flex flex-col border-b border-gray-100 dark:border-gray-700 last:border-b-0"
+                  >
+                    <span className="font-mono text-gray-900 dark:text-gray-100">{variable.name}</span>
+                    <span className="text-xs text-cyan-600 dark:text-cyan-400">
+                      from {variable.stepName}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {extractionVariables.length > 0 && (
             <div className="border-b border-gray-200 dark:border-gray-700">
               <div className="px-3 py-2 bg-purple-50 dark:bg-purple-900/20">
