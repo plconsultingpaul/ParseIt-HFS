@@ -9,6 +9,11 @@ export function buildJsonPayload(
   fields: OrderEntryField[],
   fieldGroups: any[] = []
 ): Record<string, any> {
+  console.log('[JsonPayloadMapper] Building payload...');
+  console.log('[JsonPayloadMapper] Form data keys:', Object.keys(formData));
+  console.log('[JsonPayloadMapper] Fields count:', fields.length);
+  console.log('[JsonPayloadMapper] Field groups count:', fieldGroups.length);
+
   const payload: Record<string, any> = {};
 
   const arrayGroupMap = new Map<string, any>();
@@ -68,6 +73,7 @@ export function buildJsonPayload(
     setNestedValue(payload, jsonPath, value);
   });
 
+  console.log('[JsonPayloadMapper] Final payload keys:', Object.keys(payload));
   return payload;
 }
 
@@ -129,7 +135,13 @@ export async function submitWithRetry(
 ): Promise<Response> {
   let lastError: Error | null = null;
 
+  console.log('[SubmitWithRetry] Starting request to:', url);
+  console.log('[SubmitWithRetry] Method:', options.method);
+  console.log('[SubmitWithRetry] Max retries:', maxRetries);
+  console.log('[SubmitWithRetry] Timeout:', timeoutMs, 'ms');
+
   for (let attempt = 0; attempt < maxRetries; attempt++) {
+    console.log('[SubmitWithRetry] Attempt', attempt + 1, 'of', maxRetries);
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -141,20 +153,26 @@ export async function submitWithRetry(
 
       clearTimeout(timeoutId);
 
+      console.log('[SubmitWithRetry] Response received:', response.status, response.statusText);
+
       if (response.status >= 500 && attempt < maxRetries - 1) {
+        console.log('[SubmitWithRetry] Server error, retrying...');
         await delay(Math.pow(2, attempt) * 1000);
         continue;
       }
 
       return response;
     } catch (error: any) {
+      console.error('[SubmitWithRetry] Request failed:', error.message);
       lastError = error;
 
       if (error.name === 'AbortError') {
+        console.error('[SubmitWithRetry] Request timed out after', timeoutMs, 'ms');
         throw new Error('Request timed out. Please check your connection and try again.');
       }
 
       if (attempt < maxRetries - 1 && isRetriableError(error)) {
+        console.log('[SubmitWithRetry] Retriable error, retrying...');
         await delay(Math.pow(2, attempt) * 1000);
         continue;
       }
@@ -163,6 +181,7 @@ export async function submitWithRetry(
     }
   }
 
+  console.error('[SubmitWithRetry] All retries exhausted');
   throw lastError || new Error('Request failed after multiple attempts');
 }
 
