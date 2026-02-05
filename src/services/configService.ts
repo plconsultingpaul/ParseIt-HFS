@@ -37,6 +37,7 @@ export async function fetchApiConfig(): Promise<ApiConfig> {
         path: config.path || '',
         password: config.password || '',
         googleApiKey: config.google_api_key || '',
+        googlePlacesApiKey: config.google_places_api_key || '',
         orderDisplayFields: config.order_display_fields || '',
         customOrderDisplayFields
       };
@@ -46,6 +47,7 @@ export async function fetchApiConfig(): Promise<ApiConfig> {
       path: '',
       password: '',
       googleApiKey: '',
+      googlePlacesApiKey: '',
       orderDisplayFields: '',
       customOrderDisplayFields: []
     };
@@ -66,6 +68,7 @@ export async function updateApiConfig(config: ApiConfig): Promise<void> {
       path: config.path,
       password: config.password,
       google_api_key: config.googleApiKey,
+      google_places_api_key: config.googlePlacesApiKey,
       order_display_fields: config.orderDisplayFields,
       custom_order_display_fields: config.customOrderDisplayFields,
       updated_at: new Date().toISOString()
@@ -462,5 +465,361 @@ export async function toggleSecondaryApiConfig(id: string, isActive: boolean): P
   } catch (error) {
     console.error('Error toggling secondary API config:', error);
     throw error;
+  }
+}
+
+// API Authentication Configuration
+export interface ApiAuthConfigDB {
+  id: string;
+  name: string;
+  loginEndpoint: string;
+  pingEndpoint: string;
+  tokenFieldName: string;
+  username: string;
+  password: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function fetchApiAuthConfig(): Promise<ApiAuthConfigDB | null> {
+  try {
+    const { data, error } = await supabase
+      .from('api_auth_config')
+      .select('*')
+      .eq('is_active', true)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    if (data) {
+      return {
+        id: data.id,
+        name: data.name,
+        loginEndpoint: data.login_endpoint,
+        pingEndpoint: data.ping_endpoint,
+        tokenFieldName: data.token_field_name || 'access_token',
+        username: data.username,
+        password: data.password,
+        isActive: data.is_active,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Error fetching API auth config:', error);
+    throw error;
+  }
+}
+
+export async function fetchAllApiAuthConfigs(): Promise<ApiAuthConfigDB[]> {
+  try {
+    const { data, error } = await supabase
+      .from('api_auth_config')
+      .select('*')
+      .order('name', { ascending: true });
+
+    if (error) throw error;
+
+    return (data || []).map(item => ({
+      id: item.id,
+      name: item.name,
+      loginEndpoint: item.login_endpoint,
+      pingEndpoint: item.ping_endpoint,
+      tokenFieldName: item.token_field_name || 'access_token',
+      username: item.username,
+      password: item.password,
+      isActive: item.is_active,
+      createdAt: item.created_at,
+      updatedAt: item.updated_at
+    }));
+  } catch (error) {
+    console.error('Error fetching all API auth configs:', error);
+    throw error;
+  }
+}
+
+export async function fetchApiAuthConfigById(id: string): Promise<ApiAuthConfigDB | null> {
+  try {
+    const { data, error } = await supabase
+      .from('api_auth_config')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    if (data) {
+      return {
+        id: data.id,
+        name: data.name,
+        loginEndpoint: data.login_endpoint,
+        pingEndpoint: data.ping_endpoint,
+        tokenFieldName: data.token_field_name || 'access_token',
+        username: data.username,
+        password: data.password,
+        isActive: data.is_active,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Error fetching API auth config by ID:', error);
+    throw error;
+  }
+}
+
+export async function fetchApiAuthConfigByName(name: string): Promise<ApiAuthConfigDB | null> {
+  try {
+    const { data, error } = await supabase
+      .from('api_auth_config')
+      .select('*')
+      .eq('name', name)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    if (data) {
+      return {
+        id: data.id,
+        name: data.name,
+        loginEndpoint: data.login_endpoint,
+        pingEndpoint: data.ping_endpoint,
+        tokenFieldName: data.token_field_name || 'access_token',
+        username: data.username,
+        password: data.password,
+        isActive: data.is_active,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Error fetching API auth config by name:', error);
+    throw error;
+  }
+}
+
+export async function saveApiAuthConfig(config: Omit<ApiAuthConfigDB, 'id' | 'createdAt' | 'updatedAt'>): Promise<ApiAuthConfigDB> {
+  try {
+    const { data: existingData } = await supabase
+      .from('api_auth_config')
+      .select('id')
+      .limit(1)
+      .maybeSingle();
+
+    const configData = {
+      name: config.name,
+      login_endpoint: config.loginEndpoint,
+      ping_endpoint: config.pingEndpoint,
+      token_field_name: config.tokenFieldName || 'access_token',
+      username: config.username,
+      password: config.password,
+      is_active: config.isActive,
+      updated_at: new Date().toISOString()
+    };
+
+    let result;
+
+    if (existingData) {
+      const { data, error } = await supabase
+        .from('api_auth_config')
+        .update(configData)
+        .eq('id', existingData.id)
+        .select()
+        .single();
+      if (error) throw error;
+      result = data;
+    } else {
+      const { data, error } = await supabase
+        .from('api_auth_config')
+        .insert([{ ...configData, created_at: new Date().toISOString() }])
+        .select()
+        .single();
+      if (error) throw error;
+      result = data;
+    }
+
+    return {
+      id: result.id,
+      name: result.name,
+      loginEndpoint: result.login_endpoint,
+      pingEndpoint: result.ping_endpoint,
+      tokenFieldName: result.token_field_name || 'access_token',
+      username: result.username,
+      password: result.password,
+      isActive: result.is_active,
+      createdAt: result.created_at,
+      updatedAt: result.updated_at
+    };
+  } catch (error) {
+    console.error('Error saving API auth config:', error);
+    throw error;
+  }
+}
+
+export async function createApiAuthConfig(config: Omit<ApiAuthConfigDB, 'id' | 'createdAt' | 'updatedAt'>): Promise<ApiAuthConfigDB> {
+  try {
+    const configData = {
+      name: config.name,
+      login_endpoint: config.loginEndpoint,
+      ping_endpoint: config.pingEndpoint,
+      token_field_name: config.tokenFieldName || 'access_token',
+      username: config.username,
+      password: config.password,
+      is_active: config.isActive,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    const { data, error } = await supabase
+      .from('api_auth_config')
+      .insert([configData])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return {
+      id: data.id,
+      name: data.name,
+      loginEndpoint: data.login_endpoint,
+      pingEndpoint: data.ping_endpoint,
+      tokenFieldName: data.token_field_name || 'access_token',
+      username: data.username,
+      password: data.password,
+      isActive: data.is_active,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at
+    };
+  } catch (error) {
+    console.error('Error creating API auth config:', error);
+    throw error;
+  }
+}
+
+export async function updateApiAuthConfig(id: string, config: Omit<ApiAuthConfigDB, 'id' | 'createdAt' | 'updatedAt'>): Promise<ApiAuthConfigDB> {
+  try {
+    const configData = {
+      name: config.name,
+      login_endpoint: config.loginEndpoint,
+      ping_endpoint: config.pingEndpoint,
+      token_field_name: config.tokenFieldName || 'access_token',
+      username: config.username,
+      password: config.password,
+      is_active: config.isActive,
+      updated_at: new Date().toISOString()
+    };
+
+    const { data, error } = await supabase
+      .from('api_auth_config')
+      .update(configData)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return {
+      id: data.id,
+      name: data.name,
+      loginEndpoint: data.login_endpoint,
+      pingEndpoint: data.ping_endpoint,
+      tokenFieldName: data.token_field_name || 'access_token',
+      username: data.username,
+      password: data.password,
+      isActive: data.is_active,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at
+    };
+  } catch (error) {
+    console.error('Error updating API auth config:', error);
+    throw error;
+  }
+}
+
+export async function deleteApiAuthConfig(id: string): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from('api_auth_config')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+  } catch (error) {
+    console.error('Error deleting API auth config:', error);
+    throw error;
+  }
+}
+
+export async function testApiAuthConnection(
+  loginEndpoint: string,
+  pingEndpoint: string,
+  username: string,
+  password: string,
+  tokenFieldName: string = 'access_token'
+): Promise<{ success: boolean; message: string; token?: string }> {
+  try {
+    const loginResponse = await fetch(loginEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ username, password })
+    });
+
+    if (!loginResponse.ok) {
+      const errorText = await loginResponse.text().catch(() => '');
+      return {
+        success: false,
+        message: `Login failed: ${loginResponse.status} ${loginResponse.statusText}${errorText ? ` - ${errorText}` : ''}`
+      };
+    }
+
+    const loginData = await loginResponse.json();
+    const token = loginData[tokenFieldName];
+
+    if (!token) {
+      return {
+        success: false,
+        message: `Login response missing '${tokenFieldName}' field`
+      };
+    }
+
+    if (pingEndpoint) {
+      const pingResponse = await fetch(pingEndpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (pingResponse.status !== 204 && !pingResponse.ok) {
+        return {
+          success: false,
+          message: `Ping failed: ${pingResponse.status} ${pingResponse.statusText}`,
+          token
+        };
+      }
+    }
+
+    return {
+      success: true,
+      message: pingEndpoint ? 'Login and Ping successful' : 'Login successful',
+      token
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `Connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+    };
   }
 }
