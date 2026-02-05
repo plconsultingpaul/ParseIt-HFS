@@ -1,13 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Trash2, CreditCard as Edit2, GripVertical, AlertCircle, Save, Search, Filter, Columns2 as Columns, Settings, ChevronDown, ChevronRight, Copy, FileText, Lock, Eye, Loader2, ExternalLink, Zap, Pencil, X } from 'lucide-react';
+import { Plus, Trash2, CreditCard as Edit2, GripVertical, AlertCircle, Save, Search, Filter, Columns2 as Columns, Settings, ChevronDown, ChevronRight, ChevronUp, Copy, FileText, Lock, Eye, Loader2, ExternalLink, Zap, Pencil, X, Play, Mail } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import type { User, TrackTraceTemplate, TrackTraceTemplateField, TrackTraceTemplateDefaultField, TrackTraceFilterPreset, TrackTraceFilterPresetDefaultField, TrackTraceFilterValue, TrackTraceOrderByOption, SecondaryApiConfig, ApiSpec, ApiSpecEndpoint, ApiEndpointField, TrackTraceValueMapping, TrackTraceTemplateSection, TrackTraceTemplateSectionType, TraceNumbersSectionConfig, TraceNumberFieldMapping } from '../../types';
+import type { User, TrackTraceTemplate, TrackTraceTemplateField, TrackTraceTemplateDefaultField, TrackTraceFilterPreset, TrackTraceFilterPresetDefaultField, TrackTraceFilterValue, TrackTraceOrderByOption, SecondaryApiConfig, ApiSpec, ApiSpecEndpoint, ApiEndpointField, TrackTraceValueMapping, TrackTraceTemplateSection, TrackTraceTemplateSectionType, TraceNumbersSectionConfig, TraceNumberFieldMapping, TrackTraceDocumentConfig, TrackTraceDocumentFilter, TrackTraceTimelineStatus, TrackTraceTimelineChildStatus, TimelineSectionConfig, BarcodeDetailsSectionConfig, BarcodeDetailsFieldMapping, BarcodeDetailsImageConfig } from '../../types';
 import { supabase } from '../../lib/supabase';
 import Select from '../common/Select';
 import { FormSkeleton } from '../common/Skeleton';
+import RouteSummaryConfigModal from './RouteSummaryConfigModal';
+import ShipmentSummaryConfigModal from './ShipmentSummaryConfigModal';
 
 interface SortableColumnItemProps {
   field: TrackTraceTemplateField;
@@ -189,6 +191,23 @@ export default function TrackTraceTemplatesSettings({ currentUser }: TrackTraceT
   const [showTraceNumbersConfigModal, setShowTraceNumbersConfigModal] = useState(false);
   const [editingTraceNumbersSection, setEditingTraceNumbersSection] = useState<TrackTraceTemplateSection | null>(null);
   const [traceNumbersApiEndpoints, setTraceNumbersApiEndpoints] = useState<ApiSpecEndpoint[]>([]);
+
+  const [showDocumentsConfigModal, setShowDocumentsConfigModal] = useState(false);
+  const [editingDocumentsSection, setEditingDocumentsSection] = useState<TrackTraceTemplateSection | null>(null);
+  const [documentConfigs, setDocumentConfigs] = useState<TrackTraceDocumentConfig[]>([]);
+
+  const [showTimelineConfigModal, setShowTimelineConfigModal] = useState(false);
+  const [editingTimelineSection, setEditingTimelineSection] = useState<TrackTraceTemplateSection | null>(null);
+  const [timelineStatuses, setTimelineStatuses] = useState<TrackTraceTimelineStatus[]>([]);
+
+  const [showBarcodeDetailsConfigModal, setShowBarcodeDetailsConfigModal] = useState(false);
+  const [editingBarcodeDetailsSection, setEditingBarcodeDetailsSection] = useState<TrackTraceTemplateSection | null>(null);
+  const [barcodeDetailsApiEndpoints, setBarcodeDetailsApiEndpoints] = useState<ApiSpecEndpoint[]>([]);
+  const [authConfigs, setAuthConfigs] = useState<{ id: string; name: string }[]>([]);
+  const [loadedBarcodeConfig, setLoadedBarcodeConfig] = useState<BarcodeDetailsSectionConfig | null>(null);
+
+  const [showRouteSummaryConfigModal, setShowRouteSummaryConfigModal] = useState(false);
+  const [showShipmentSummaryConfigModal, setShowShipmentSummaryConfigModal] = useState(false);
 
   const [expandedSections, setExpandedSections] = useState({
     api: false,
@@ -1074,6 +1093,117 @@ export default function TrackTraceTemplatesSettings({ currentUser }: TrackTraceT
         loadTraceNumbersEndpoints(config.apiSpecId);
       }
       setShowTraceNumbersConfigModal(true);
+    } else if (section.sectionType === 'documents') {
+      setEditingDocumentsSection(section);
+      loadDocumentConfigs();
+      setShowDocumentsConfigModal(true);
+    } else if (section.sectionType === 'shipment_timeline') {
+      setEditingTimelineSection(section);
+      loadTimelineStatuses();
+      setShowTimelineConfigModal(true);
+    } else if (section.sectionType === 'barcode_details') {
+      setEditingBarcodeDetailsSection(section);
+      loadAuthConfigs();
+      loadBarcodeConfigWithFields(section).then(loadedConfig => {
+        setLoadedBarcodeConfig(loadedConfig);
+        if (loadedConfig.apiSpecId) {
+          loadBarcodeDetailsEndpoints(loadedConfig.apiSpecId);
+        }
+        setShowBarcodeDetailsConfigModal(true);
+      });
+    } else if (section.sectionType === 'route_summary') {
+      setShowRouteSummaryConfigModal(true);
+    } else if (section.sectionType === 'shipment_summary') {
+      setShowShipmentSummaryConfigModal(true);
+    }
+  };
+
+  const loadDocumentConfigs = async () => {
+    if (!template?.id) return;
+    try {
+      const { data, error } = await supabase
+        .from('track_trace_document_configs')
+        .select(`
+          *,
+          filters:track_trace_document_filters(*)
+        `)
+        .eq('template_id', template.id)
+        .order('sort_order');
+
+      if (error) throw error;
+
+      const mappedConfigs: TrackTraceDocumentConfig[] = (data || []).map((c: any) => ({
+        id: c.id,
+        templateId: c.template_id,
+        name: c.name,
+        searchApiUrl: c.search_api_url,
+        getDocumentApiUrl: c.get_document_api_url,
+        docIdField: c.doc_id_field,
+        docNameField: c.doc_name_field,
+        docTypeField: c.doc_type_field,
+        docSizeField: c.doc_size_field,
+        authConfigId: c.auth_config_id,
+        sortOrder: c.sort_order,
+        isEnabled: c.is_enabled,
+        emailEnabled: c.email_enabled || false,
+        emailSubject: c.email_subject,
+        emailTemplate: c.email_template,
+        createdAt: c.created_at,
+        updatedAt: c.updated_at,
+        filters: (c.filters || []).map((f: any) => ({
+          id: f.id,
+          documentConfigId: f.document_config_id,
+          fieldName: f.field_name,
+          valueType: f.value_type,
+          variableName: f.variable_name,
+          staticValue: f.static_value,
+          sortOrder: f.sort_order,
+          createdAt: f.created_at,
+          updatedAt: f.updated_at
+        })).sort((a: any, b: any) => a.sortOrder - b.sortOrder)
+      }));
+
+      setDocumentConfigs(mappedConfigs);
+    } catch (err) {
+      console.error('Failed to load document configs:', err);
+    }
+  };
+
+  const loadTimelineStatuses = async () => {
+    if (!template?.id) return;
+    try {
+      const { data, error } = await supabase
+        .from('track_trace_timeline_statuses')
+        .select(`
+          *,
+          childStatuses:track_trace_timeline_child_statuses(*)
+        `)
+        .eq('template_id', template.id)
+        .order('display_order');
+
+      if (error) throw error;
+
+      const mappedStatuses: TrackTraceTimelineStatus[] = (data || []).map((s: any) => ({
+        id: s.id,
+        templateId: s.template_id,
+        name: s.name,
+        displayOrder: s.display_order,
+        locationField: s.location_field,
+        dateField: s.date_field,
+        createdAt: s.created_at,
+        updatedAt: s.updated_at,
+        childStatuses: (s.childStatuses || []).map((c: any) => ({
+          id: c.id,
+          timelineStatusId: c.timeline_status_id,
+          statusValue: c.status_value,
+          displayOrder: c.display_order,
+          createdAt: c.created_at
+        })).sort((a: any, b: any) => a.displayOrder - b.displayOrder)
+      }));
+
+      setTimelineStatuses(mappedStatuses);
+    } catch (err) {
+      console.error('Failed to load timeline statuses:', err);
     }
   };
 
@@ -1089,6 +1219,240 @@ export default function TrackTraceTemplatesSettings({ currentUser }: TrackTraceT
       setTraceNumbersApiEndpoints(data || []);
     } catch (err) {
       console.error('Failed to load trace numbers endpoints:', err);
+    }
+  };
+
+  const loadBarcodeDetailsEndpoints = async (specId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('api_spec_endpoints')
+        .select('*')
+        .eq('api_spec_id', specId)
+        .order('path');
+
+      if (error) throw error;
+      setBarcodeDetailsApiEndpoints(data || []);
+    } catch (err) {
+      console.error('Failed to load barcode details endpoints:', err);
+    }
+  };
+
+  const loadAuthConfigs = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('api_auth_config')
+        .select('id, name')
+        .eq('is_active', true)
+        .order('name');
+
+      if (error) throw error;
+      setAuthConfigs(data || []);
+    } catch (err) {
+      console.error('Failed to load auth configs:', err);
+    }
+  };
+
+  const loadBarcodeConfigWithFields = async (section: TrackTraceTemplateSection): Promise<BarcodeDetailsSectionConfig> => {
+    const baseConfig = (section.config || {}) as BarcodeDetailsSectionConfig;
+
+    if (!template?.id) {
+      return { ...baseConfig, fieldMappings: baseConfig.fieldMappings || [] };
+    }
+
+    try {
+      const { data: barcodeConfig, error } = await supabase
+        .from('track_trace_barcode_configs')
+        .select(`
+          *,
+          fields:track_trace_barcode_fields(
+            id,
+            label,
+            api_field,
+            show_total,
+            is_required,
+            display_order,
+            group_id,
+            group_separator,
+            value_suffix
+          ),
+          image_config:track_trace_barcode_image_configs(
+            api_url,
+            source_field,
+            auth_config_id
+          )
+        `)
+        .eq('template_id', template.id)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Failed to load barcode config:', error);
+        return { ...baseConfig, fieldMappings: [] };
+      }
+
+      if (!barcodeConfig) {
+        return { ...baseConfig, fieldMappings: [] };
+      }
+
+      const fieldMappings = (barcodeConfig.fields || [])
+        .sort((a: any, b: any) => (a.display_order || 0) - (b.display_order || 0))
+        .map((f: any) => ({
+          label: f.label,
+          apiField: f.api_field,
+          showTotal: f.show_total || false,
+          isRequired: f.is_required || false,
+          displayOrder: f.display_order || 0,
+          groupId: f.group_id || undefined,
+          groupSeparator: f.group_separator || undefined,
+          valueSuffix: f.value_suffix || undefined
+        }));
+
+      const imageConfig = barcodeConfig.image_config?.[0] ? {
+        apiUrl: barcodeConfig.image_config[0].api_url || '',
+        sourceField: barcodeConfig.image_config[0].source_field || '',
+        authConfigId: barcodeConfig.image_config[0].auth_config_id || undefined
+      } : undefined;
+
+      return {
+        apiSourceType: barcodeConfig.api_source_type || baseConfig.apiSourceType || 'main',
+        secondaryApiId: barcodeConfig.secondary_api_id || baseConfig.secondaryApiId || '',
+        apiSpecId: barcodeConfig.api_spec_id || baseConfig.apiSpecId || '',
+        apiSpecEndpointId: barcodeConfig.api_spec_endpoint_id || baseConfig.apiSpecEndpointId || '',
+        responseArrayPath: barcodeConfig.response_array_path || baseConfig.responseArrayPath || '',
+        nestedArrayPath: barcodeConfig.nested_array_path || baseConfig.nestedArrayPath || '',
+        secondaryEndpointId: barcodeConfig.secondary_endpoint_id || baseConfig.secondaryEndpointId || '',
+        secondaryParamField: barcodeConfig.secondary_param_field || baseConfig.secondaryParamField || '',
+        fieldMappings,
+        imageConfig
+      };
+    } catch (err) {
+      console.error('Failed to load barcode config with fields:', err);
+      return { ...baseConfig, fieldMappings: [] };
+    }
+  };
+
+  const handleSaveBarcodeDetailsConfig = async (config: BarcodeDetailsSectionConfig) => {
+    if (!editingBarcodeDetailsSection || !template?.id) return;
+
+    try {
+      setSaving(true);
+
+      const { error: sectionError } = await supabase
+        .from('track_trace_template_sections')
+        .update({
+          config: {
+            apiSourceType: config.apiSourceType,
+            secondaryApiId: config.secondaryApiId,
+            apiSpecId: config.apiSpecId,
+            apiSpecEndpointId: config.apiSpecEndpointId,
+            responseArrayPath: config.responseArrayPath,
+            nestedArrayPath: config.nestedArrayPath
+          },
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', editingBarcodeDetailsSection.id);
+
+      if (sectionError) throw sectionError;
+
+      const { data: existingConfig } = await supabase
+        .from('track_trace_barcode_configs')
+        .select('id')
+        .eq('template_id', template.id)
+        .maybeSingle();
+
+      let barcodeConfigId: string;
+
+      if (existingConfig) {
+        barcodeConfigId = existingConfig.id;
+        const { error: updateError } = await supabase
+          .from('track_trace_barcode_configs')
+          .update({
+            api_source_type: config.apiSourceType,
+            secondary_api_id: config.secondaryApiId || null,
+            api_spec_id: config.apiSpecId || null,
+            api_spec_endpoint_id: config.apiSpecEndpointId || null,
+            response_array_path: config.responseArrayPath || null,
+            nested_array_path: config.nestedArrayPath || null,
+            secondary_endpoint_id: config.secondaryEndpointId || null,
+            secondary_param_field: config.secondaryParamField || null,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingConfig.id);
+
+        if (updateError) throw updateError;
+      } else {
+        const { data: newConfig, error: insertError } = await supabase
+          .from('track_trace_barcode_configs')
+          .insert({
+            template_id: template.id,
+            api_source_type: config.apiSourceType,
+            secondary_api_id: config.secondaryApiId || null,
+            api_spec_id: config.apiSpecId || null,
+            api_spec_endpoint_id: config.apiSpecEndpointId || null,
+            response_array_path: config.responseArrayPath || null,
+            nested_array_path: config.nestedArrayPath || null,
+            secondary_endpoint_id: config.secondaryEndpointId || null,
+            secondary_param_field: config.secondaryParamField || null
+          })
+          .select('id')
+          .single();
+
+        if (insertError) throw insertError;
+        barcodeConfigId = newConfig.id;
+      }
+
+      await supabase
+        .from('track_trace_barcode_fields')
+        .delete()
+        .eq('barcode_config_id', barcodeConfigId);
+
+      if (config.fieldMappings.length > 0) {
+        const { error: fieldsError } = await supabase
+          .from('track_trace_barcode_fields')
+          .insert(
+            config.fieldMappings.map((mapping, index) => ({
+              barcode_config_id: barcodeConfigId,
+              label: mapping.label,
+              api_field: mapping.apiField,
+              show_total: mapping.showTotal,
+              is_required: mapping.isRequired || false,
+              display_order: index,
+              group_id: mapping.groupId || null,
+              group_separator: mapping.groupSeparator || null,
+              value_suffix: mapping.valueSuffix || null
+            }))
+          );
+
+        if (fieldsError) throw fieldsError;
+      }
+
+      await supabase
+        .from('track_trace_barcode_image_configs')
+        .delete()
+        .eq('barcode_config_id', barcodeConfigId);
+
+      if (config.imageConfig && config.imageConfig.apiUrl) {
+        const { error: imageError } = await supabase
+          .from('track_trace_barcode_image_configs')
+          .insert({
+            barcode_config_id: barcodeConfigId,
+            api_url: config.imageConfig.apiUrl,
+            auth_config_id: config.imageConfig.authConfigId || null,
+            source_field: config.imageConfig.sourceField || ''
+          });
+
+        if (imageError) throw imageError;
+      }
+
+      await loadTemplate(template.id);
+      setShowBarcodeDetailsConfigModal(false);
+      setEditingBarcodeDetailsSection(null);
+      setSuccessMessage('Barcode Details configuration saved successfully');
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err) {
+      console.error('Failed to save barcode details config:', err);
+      setError('Failed to save configuration');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -1986,7 +2350,7 @@ export default function TrackTraceTemplatesSettings({ currentUser }: TrackTraceT
                                 label={sectionTypeLabels[section.sectionType]}
                                 onToggleEnabled={handleToggleSectionEnabled}
                                 onConfigure={handleConfigureSection}
-                                hasConfig={section.sectionType === 'trace_numbers'}
+                                hasConfig={section.sectionType === 'trace_numbers' || section.sectionType === 'documents' || section.sectionType === 'shipment_timeline' || section.sectionType === 'barcode_details' || section.sectionType === 'route_summary' || section.sectionType === 'shipment_summary'}
                               />
                             ))}
                           </div>
@@ -2177,6 +2541,91 @@ export default function TrackTraceTemplatesSettings({ currentUser }: TrackTraceT
           apiSpecs={apiSpecs}
           apiEndpoints={traceNumbersApiEndpoints}
           onSpecChange={loadTraceNumbersEndpoints}
+        />
+      )}
+
+      {showDocumentsConfigModal && template && (
+        <DocumentsConfigModal
+          templateId={template.id}
+          documentConfigs={documentConfigs}
+          templateFields={fields}
+          onClose={() => {
+            setShowDocumentsConfigModal(false);
+            setEditingDocumentsSection(null);
+          }}
+          onRefresh={loadDocumentConfigs}
+        />
+      )}
+
+      {showTimelineConfigModal && template && editingTimelineSection && (
+        <TimelineConfigModal
+          templateId={template.id}
+          section={editingTimelineSection}
+          timelineStatuses={timelineStatuses}
+          templateFields={fields}
+          onClose={() => {
+            setShowTimelineConfigModal(false);
+            setEditingTimelineSection(null);
+          }}
+          onRefresh={loadTimelineStatuses}
+          onSaveConfig={async (config: TimelineSectionConfig) => {
+            try {
+              setSaving(true);
+              const { error } = await supabase
+                .from('track_trace_template_sections')
+                .update({
+                  config,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', editingTimelineSection.id);
+
+              if (error) throw error;
+
+              setTemplateSections(prev =>
+                prev.map(s => s.id === editingTimelineSection.id ? { ...s, config } : s)
+              );
+              setSuccessMessage('Timeline configuration saved successfully');
+              setTimeout(() => setSuccessMessage(null), 3000);
+            } catch (err: any) {
+              setError(err.message || 'Failed to save timeline configuration');
+            } finally {
+              setSaving(false);
+            }
+          }}
+        />
+      )}
+
+      {showBarcodeDetailsConfigModal && editingBarcodeDetailsSection && loadedBarcodeConfig && (
+        <BarcodeDetailsConfigModal
+          config={loadedBarcodeConfig}
+          onSave={handleSaveBarcodeDetailsConfig}
+          onClose={() => {
+            setShowBarcodeDetailsConfigModal(false);
+            setEditingBarcodeDetailsSection(null);
+            setLoadedBarcodeConfig(null);
+          }}
+          saving={saving}
+          secondaryApis={secondaryApis}
+          apiSpecs={apiSpecs}
+          apiEndpoints={barcodeDetailsApiEndpoints}
+          authConfigs={authConfigs}
+          onSpecChange={loadBarcodeDetailsEndpoints}
+        />
+      )}
+
+      {showRouteSummaryConfigModal && template && (
+        <RouteSummaryConfigModal
+          templateId={template.id}
+          onClose={() => setShowRouteSummaryConfigModal(false)}
+          onSave={() => setShowRouteSummaryConfigModal(false)}
+        />
+      )}
+
+      {showShipmentSummaryConfigModal && template && (
+        <ShipmentSummaryConfigModal
+          templateId={template.id}
+          onClose={() => setShowShipmentSummaryConfigModal(false)}
+          onSave={() => setShowShipmentSummaryConfigModal(false)}
         />
       )}
     </div>
@@ -4290,6 +4739,2302 @@ function TraceNumbersConfigModal({
           </div>
         </div>
       )}
+    </div>,
+    document.body
+  );
+}
+
+interface DocumentsConfigModalProps {
+  templateId: string;
+  documentConfigs: TrackTraceDocumentConfig[];
+  templateFields: TrackTraceTemplateField[];
+  onClose: () => void;
+  onRefresh: () => void;
+}
+
+interface AuthConfig {
+  id: string;
+  name: string;
+}
+
+function DocumentsConfigModal({
+  templateId,
+  documentConfigs,
+  templateFields,
+  onClose,
+  onRefresh
+}: DocumentsConfigModalProps) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [editingConfig, setEditingConfig] = useState<TrackTraceDocumentConfig | null>(null);
+  const [showConfigForm, setShowConfigForm] = useState(false);
+  const [authConfigs, setAuthConfigs] = useState<AuthConfig[]>([]);
+  const [showCopyModal, setShowCopyModal] = useState(false);
+  const [copyConfig, setCopyConfig] = useState<TrackTraceDocumentConfig | null>(null);
+  const [copyName, setCopyName] = useState('');
+  const [showUrlVarDropdown, setShowUrlVarDropdown] = useState(false);
+  const getDocUrlInputRef = useRef<HTMLInputElement>(null);
+
+  const [showTestSection, setShowTestSection] = useState(false);
+  const [testValues, setTestValues] = useState<Record<string, string>>({});
+  const [testLoading, setTestLoading] = useState(false);
+  const [testResults, setTestResults] = useState<{
+    searchApiResponse?: any[];
+    getDocResponse?: any;
+    searchApiUrl?: string;
+    getDocApiUrl?: string;
+    error?: string;
+  } | null>(null);
+
+  const [formData, setFormData] = useState({
+    name: '',
+    searchApiUrl: '',
+    getDocumentApiUrl: '',
+    docIdField: 'docId',
+    docNameField: 'fileName',
+    docTypeField: 'fileExtension',
+    docSizeField: 'fileSize',
+    authConfigId: '',
+    isEnabled: true,
+    emailEnabled: false,
+    emailSubject: 'Document: {{document_name}}',
+    emailTemplate: `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f3f4f6;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f3f4f6; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); overflow: hidden;">
+          <tr>
+            <td style="background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); padding: 40px; text-align: center;">
+              <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 700;">
+                {{document_name}}
+              </h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 40px;">
+              <p style="color: #374151; font-size: 16px; line-height: 1.6; margin: 0 0 20px 0;">
+                Hello,
+              </p>
+              <p style="color: #374151; font-size: 16px; line-height: 1.6; margin: 0 0 20px 0;">
+                Please find the attached document: <strong>{{document_name}}</strong>
+              </p>
+              <p style="color: #6b7280; font-size: 14px; line-height: 1.6; margin: 30px 0 0 0;">
+                This document was shared with you from the shipment tracking system.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color: #f9fafb; padding: 20px; text-align: center; border-top: 1px solid #e5e7eb;">
+              <p style="color: #9ca3af; font-size: 12px; margin: 0;">
+                {{company_name}}
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`
+  });
+
+  useEffect(() => {
+    loadAuthConfigs();
+  }, []);
+
+  const loadAuthConfigs = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('api_auth_config')
+        .select('id, name')
+        .order('name');
+
+      if (error) throw error;
+      setAuthConfigs(data || []);
+    } catch (err) {
+      console.error('Failed to load auth configs:', err);
+    }
+  };
+
+  const [filters, setFilters] = useState<Array<{
+    id?: string;
+    fieldName: string;
+    valueType: 'variable' | 'static';
+    variableName: string;
+    staticValue: string;
+  }>>([]);
+
+  const handleAddConfig = () => {
+    setEditingConfig(null);
+    setFormData({
+      name: '',
+      searchApiUrl: '',
+      getDocumentApiUrl: '',
+      docIdField: 'docId',
+      docNameField: 'fileName',
+      docTypeField: 'fileExtension',
+      docSizeField: 'fileSize',
+      authConfigId: '',
+      isEnabled: true,
+      emailEnabled: false,
+      emailSubject: 'Document: {{document_name}}',
+      emailTemplate: formData.emailTemplate
+    });
+    setFilters([]);
+    setShowConfigForm(true);
+  };
+
+  const handleEditConfig = (config: TrackTraceDocumentConfig) => {
+    setEditingConfig(config);
+    setFormData({
+      name: config.name,
+      searchApiUrl: config.searchApiUrl,
+      getDocumentApiUrl: config.getDocumentApiUrl,
+      docIdField: config.docIdField,
+      docNameField: config.docNameField,
+      docTypeField: config.docTypeField || 'fileExtension',
+      docSizeField: config.docSizeField || 'fileSize',
+      authConfigId: config.authConfigId || '',
+      isEnabled: config.isEnabled,
+      emailEnabled: config.emailEnabled || false,
+      emailSubject: config.emailSubject || 'Document: {{document_name}}',
+      emailTemplate: config.emailTemplate || formData.emailTemplate
+    });
+    setFilters((config.filters || []).map(f => ({
+      id: f.id,
+      fieldName: f.fieldName,
+      valueType: f.valueType,
+      variableName: f.variableName || '',
+      staticValue: f.staticValue || ''
+    })));
+    setShowConfigForm(true);
+  };
+
+  const handleDeleteConfig = async (configId: string) => {
+    if (!confirm('Are you sure you want to delete this document configuration?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('track_trace_document_configs')
+        .delete()
+        .eq('id', configId);
+
+      if (error) throw error;
+      onRefresh();
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete configuration');
+    }
+  };
+
+  const handleCopyConfig = (config: TrackTraceDocumentConfig) => {
+    setCopyConfig(config);
+    setCopyName(`${config.name} - Copy`);
+    setShowCopyModal(true);
+  };
+
+  const executeCopy = async () => {
+    if (!copyConfig || !copyName.trim()) return;
+
+    try {
+      setSaving(true);
+      setError(null);
+
+      const { data: newConfig, error: insertError } = await supabase
+        .from('track_trace_document_configs')
+        .insert({
+          template_id: templateId,
+          name: copyName.trim(),
+          search_api_url: copyConfig.searchApiUrl,
+          get_document_api_url: copyConfig.getDocumentApiUrl,
+          doc_id_field: copyConfig.docIdField,
+          doc_name_field: copyConfig.docNameField,
+          doc_type_field: copyConfig.docTypeField || 'fileExtension',
+          doc_size_field: copyConfig.docSizeField || 'fileSize',
+          auth_config_id: copyConfig.authConfigId || null,
+          is_enabled: copyConfig.isEnabled,
+          sort_order: documentConfigs.length
+        })
+        .select()
+        .single();
+
+      if (insertError) throw insertError;
+
+      if (copyConfig.filters && copyConfig.filters.length > 0 && newConfig) {
+        const filtersToInsert = copyConfig.filters.map((f, index) => ({
+          document_config_id: newConfig.id,
+          field_name: f.fieldName,
+          value_type: f.valueType,
+          variable_name: f.variableName || null,
+          static_value: f.staticValue || null,
+          sort_order: index
+        }));
+
+        const { error: filtersError } = await supabase
+          .from('track_trace_document_filters')
+          .insert(filtersToInsert);
+
+        if (filtersError) throw filtersError;
+      }
+
+      setShowCopyModal(false);
+      setCopyConfig(null);
+      setCopyName('');
+      onRefresh();
+    } catch (err: any) {
+      setError(err.message || 'Failed to copy configuration');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveConfig = async () => {
+    if (!formData.name.trim() || !formData.searchApiUrl.trim() || !formData.getDocumentApiUrl.trim()) {
+      setError('Name, Search API URL, and Get Document API URL are required');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError(null);
+
+      if (editingConfig) {
+        const { error: updateError } = await supabase
+          .from('track_trace_document_configs')
+          .update({
+            name: formData.name,
+            search_api_url: formData.searchApiUrl,
+            get_document_api_url: formData.getDocumentApiUrl,
+            doc_id_field: formData.docIdField,
+            doc_name_field: formData.docNameField,
+            doc_type_field: formData.docTypeField,
+            doc_size_field: formData.docSizeField,
+            auth_config_id: formData.authConfigId || null,
+            is_enabled: formData.isEnabled,
+            email_enabled: formData.emailEnabled,
+            email_subject: formData.emailSubject,
+            email_template: formData.emailTemplate,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', editingConfig.id);
+
+        if (updateError) throw updateError;
+
+        await supabase
+          .from('track_trace_document_filters')
+          .delete()
+          .eq('document_config_id', editingConfig.id);
+
+        if (filters.length > 0) {
+          const filtersToInsert = filters.map((f, index) => ({
+            document_config_id: editingConfig.id,
+            field_name: f.fieldName,
+            value_type: f.valueType,
+            variable_name: f.valueType === 'variable' ? f.variableName : null,
+            static_value: f.valueType === 'static' ? f.staticValue : null,
+            sort_order: index
+          }));
+
+          const { error: filtersError } = await supabase
+            .from('track_trace_document_filters')
+            .insert(filtersToInsert);
+
+          if (filtersError) throw filtersError;
+        }
+      } else {
+        const { data: newConfig, error: insertError } = await supabase
+          .from('track_trace_document_configs')
+          .insert({
+            template_id: templateId,
+            name: formData.name,
+            search_api_url: formData.searchApiUrl,
+            get_document_api_url: formData.getDocumentApiUrl,
+            doc_id_field: formData.docIdField,
+            doc_name_field: formData.docNameField,
+            doc_type_field: formData.docTypeField,
+            doc_size_field: formData.docSizeField,
+            auth_config_id: formData.authConfigId || null,
+            is_enabled: formData.isEnabled,
+            email_enabled: formData.emailEnabled,
+            email_subject: formData.emailSubject,
+            email_template: formData.emailTemplate,
+            sort_order: documentConfigs.length
+          })
+          .select()
+          .single();
+
+        if (insertError) throw insertError;
+
+        if (filters.length > 0 && newConfig) {
+          const filtersToInsert = filters.map((f, index) => ({
+            document_config_id: newConfig.id,
+            field_name: f.fieldName,
+            value_type: f.valueType,
+            variable_name: f.valueType === 'variable' ? f.variableName : null,
+            static_value: f.valueType === 'static' ? f.staticValue : null,
+            sort_order: index
+          }));
+
+          const { error: filtersError } = await supabase
+            .from('track_trace_document_filters')
+            .insert(filtersToInsert);
+
+          if (filtersError) throw filtersError;
+        }
+      }
+
+      setShowConfigForm(false);
+      onRefresh();
+    } catch (err: any) {
+      setError(err.message || 'Failed to save configuration');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAddFilter = () => {
+    setFilters(prev => [...prev, {
+      fieldName: '',
+      valueType: 'static',
+      variableName: '',
+      staticValue: ''
+    }]);
+  };
+
+  const handleRemoveFilter = (index: number) => {
+    setFilters(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleFilterChange = (index: number, field: string, value: string) => {
+    setFilters(prev => prev.map((f, i) =>
+      i === index ? { ...f, [field]: value } : f
+    ));
+  };
+
+  const insertUrlVariable = (variable: string) => {
+    const input = getDocUrlInputRef.current;
+    if (!input) {
+      setFormData(prev => ({ ...prev, getDocumentApiUrl: prev.getDocumentApiUrl + `{{${variable}}}` }));
+      setShowUrlVarDropdown(false);
+      return;
+    }
+
+    const start = input.selectionStart || 0;
+    const end = input.selectionEnd || 0;
+    const currentValue = formData.getDocumentApiUrl;
+    const newValue = currentValue.substring(0, start) + `{{${variable}}}` + currentValue.substring(end);
+
+    setFormData(prev => ({ ...prev, getDocumentApiUrl: newValue }));
+    setShowUrlVarDropdown(false);
+
+    setTimeout(() => {
+      const newCursorPos = start + variable.length + 4;
+      input.focus();
+      input.setSelectionRange(newCursorPos, newCursorPos);
+    }, 0);
+  };
+
+  const handleTestApi = async () => {
+    setTestLoading(true);
+    setTestResults(null);
+
+    try {
+      const filterParts: string[] = [];
+      filters.forEach(f => {
+        if (f.fieldName) {
+          let value = '';
+          if (f.valueType === 'static') {
+            value = f.staticValue;
+          } else if (f.valueType === 'variable') {
+            value = testValues[f.fieldName] || '';
+          }
+          if (value) {
+            filterParts.push(`${f.fieldName} eq '${value}'`);
+          }
+        }
+      });
+
+      const filterQuery = filterParts.length > 0 ? filterParts.join(' and ') : '';
+      const separator = formData.searchApiUrl.includes('?') ? '&' : '?';
+      const searchUrl = filterQuery
+        ? `${formData.searchApiUrl}${separator}$filter=${encodeURIComponent(filterQuery)}`
+        : formData.searchApiUrl;
+
+      const searchResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/track-trace-proxy`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fullUrl: searchUrl,
+          authConfigId: formData.authConfigId || undefined
+        })
+      });
+
+      const searchData = await searchResponse.json();
+
+      if (searchData.error) {
+        setTestResults({
+          error: searchData.error,
+          searchApiUrl: searchUrl
+        });
+        return;
+      }
+
+      let responseArray = searchData.value || searchData;
+
+      if (!Array.isArray(responseArray) && typeof responseArray === 'object' && responseArray !== null) {
+        const dataKeys = Object.keys(responseArray).filter(k => !k.startsWith('_'));
+        if (dataKeys.length > 0 && dataKeys.every(k => !isNaN(Number(k)))) {
+          responseArray = dataKeys.map(k => responseArray[k]);
+        } else {
+          responseArray = [responseArray];
+        }
+      } else if (!Array.isArray(responseArray)) {
+        responseArray = [responseArray];
+      }
+
+      let getDocResponse = null;
+      let getDocApiUrl = '';
+
+      if (responseArray.length > 0 && formData.getDocumentApiUrl) {
+        const firstDoc = responseArray[0];
+        getDocApiUrl = formData.getDocumentApiUrl.replace(/\{\{([^}]+)\}\}/g, (_, key) => {
+          return firstDoc?.[key] || '';
+        });
+
+        const getDocResponseData = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/track-trace-proxy`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            fullUrl: getDocApiUrl,
+            authConfigId: formData.authConfigId || undefined
+          })
+        });
+
+        const getDocData = await getDocResponseData.json();
+        getDocResponse = getDocData.error ? { error: getDocData.error } : { success: true, status: getDocResponseData.status };
+      }
+
+      setTestResults({
+        searchApiResponse: responseArray,
+        getDocResponse,
+        searchApiUrl: searchUrl,
+        getDocApiUrl
+      });
+
+    } catch (err: any) {
+      setTestResults({
+        error: err.message || 'Failed to test API configuration'
+      });
+    } finally {
+      setTestLoading(false);
+    }
+  };
+
+  const variableFilters = filters.filter(f => f.valueType === 'variable' && f.fieldName);
+
+  return createPortal(
+    <>
+      {showCopyModal && copyConfig && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                  <Copy className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                    Copy Configuration
+                  </h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Create a copy of "{copyConfig.name}"
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="p-6">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                New Configuration Name
+              </label>
+              <input
+                type="text"
+                value={copyName}
+                onChange={(e) => setCopyName(e.target.value)}
+                placeholder="Enter name for the copy"
+                className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && copyName.trim()) {
+                    executeCopy();
+                  }
+                }}
+              />
+            </div>
+            <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowCopyModal(false);
+                  setCopyConfig(null);
+                  setCopyName('');
+                }}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={executeCopy}
+                disabled={!copyName.trim() || saving}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Copying...
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-4 w-4" />
+                    Create Copy
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+          <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+            <div>
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+                {showConfigForm ? (editingConfig ? 'Edit Document Configuration' : 'Add Document Configuration') : 'Document API Configuration'}
+              </h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                {showConfigForm ? 'Configure search API and filters for document retrieval' : 'Configure APIs to fetch and display shipment documents'}
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          {error && (
+          <div className="mx-6 mt-4 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg flex items-center gap-2 text-red-700 dark:text-red-400">
+            <AlertCircle className="h-4 w-4 flex-shrink-0" />
+            <span className="text-sm">{error}</span>
+          </div>
+        )}
+
+        <div className="flex-1 overflow-y-auto p-6">
+          {showConfigForm ? (
+            <div className="space-y-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Configuration Name *
+                </label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g., POD Documents"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <div className="flex items-center gap-2">
+                    <Lock className="h-4 w-4" />
+                    Authentication
+                  </div>
+                </label>
+                <select
+                  value={formData.authConfigId}
+                  onChange={(e) => setFormData(prev => ({ ...prev, authConfigId: e.target.value }))}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">No authentication (use default API settings)</option>
+                  {authConfigs.map(config => (
+                    <option key={config.id} value={config.id}>{config.name}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Select which authentication configuration to use for fetching documents. Configure authentications in Settings &gt; API Settings &gt; Authentication.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Search API URL (API #1) *
+                </label>
+                <input
+                  type="text"
+                  value={formData.searchApiUrl}
+                  onChange={(e) => setFormData(prev => ({ ...prev, searchApiUrl: e.target.value }))}
+                  placeholder="https://api.example.com/documents"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Base URL for searching documents. Filters will be appended as $filter query parameter.
+                </p>
+              </div>
+
+              <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    $filter Parameters for Search API URL
+                  </h4>
+                  <button
+                    onClick={handleAddFilter}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add Filter
+                  </button>
+                </div>
+
+                {filters.length === 0 ? (
+                  <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
+                    No filters configured. Click "Add Filter" to add query parameters.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {filters.map((filter, index) => (
+                      <div key={index} className="flex items-start gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                        <div className="flex-1 grid grid-cols-3 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                              Field Name
+                            </label>
+                            <input
+                              type="text"
+                              value={filter.fieldName}
+                              onChange={(e) => handleFilterChange(index, 'fieldName', e.target.value)}
+                              placeholder="e.g., FBNumber"
+                              className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                              Value Type
+                            </label>
+                            <select
+                              value={filter.valueType}
+                              onChange={(e) => handleFilterChange(index, 'valueType', e.target.value)}
+                              className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            >
+                              <option value="variable">Variable (from shipment)</option>
+                              <option value="static">Static Value</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                              {filter.valueType === 'variable' ? 'Variable Name' : 'Static Value'}
+                            </label>
+                            {filter.valueType === 'variable' ? (
+                              <select
+                                value={filter.variableName}
+                                onChange={(e) => handleFilterChange(index, 'variableName', e.target.value)}
+                                className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                              >
+                                <option value="">Select variable...</option>
+                                {templateFields
+                                  .filter(f => f.parameterType === '$select')
+                                  .map(field => (
+                                    <option key={field.id} value={field.apiFieldPath || field.fieldName}>
+                                      {field.displayLabel} ({field.apiFieldPath || field.fieldName})
+                                    </option>
+                                  ))}
+                              </select>
+                            ) : (
+                              <input
+                                type="text"
+                                value={filter.staticValue}
+                                onChange={(e) => handleFilterChange(index, 'staticValue', e.target.value)}
+                                placeholder="e.g., POD"
+                                className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                              />
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleRemoveFilter(index)}
+                          className="p-1.5 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 rounded mt-5"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">
+                  Response Field Mappings
+                </h4>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                  Define the field names from the Search API response. These can be used as variables in the Get Document API URL below.
+                </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                      Document ID Field
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.docIdField}
+                      onChange={(e) => setFormData(prev => ({ ...prev, docIdField: e.target.value }))}
+                      placeholder="docId"
+                      className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                      Document Name Field
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.docNameField}
+                      onChange={(e) => setFormData(prev => ({ ...prev, docNameField: e.target.value }))}
+                      placeholder="fileName"
+                      className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                      File Type Field
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.docTypeField}
+                      onChange={(e) => setFormData(prev => ({ ...prev, docTypeField: e.target.value }))}
+                      placeholder="fileExtension"
+                      className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                      File Size Field
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.docSizeField}
+                      onChange={(e) => setFormData(prev => ({ ...prev, docSizeField: e.target.value }))}
+                      placeholder="fileSize"
+                      className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Get Document API URL (API #2) *
+                  </label>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowUrlVarDropdown(!showUrlVarDropdown)}
+                      className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded transition-colors"
+                    >
+                      <ChevronDown className="h-3 w-3" />
+                      Insert Variable
+                    </button>
+                    {showUrlVarDropdown && (
+                      <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10">
+                        <div className="p-2 border-b border-gray-200 dark:border-gray-700">
+                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Response Field Variables</p>
+                        </div>
+                        <div className="py-1">
+                          {[
+                            { key: formData.docIdField || 'docId', label: 'Document ID' },
+                            { key: formData.docNameField || 'fileName', label: 'Document Name' },
+                            { key: formData.docTypeField || 'fileExtension', label: 'File Type' },
+                            { key: formData.docSizeField || 'fileSize', label: 'File Size' },
+                          ].map((item) => (
+                            <button
+                              key={item.key}
+                              type="button"
+                              onClick={() => insertUrlVariable(item.key)}
+                              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center justify-between"
+                            >
+                              <span className="text-gray-700 dark:text-gray-300">{item.label}</span>
+                              <code className="text-xs bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-blue-600 dark:text-blue-400">{`{{${item.key}}}`}</code>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <input
+                  ref={getDocUrlInputRef}
+                  type="text"
+                  value={formData.getDocumentApiUrl}
+                  onChange={(e) => setFormData(prev => ({ ...prev, getDocumentApiUrl: e.target.value }))}
+                  placeholder="https://api.example.com/documents/{{docId}}/content"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  URL template for retrieving document content. Use variables like {`{{docId}}`} from response field mappings above.
+                </p>
+              </div>
+
+              <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setShowTestSection(!showTestSection)}
+                  className="w-full px-4 py-3 flex items-center justify-between bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <Play className="h-4 w-4 text-green-600 dark:text-green-400" />
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Test Configuration</span>
+                  </div>
+                  {showTestSection ? (
+                    <ChevronUp className="h-4 w-4 text-gray-500" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4 text-gray-500" />
+                  )}
+                </button>
+
+                {showTestSection && (
+                  <div className="p-4 space-y-4 border-t border-gray-200 dark:border-gray-700">
+                    {variableFilters.length > 0 ? (
+                      <div className="space-y-3">
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          Enter test values for the variable filters to test the API configuration.
+                        </p>
+                        {variableFilters.map((f, index) => (
+                          <div key={index}>
+                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                              {f.fieldName} {f.variableName && <span className="text-gray-400">({f.variableName})</span>}
+                            </label>
+                            <input
+                              type="text"
+                              value={testValues[f.fieldName] || ''}
+                              onChange={(e) => setTestValues(prev => ({ ...prev, [f.fieldName]: e.target.value }))}
+                              placeholder={`Enter test value for ${f.fieldName}`}
+                              className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        No variable filters configured. Add a filter with "Variable (from shipment)" type to test with dynamic values.
+                      </p>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handleTestApi}
+                      disabled={testLoading || !formData.searchApiUrl}
+                      className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {testLoading ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Testing...
+                        </>
+                      ) : (
+                        <>
+                          <Play className="h-4 w-4" />
+                          Test APIs
+                        </>
+                      )}
+                    </button>
+
+                    {testResults && (
+                      <div className="space-y-3">
+                        {testResults.error ? (
+                          <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                            <div className="flex items-start gap-2">
+                              <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+                              <div>
+                                <p className="text-sm font-medium text-red-800 dark:text-red-300">Error</p>
+                                <p className="text-xs text-red-600 dark:text-red-400 mt-1">{testResults.error}</p>
+                              </div>
+                            </div>
+                            {testResults.searchApiUrl && (
+                              <div className="mt-2 pt-2 border-t border-red-200 dark:border-red-800">
+                                <p className="text-xs text-red-600 dark:text-red-400 font-mono break-all">{testResults.searchApiUrl}</p>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <>
+                            <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                              <div className="flex items-center gap-2 mb-2">
+                                <div className="w-2 h-2 bg-green-500 rounded-full" />
+                                <p className="text-sm font-medium text-green-800 dark:text-green-300">
+                                  Search API (API #1) - {testResults.searchApiResponse?.length || 0} document(s) found
+                                </p>
+                              </div>
+                              <p className="text-xs text-green-600 dark:text-green-400 font-mono break-all mb-2">{testResults.searchApiUrl}</p>
+                              {testResults.searchApiResponse && testResults.searchApiResponse.length > 0 && (
+                                <div className="mt-2 pt-2 border-t border-green-200 dark:border-green-800">
+                                  <p className="text-xs font-medium text-green-700 dark:text-green-400 mb-1">First result:</p>
+                                  <div className="bg-white dark:bg-gray-800 rounded p-2 text-xs font-mono overflow-x-auto max-h-32 overflow-y-auto">
+                                    <pre className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                                      {JSON.stringify(testResults.searchApiResponse[0], null, 2)}
+                                    </pre>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {testResults.getDocApiUrl && (
+                              <div className={`p-3 border rounded-lg ${
+                                testResults.getDocResponse?.success
+                                  ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                                  : 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800'
+                              }`}>
+                                <div className="flex items-center gap-2 mb-2">
+                                  <div className={`w-2 h-2 rounded-full ${
+                                    testResults.getDocResponse?.success ? 'bg-green-500' : 'bg-yellow-500'
+                                  }`} />
+                                  <p className={`text-sm font-medium ${
+                                    testResults.getDocResponse?.success
+                                      ? 'text-green-800 dark:text-green-300'
+                                      : 'text-yellow-800 dark:text-yellow-300'
+                                  }`}>
+                                    Get Document API (API #2) - {testResults.getDocResponse?.success ? 'Accessible' : 'Issue detected'}
+                                  </p>
+                                </div>
+                                <p className={`text-xs font-mono break-all ${
+                                  testResults.getDocResponse?.success
+                                    ? 'text-green-600 dark:text-green-400'
+                                    : 'text-yellow-600 dark:text-yellow-400'
+                                }`}>{testResults.getDocApiUrl}</p>
+                                {testResults.getDocResponse?.error && (
+                                  <p className="text-xs text-red-600 dark:text-red-400 mt-1">{testResults.getDocResponse.error}</p>
+                                )}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={formData.isEnabled}
+                  onChange={(e) => setFormData(prev => ({ ...prev, isEnabled: e.target.checked }))}
+                  className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-700 dark:text-gray-300">Enable this configuration</span>
+              </label>
+
+              <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 mt-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
+                    <Mail className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Email Document Feature</h4>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Allow users to email documents to recipients</p>
+                  </div>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.emailEnabled}
+                      onChange={(e) => setFormData(prev => ({ ...prev, emailEnabled: e.target.checked }))}
+                      className="w-4 h-4 text-orange-600 rounded border-gray-300 focus:ring-orange-500"
+                    />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Enable Email Button</span>
+                  </label>
+                </div>
+
+                {formData.emailEnabled && (
+                  <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Email Subject
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.emailSubject}
+                        onChange={(e) => setFormData(prev => ({ ...prev, emailSubject: e.target.value }))}
+                        placeholder="Document: {{document_name}}"
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-orange-500"
+                      />
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        Available variables: {'{{document_name}}'}, {'{{company_name}}'}
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Email Template (HTML)
+                      </label>
+                      <textarea
+                        value={formData.emailTemplate}
+                        onChange={(e) => setFormData(prev => ({ ...prev, emailTemplate: e.target.value }))}
+                        rows={12}
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-orange-500 font-mono text-sm"
+                      />
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        HTML email template. Available variables: {'{{document_name}}'}, {'{{company_name}}'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {documentConfigs.length === 0 ? (
+                <div className="text-center py-8">
+                  <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-600 dark:text-gray-400">No document configurations yet</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">Add a configuration to enable document retrieval</p>
+                </div>
+              ) : (
+                documentConfigs.map(config => (
+                  <div key={config.id} className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-medium text-gray-900 dark:text-gray-100">{config.name}</h4>
+                          {!config.isEnabled && (
+                            <span className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-600 text-gray-500 rounded">
+                              Disabled
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 font-mono mt-1 truncate">
+                          {config.searchApiUrl}
+                        </p>
+                        {config.filters && config.filters.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {config.filters.map((f, i) => (
+                              <span key={i} className="text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded">
+                                {f.fieldName} = {f.valueType === 'variable' ? `{${f.variableName}}` : `'${f.staticValue}'`}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleEditConfig(config)}
+                          className="p-1.5 text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                          title="Edit"
+                        >
+                          <Edit2 className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleCopyConfig(config)}
+                          disabled={saving}
+                          className="p-1.5 text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded disabled:opacity-50"
+                          title="Copy"
+                        >
+                          <Copy className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteConfig(config.id)}
+                          className="p-1.5 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 rounded"
+                          title="Delete"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+
+              <button
+                onClick={handleAddConfig}
+                className="w-full py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-400 hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex items-center justify-center gap-2"
+              >
+                <Plus className="h-5 w-5" />
+                Add Document Configuration
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
+          {showConfigForm ? (
+            <>
+              <button
+                onClick={() => setShowConfigForm(false)}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              >
+                Back
+              </button>
+              <button
+                onClick={handleSaveConfig}
+                disabled={saving}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4" />
+                    Save Configuration
+                  </>
+                )}
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={onClose}
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              Close
+            </button>
+          )}
+        </div>
+        </div>
+      </div>
+    </>,
+    document.body
+  );
+}
+
+interface TimelineConfigModalProps {
+  templateId: string;
+  section: TrackTraceTemplateSection;
+  timelineStatuses: TrackTraceTimelineStatus[];
+  templateFields: TrackTraceTemplateField[];
+  onClose: () => void;
+  onRefresh: () => void;
+  onSaveConfig: (config: TimelineSectionConfig) => Promise<void>;
+}
+
+function TimelineConfigModal({
+  templateId,
+  section,
+  timelineStatuses,
+  templateFields,
+  onClose,
+  onRefresh,
+  onSaveConfig
+}: TimelineConfigModalProps) {
+  const [statuses, setStatuses] = useState<TrackTraceTimelineStatus[]>(timelineStatuses);
+  const [editingStatus, setEditingStatus] = useState<TrackTraceTimelineStatus | null>(null);
+  const [newStatusName, setNewStatusName] = useState('');
+  const [newChildStatus, setNewChildStatus] = useState('');
+  const [statusField, setStatusField] = useState((section.config as TimelineSectionConfig)?.statusField || '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setStatuses(timelineStatuses);
+  }, [timelineStatuses]);
+
+  const handleAddStatus = async () => {
+    if (!newStatusName.trim()) return;
+
+    try {
+      setSaving(true);
+      setError(null);
+
+      const nextOrder = statuses.length > 0
+        ? Math.max(...statuses.map(s => s.displayOrder)) + 1
+        : 1;
+
+      const { data, error } = await supabase
+        .from('track_trace_timeline_statuses')
+        .insert({
+          template_id: templateId,
+          name: newStatusName.trim(),
+          display_order: nextOrder
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      const newStatus: TrackTraceTimelineStatus = {
+        id: data.id,
+        templateId: data.template_id,
+        name: data.name,
+        displayOrder: data.display_order,
+        locationField: data.location_field,
+        dateField: data.date_field,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+        childStatuses: []
+      };
+
+      setStatuses(prev => [...prev, newStatus]);
+      setNewStatusName('');
+      onRefresh();
+    } catch (err: any) {
+      setError(err.message || 'Failed to add status');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteStatus = async (statusId: string) => {
+    try {
+      setSaving(true);
+      setError(null);
+
+      const { error } = await supabase
+        .from('track_trace_timeline_statuses')
+        .delete()
+        .eq('id', statusId);
+
+      if (error) throw error;
+
+      setStatuses(prev => prev.filter(s => s.id !== statusId));
+      if (editingStatus?.id === statusId) {
+        setEditingStatus(null);
+      }
+      onRefresh();
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete status');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUpdateStatus = async (status: TrackTraceTimelineStatus) => {
+    try {
+      setSaving(true);
+      setError(null);
+
+      const { error } = await supabase
+        .from('track_trace_timeline_statuses')
+        .update({
+          name: status.name,
+          location_field: status.locationField || null,
+          date_field: status.dateField || null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', status.id);
+
+      if (error) throw error;
+
+      setStatuses(prev => prev.map(s => s.id === status.id ? status : s));
+      onRefresh();
+    } catch (err: any) {
+      setError(err.message || 'Failed to update status');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAddChildStatus = async (parentId: string) => {
+    if (!newChildStatus.trim()) return;
+
+    try {
+      setSaving(true);
+      setError(null);
+
+      const parent = statuses.find(s => s.id === parentId);
+      const nextOrder = parent?.childStatuses && parent.childStatuses.length > 0
+        ? Math.max(...parent.childStatuses.map(c => c.displayOrder)) + 1
+        : 1;
+
+      const { data, error } = await supabase
+        .from('track_trace_timeline_child_statuses')
+        .insert({
+          timeline_status_id: parentId,
+          status_value: newChildStatus.trim(),
+          display_order: nextOrder
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      const newChild: TrackTraceTimelineChildStatus = {
+        id: data.id,
+        timelineStatusId: data.timeline_status_id,
+        statusValue: data.status_value,
+        displayOrder: data.display_order,
+        createdAt: data.created_at
+      };
+
+      setStatuses(prev => prev.map(s => {
+        if (s.id === parentId) {
+          return {
+            ...s,
+            childStatuses: [...(s.childStatuses || []), newChild]
+          };
+        }
+        return s;
+      }));
+
+      if (editingStatus?.id === parentId) {
+        setEditingStatus(prev => prev ? {
+          ...prev,
+          childStatuses: [...(prev.childStatuses || []), newChild]
+        } : null);
+      }
+
+      setNewChildStatus('');
+      onRefresh();
+    } catch (err: any) {
+      setError(err.message || 'Failed to add child status');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteChildStatus = async (childId: string, parentId: string) => {
+    try {
+      setSaving(true);
+      setError(null);
+
+      const { error } = await supabase
+        .from('track_trace_timeline_child_statuses')
+        .delete()
+        .eq('id', childId);
+
+      if (error) throw error;
+
+      setStatuses(prev => prev.map(s => {
+        if (s.id === parentId) {
+          return {
+            ...s,
+            childStatuses: (s.childStatuses || []).filter(c => c.id !== childId)
+          };
+        }
+        return s;
+      }));
+
+      if (editingStatus?.id === parentId) {
+        setEditingStatus(prev => prev ? {
+          ...prev,
+          childStatuses: (prev.childStatuses || []).filter(c => c.id !== childId)
+        } : null);
+      }
+
+      onRefresh();
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete child status');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleMoveStatus = async (statusId: string, direction: 'up' | 'down') => {
+    const index = statuses.findIndex(s => s.id === statusId);
+    if (index === -1) return;
+    if (direction === 'up' && index === 0) return;
+    if (direction === 'down' && index === statuses.length - 1) return;
+
+    const newIndex = direction === 'up' ? index - 1 : index + 1;
+    const newStatuses = [...statuses];
+    const temp = newStatuses[index];
+    newStatuses[index] = newStatuses[newIndex];
+    newStatuses[newIndex] = temp;
+
+    const updatedStatuses = newStatuses.map((s, i) => ({
+      ...s,
+      displayOrder: i + 1
+    }));
+
+    setStatuses(updatedStatuses);
+
+    try {
+      for (const s of updatedStatuses) {
+        await supabase
+          .from('track_trace_timeline_statuses')
+          .update({ display_order: s.displayOrder })
+          .eq('id', s.id);
+      }
+      onRefresh();
+    } catch (err) {
+      console.error('Failed to update status order:', err);
+    }
+  };
+
+  const handleSaveConfig = async () => {
+    try {
+      setSaving(true);
+      const config: TimelineSectionConfig = {
+        statusField
+      };
+      await onSaveConfig(config);
+      onClose();
+    } catch (err: any) {
+      setError(err.message || 'Failed to save configuration');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const fieldOptions = templateFields
+    .filter(f => f.isEnabled)
+    .reduce((acc, f) => {
+      if (!acc.some(opt => opt.value === f.fieldName)) {
+        acc.push({ value: f.fieldName, label: f.displayLabel });
+      }
+      return acc;
+    }, [] as { value: string; label: string }[]);
+
+  return createPortal(
+    <>
+      <div className="fixed inset-0 bg-black/50 z-50" onClick={onClose} />
+      <div className="fixed inset-4 md:inset-8 lg:inset-16 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden">
+        <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+          <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+            Shipment Timeline Configuration
+          </h3>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+          >
+            <X className="h-5 w-5 text-gray-500" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {error && (
+            <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
+                <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+              </div>
+            </div>
+          )}
+
+          <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Status Field
+            </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+              Select the API field that contains the shipment status. This value will be compared against child statuses to determine timeline progress.
+            </p>
+            <Select
+              value={statusField}
+              onValueChange={setStatusField}
+              options={fieldOptions}
+              placeholder="Select status field"
+            />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="font-medium text-gray-900 dark:text-gray-100">Timeline Statuses</h4>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={newStatusName}
+                  onChange={(e) => setNewStatusName(e.target.value)}
+                  placeholder="New status name..."
+                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm"
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddStatus()}
+                />
+                <button
+                  onClick={handleAddStatus}
+                  disabled={saving || !newStatusName.trim()}
+                  className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Status
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {statuses.length === 0 ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400 italic text-center py-8">
+                  No timeline statuses configured. Add statuses to define the shipment timeline.
+                </p>
+              ) : (
+                statuses.map((status, index) => (
+                  <div
+                    key={status.id}
+                    className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden"
+                  >
+                    <div className="bg-gray-50 dark:bg-gray-700/50 p-4 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="flex flex-col gap-1">
+                          <button
+                            onClick={() => handleMoveStatus(status.id, 'up')}
+                            disabled={index === 0}
+                            className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-30"
+                          >
+                            <ChevronUp className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => handleMoveStatus(status.id, 'down')}
+                            disabled={index === statuses.length - 1}
+                            className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-30"
+                          >
+                            <ChevronDown className="h-4 w-4" />
+                          </button>
+                        </div>
+                        <span className="w-8 h-8 flex items-center justify-center bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full text-sm font-medium">
+                          {status.displayOrder}
+                        </span>
+                        <div>
+                          <h5 className="font-medium text-gray-900 dark:text-gray-100">{status.name}</h5>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {status.childStatuses?.length || 0} child status{(status.childStatuses?.length || 0) !== 1 ? 'es' : ''}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setEditingStatus(editingStatus?.id === status.id ? null : status)}
+                          className="p-1.5 text-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 rounded"
+                          title="Configure"
+                        >
+                          <Settings className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteStatus(status.id)}
+                          className="p-1.5 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 rounded"
+                          title="Delete"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {editingStatus?.id === status.id && (
+                      <div className="p-4 border-t border-gray-200 dark:border-gray-700 space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                              Status Name
+                            </label>
+                            <input
+                              type="text"
+                              value={editingStatus.name}
+                              onChange={(e) => setEditingStatus({ ...editingStatus, name: e.target.value })}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                              Location Field (Optional)
+                            </label>
+                            <Select
+                              value={editingStatus.locationField || '__none__'}
+                              onValueChange={(value) => setEditingStatus({ ...editingStatus, locationField: value === '__none__' ? undefined : value })}
+                              options={[
+                                { value: '__none__', label: 'None' },
+                                ...fieldOptions
+                              ]}
+                              placeholder="Select field"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Date Field (Optional)
+                          </label>
+                          <Select
+                            value={editingStatus.dateField || '__none__'}
+                            onValueChange={(value) => setEditingStatus({ ...editingStatus, dateField: value === '__none__' ? undefined : value })}
+                            options={[
+                              { value: '__none__', label: 'None' },
+                              ...fieldOptions
+                            ]}
+                            placeholder="Select field"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            Child Statuses
+                          </label>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                            Add API status values that should mark this timeline status as complete. If the shipment's status matches any of these values, this status and all previous statuses will be shown as complete.
+                          </p>
+                          <div className="flex items-center gap-2 mb-3">
+                            <input
+                              type="text"
+                              value={newChildStatus}
+                              onChange={(e) => setNewChildStatus(e.target.value)}
+                              placeholder="API status value (e.g., DELIVERED, IN_TRANSIT)"
+                              className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm"
+                              onKeyDown={(e) => e.key === 'Enter' && handleAddChildStatus(status.id)}
+                            />
+                            <button
+                              onClick={() => handleAddChildStatus(status.id)}
+                              disabled={saving || !newChildStatus.trim()}
+                              className="flex items-center gap-1 px-3 py-2 bg-gray-100 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-500 disabled:opacity-50 text-sm"
+                            >
+                              <Plus className="h-4 w-4" />
+                              Add
+                            </button>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2">
+                            {(editingStatus.childStatuses || []).map((child) => (
+                              <span
+                                key={child.id}
+                                className="inline-flex items-center gap-1 px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-full text-sm"
+                              >
+                                {child.statusValue}
+                                <button
+                                  onClick={() => handleDeleteChildStatus(child.id, status.id)}
+                                  className="p-0.5 hover:bg-blue-200 dark:hover:bg-blue-800 rounded-full"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </span>
+                            ))}
+                            {(!editingStatus.childStatuses || editingStatus.childStatuses.length === 0) && (
+                              <span className="text-sm text-gray-500 dark:text-gray-400 italic">
+                                No child statuses added
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex justify-end">
+                          <button
+                            onClick={() => handleUpdateStatus(editingStatus)}
+                            disabled={saving}
+                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm"
+                          >
+                            {saving ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Save className="h-4 w-4" />
+                            )}
+                            Save Changes
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          >
+            Close
+          </button>
+          <button
+            onClick={handleSaveConfig}
+            disabled={saving || !statusField}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+          >
+            {saving ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              <>
+                <Save className="h-4 w-4" />
+                Save Configuration
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </>,
+    document.body
+  );
+}
+
+interface BarcodeDetailsConfigModalProps {
+  config: BarcodeDetailsSectionConfig;
+  onSave: (config: BarcodeDetailsSectionConfig) => void;
+  onClose: () => void;
+  saving: boolean;
+  secondaryApis: SecondaryApiConfig[];
+  apiSpecs: ApiSpec[];
+  apiEndpoints: ApiSpecEndpoint[];
+  authConfigs: { id: string; name: string }[];
+  onSpecChange: (specId: string) => void;
+}
+
+function BarcodeDetailsConfigModal({
+  config,
+  onSave,
+  onClose,
+  saving,
+  secondaryApis,
+  apiSpecs,
+  apiEndpoints,
+  authConfigs,
+  onSpecChange
+}: BarcodeDetailsConfigModalProps) {
+  const [localConfig, setLocalConfig] = useState<BarcodeDetailsSectionConfig>({
+    apiSourceType: config.apiSourceType || 'main',
+    secondaryApiId: config.secondaryApiId || '',
+    apiSpecId: config.apiSpecId || '',
+    apiSpecEndpointId: config.apiSpecEndpointId || '',
+    responseArrayPath: config.responseArrayPath || '',
+    nestedArrayPath: config.nestedArrayPath || '',
+    secondaryEndpointId: config.secondaryEndpointId || '',
+    secondaryParamField: config.secondaryParamField || '',
+    fieldMappings: config.fieldMappings || [],
+    imageConfig: config.imageConfig || { apiUrl: '', sourceField: '' }
+  });
+
+  const [newFieldLabel, setNewFieldLabel] = useState('');
+  const [newFieldApiField, setNewFieldApiField] = useState('');
+  const [newFieldShowTotal, setNewFieldShowTotal] = useState(false);
+  const [newFieldIsRequired, setNewFieldIsRequired] = useState(false);
+  const [newFieldGroupId, setNewFieldGroupId] = useState('');
+  const [newFieldGroupSeparator, setNewFieldGroupSeparator] = useState('');
+  const [newFieldValueSuffix, setNewFieldValueSuffix] = useState('');
+  const [editingFieldIndex, setEditingFieldIndex] = useState<number | null>(null);
+
+  const filteredSpecs = apiSpecs.filter(spec => {
+    if (localConfig.apiSourceType === 'main') {
+      return !spec.secondary_api_id;
+    } else {
+      return spec.secondary_api_id === localConfig.secondaryApiId;
+    }
+  });
+
+  const handleAddField = () => {
+    if (!newFieldLabel.trim() || !newFieldApiField.trim()) return;
+
+    const newMapping: BarcodeDetailsFieldMapping = {
+      label: newFieldLabel.trim(),
+      apiField: newFieldApiField.trim(),
+      showTotal: newFieldShowTotal,
+      isRequired: newFieldIsRequired,
+      displayOrder: editingFieldIndex !== null ? editingFieldIndex : localConfig.fieldMappings.length,
+      groupId: newFieldGroupId.trim() || undefined,
+      groupSeparator: newFieldGroupSeparator || undefined,
+      valueSuffix: newFieldValueSuffix || undefined
+    };
+
+    if (editingFieldIndex !== null) {
+      setLocalConfig(prev => ({
+        ...prev,
+        fieldMappings: prev.fieldMappings.map((m, i) => i === editingFieldIndex ? newMapping : m)
+      }));
+    } else {
+      setLocalConfig(prev => ({
+        ...prev,
+        fieldMappings: [...prev.fieldMappings, newMapping]
+      }));
+    }
+
+    setNewFieldLabel('');
+    setNewFieldApiField('');
+    setNewFieldShowTotal(false);
+    setNewFieldIsRequired(false);
+    setNewFieldGroupId('');
+    setNewFieldGroupSeparator('');
+    setNewFieldValueSuffix('');
+    setEditingFieldIndex(null);
+  };
+
+  const handleEditField = (index: number) => {
+    const field = localConfig.fieldMappings[index];
+    setNewFieldLabel(field.label);
+    setNewFieldApiField(field.apiField);
+    setNewFieldShowTotal(field.showTotal);
+    setNewFieldIsRequired(field.isRequired || false);
+    setNewFieldGroupId(field.groupId || '');
+    setNewFieldGroupSeparator(field.groupSeparator || '');
+    setNewFieldValueSuffix(field.valueSuffix || '');
+    setEditingFieldIndex(index);
+  };
+
+  const handleRemoveField = (index: number) => {
+    setLocalConfig(prev => ({
+      ...prev,
+      fieldMappings: prev.fieldMappings.filter((_, i) => i !== index)
+    }));
+  };
+
+  const handleSpecChange = (specId: string) => {
+    setLocalConfig(prev => ({
+      ...prev,
+      apiSpecId: specId,
+      apiSpecEndpointId: ''
+    }));
+    if (specId) {
+      onSpecChange(specId);
+    }
+  };
+
+  return createPortal(
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+            Configure Barcode Details Section
+          </h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            Configure the API endpoint, field mappings, and image viewer for barcode details
+          </p>
+        </div>
+
+        <div className="p-6 space-y-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              API Source
+            </label>
+            <div className="flex space-x-4">
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  name="barcodeApiSourceType"
+                  value="main"
+                  checked={localConfig.apiSourceType === 'main'}
+                  onChange={() => setLocalConfig(prev => ({
+                    ...prev,
+                    apiSourceType: 'main',
+                    secondaryApiId: '',
+                    apiSpecId: '',
+                    apiSpecEndpointId: ''
+                  }))}
+                  className="mr-2"
+                />
+                <span className="text-sm text-gray-700 dark:text-gray-300">Main API</span>
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  name="barcodeApiSourceType"
+                  value="secondary"
+                  checked={localConfig.apiSourceType === 'secondary'}
+                  onChange={() => setLocalConfig(prev => ({
+                    ...prev,
+                    apiSourceType: 'secondary',
+                    apiSpecId: '',
+                    apiSpecEndpointId: ''
+                  }))}
+                  className="mr-2"
+                />
+                <span className="text-sm text-gray-700 dark:text-gray-300">Secondary API</span>
+              </label>
+            </div>
+          </div>
+
+          {localConfig.apiSourceType === 'secondary' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Secondary API
+              </label>
+              <Select
+                value={localConfig.secondaryApiId || '__none__'}
+                onValueChange={(value) => setLocalConfig(prev => ({
+                  ...prev,
+                  secondaryApiId: value === '__none__' ? '' : value,
+                  apiSpecId: '',
+                  apiSpecEndpointId: ''
+                }))}
+                options={[
+                  { value: '__none__', label: 'Select Secondary API...' },
+                  ...secondaryApis.map(api => ({ value: api.id!, label: api.name }))
+                ]}
+              />
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              API Specification
+            </label>
+            <Select
+              value={localConfig.apiSpecId || '__none__'}
+              onValueChange={(value) => handleSpecChange(value === '__none__' ? '' : value)}
+              options={[
+                { value: '__none__', label: 'Select API Spec...' },
+                ...filteredSpecs.map(spec => ({ value: spec.id, label: spec.name }))
+              ]}
+            />
+          </div>
+
+          {localConfig.apiSpecId && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                API Endpoint
+              </label>
+              <Select
+                value={localConfig.apiSpecEndpointId || '__none__'}
+                onValueChange={(value) => setLocalConfig(prev => ({
+                  ...prev,
+                  apiSpecEndpointId: value === '__none__' ? '' : value
+                }))}
+                options={[
+                  { value: '__none__', label: 'Select Endpoint...' },
+                  ...apiEndpoints
+                    .filter(ep => ep.method === 'GET')
+                    .map(ep => ({
+                      value: ep.id,
+                      label: `GET ${ep.path}${ep.summary ? ` - ${ep.summary}` : ''}`
+                    }))
+                ]}
+              />
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Response Array Path
+            </label>
+            <input
+              type="text"
+              value={localConfig.responseArrayPath || ''}
+              onChange={(e) => setLocalConfig(prev => ({ ...prev, responseArrayPath: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-gray-100"
+              placeholder="e.g., details or data.items"
+            />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Path to the parent array in the API response (dot notation). Leave empty if response is already an array.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Nested Array Field (Optional)
+            </label>
+            <input
+              type="text"
+              value={localConfig.nestedArrayPath || ''}
+              onChange={(e) => setLocalConfig(prev => ({ ...prev, nestedArrayPath: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-gray-100"
+              placeholder="e.g., barcodes"
+            />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Field within each parent item containing the nested array to flatten. Each nested item inherits parent fields.
+              Example: If parent has commodity/description and child has barcode/pcs, both are accessible in field mappings.
+            </p>
+          </div>
+
+          {localConfig.apiSpecId && (
+            <div className="border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Secondary API Endpoint (API #2) - Optional
+                </label>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  If your barcode data requires a second API call, select the endpoint here. API #2 will be called for each item returned by API #1.
+                </p>
+                <Select
+                  value={localConfig.secondaryEndpointId || '__none__'}
+                  onValueChange={(value) => setLocalConfig(prev => ({
+                    ...prev,
+                    secondaryEndpointId: value === '__none__' ? '' : value
+                  }))}
+                  options={[
+                    { value: '__none__', label: 'None (single API call)' },
+                    ...apiEndpoints
+                      .filter(ep => ep.method === 'GET')
+                      .map(ep => ({
+                        value: ep.id,
+                        label: `GET ${ep.path}${ep.summary ? ` - ${ep.summary}` : ''}`
+                      }))
+                  ]}
+                />
+              </div>
+
+              {localConfig.secondaryEndpointId && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Parameter Field from API #1
+                  </label>
+                  <input
+                    type="text"
+                    value={localConfig.secondaryParamField || ''}
+                    onChange={(e) => setLocalConfig(prev => ({ ...prev, secondaryParamField: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-gray-100"
+                    placeholder="e.g., orderDetailId"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    The field from API #1 response to use as the URL parameter in API #2. This value will replace the matching variable in the API #2 URL.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Field Mappings
+            </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+              Define the columns to display in the barcode details grid. Enable "Show Total" for numeric fields to display a sum in the footer.
+            </p>
+
+            {localConfig.fieldMappings.length > 0 && (
+              <div className="space-y-2 mb-4">
+                {localConfig.fieldMappings.map((field, index) => (
+                  <div key={index} className={`flex items-center justify-between p-3 rounded-lg ${editingFieldIndex === index ? 'bg-blue-50 dark:bg-blue-900/30 border border-blue-300' : field.groupId ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800' : 'bg-gray-50 dark:bg-gray-700/50'}`}>
+                    <div className="flex items-center space-x-3 flex-1 flex-wrap gap-y-1">
+                      <span className="font-medium text-sm text-gray-900 dark:text-gray-100">
+                        {field.label}
+                      </span>
+                      <span className="text-sm text-gray-600 dark:text-gray-400">
+                        {field.apiField}
+                      </span>
+                      {field.groupId && (
+                        <span className="px-2 py-0.5 text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 rounded">
+                          Group: {field.groupId}
+                          {field.groupSeparator && ` (sep: "${field.groupSeparator}")`}
+                          {field.valueSuffix && ` (suffix: "${field.valueSuffix}")`}
+                        </span>
+                      )}
+                      {field.showTotal && (
+                        <span className="px-2 py-0.5 text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded">
+                          Show Total
+                        </span>
+                      )}
+                      {field.isRequired && (
+                        <span className="px-2 py-0.5 text-xs bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 rounded">
+                          Required
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <button
+                        onClick={() => handleEditField(index)}
+                        className="p-1 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:hover:bg-gray-600 rounded"
+                        title="Edit field"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => handleRemoveField(index)}
+                        className="p-1 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 rounded"
+                        title="Remove field"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <div className="grid grid-cols-12 gap-2 items-end">
+                <div className="col-span-3">
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Label</label>
+                  <input
+                    type="text"
+                    value={newFieldLabel}
+                    onChange={(e) => setNewFieldLabel(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-gray-100"
+                    placeholder="Column header"
+                  />
+                </div>
+                <div className="col-span-3">
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">API Field</label>
+                  <input
+                    type="text"
+                    value={newFieldApiField}
+                    onChange={(e) => setNewFieldApiField(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-gray-100"
+                    placeholder="API field path"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newFieldShowTotal}
+                      onChange={(e) => setNewFieldShowTotal(e.target.checked)}
+                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    />
+                    <span className="text-xs text-gray-600 dark:text-gray-400">Total</span>
+                  </label>
+                </div>
+                <div className="col-span-2">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newFieldIsRequired}
+                      onChange={(e) => setNewFieldIsRequired(e.target.checked)}
+                      className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+                    />
+                    <span className="text-xs text-gray-600 dark:text-gray-400">Required</span>
+                  </label>
+                </div>
+                <div className="col-span-2">
+                  <button
+                    onClick={handleAddField}
+                    disabled={!newFieldLabel.trim() || !newFieldApiField.trim()}
+                    className="w-full px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {editingFieldIndex !== null ? 'Update' : 'Add'}
+                  </button>
+                </div>
+              </div>
+              <div className="grid grid-cols-12 gap-2 items-end">
+                <div className="col-span-3">
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Group ID</label>
+                  <input
+                    type="text"
+                    value={newFieldGroupId}
+                    onChange={(e) => setNewFieldGroupId(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-gray-100"
+                    placeholder="e.g., dimensions"
+                    list="existing-group-ids"
+                  />
+                  <datalist id="existing-group-ids">
+                    {[...new Set(localConfig.fieldMappings.map(f => f.groupId).filter(Boolean))].map(gid => (
+                      <option key={gid} value={gid} />
+                    ))}
+                  </datalist>
+                </div>
+                <div className="col-span-3">
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Separator</label>
+                  <input
+                    type="text"
+                    value={newFieldGroupSeparator}
+                    onChange={(e) => setNewFieldGroupSeparator(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-gray-100"
+                    placeholder="e.g., x or space"
+                  />
+                </div>
+                <div className="col-span-3">
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Value Suffix</label>
+                  <input
+                    type="text"
+                    value={newFieldValueSuffix}
+                    onChange={(e) => setNewFieldValueSuffix(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-gray-100"
+                    placeholder={'e.g., " for inches'}
+                  />
+                </div>
+                <div className="col-span-3">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Fields with same Group ID combine into one column
+                  </p>
+                </div>
+              </div>
+            </div>
+            {editingFieldIndex !== null && (
+              <button
+                onClick={() => {
+                  setNewFieldLabel('');
+                  setNewFieldApiField('');
+                  setNewFieldShowTotal(false);
+                  setNewFieldIsRequired(false);
+                  setNewFieldGroupId('');
+                  setNewFieldGroupSeparator('');
+                  setNewFieldValueSuffix('');
+                  setEditingFieldIndex(null);
+                }}
+                className="mt-2 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400"
+              >
+                Cancel edit
+              </button>
+            )}
+          </div>
+
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Images Configuration
+            </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+              Configure the API endpoint for viewing barcode images. Use {'{fieldName}'} syntax to include a field value from the barcode data.
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">API URL</label>
+                <input
+                  type="text"
+                  value={localConfig.imageConfig?.apiUrl || ''}
+                  onChange={(e) => setLocalConfig(prev => ({
+                    ...prev,
+                    imageConfig: { ...prev.imageConfig!, apiUrl: e.target.value }
+                  }))}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-gray-100"
+                  placeholder="e.g., /api/barcodes/{barcodeId}/images"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Source Field (for URL variable)</label>
+                <input
+                  type="text"
+                  value={localConfig.imageConfig?.sourceField || ''}
+                  onChange={(e) => setLocalConfig(prev => ({
+                    ...prev,
+                    imageConfig: { ...prev.imageConfig!, sourceField: e.target.value }
+                  }))}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-gray-100"
+                  placeholder="e.g., barcodeId"
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  The field from the barcode data to use when calling the images API
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Authentication</label>
+                <Select
+                  value={localConfig.imageConfig?.authConfigId || '__none__'}
+                  onValueChange={(value) => setLocalConfig(prev => ({
+                    ...prev,
+                    imageConfig: { ...prev.imageConfig!, authConfigId: value === '__none__' ? undefined : value }
+                  }))}
+                  options={[
+                    { value: '__none__', label: 'No authentication' },
+                    ...authConfigs.map(auth => ({ value: auth.id, label: auth.name }))
+                  ]}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onSave(localConfig)}
+            disabled={saving}
+            className="flex items-center space-x-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          >
+            {saving ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Saving...</span>
+              </>
+            ) : (
+              <>
+                <Save className="h-4 w-4" />
+                <span>Save Configuration</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
     </div>,
     document.body
   );
