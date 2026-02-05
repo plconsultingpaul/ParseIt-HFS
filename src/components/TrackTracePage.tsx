@@ -307,7 +307,9 @@ export default function TrackTracePage({ currentUser }: TrackTracePageProps) {
       sessionStorage.setItem('trackTraceState', JSON.stringify(stateToSave));
 
       const basePath = currentUser?.role === 'client' ? '/client/shipment' : '/shipment';
-      navigate(`${basePath}/${encodeURIComponent(orderId)}?templateId=${config?.id || ''}`);
+      navigate(`${basePath}/${encodeURIComponent(orderId)}?templateId=${config?.id || ''}`, {
+        state: { shipmentData: row }
+      });
     }
   };
 
