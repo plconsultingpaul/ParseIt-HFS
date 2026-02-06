@@ -178,6 +178,7 @@ export interface ArrayEntryField {
   hardcodedValue?: string;
   extractionInstruction?: string;
   dataType?: 'string' | 'number' | 'integer' | 'datetime' | 'boolean';
+  removeIfNull?: boolean;
 }
 
 export interface ArrayEntryConditionRule {
@@ -378,25 +379,15 @@ PROVINCE AND STATE FORMATTING RULES:
     // This extracts values for array entry fields that need AI extraction
     let arrayEntryExtractionInstructions = '';
     const enabledArrayEntries = arrayEntryConfigs.filter(e => e.isEnabled);
-    console.log(`[PROMPT DEBUG] Total array entry configs: ${arrayEntryConfigs.length}`);
-    console.log(`[PROMPT DEBUG] Enabled array entries: ${enabledArrayEntries.length}`);
-    enabledArrayEntries.forEach(entry => {
-      console.log(`[PROMPT DEBUG]   Entry: ${entry.targetArrayField}[${entry.entryOrder}], isRepeating: ${entry.isRepeating}`);
-      entry.fields.forEach(field => {
-        console.log(`[PROMPT DEBUG]     Field: ${field.fieldName}, fieldType: "${field.fieldType}", hardcodedValue: "${field.hardcodedValue}", extractionInstruction: "${field.extractionInstruction}"`);
-      });
-    });
 
     if (isJsonFormat && enabledArrayEntries.length > 0) {
-      // Separate repeating and non-repeating entries
       const repeatingEntries = enabledArrayEntries.filter(e => e.isRepeating);
       const staticEntries = enabledArrayEntries.filter(e => !e.isRepeating);
 
-      console.log(`[PROMPT DEBUG] Repeating entries: ${repeatingEntries.length}`);
-      console.log(`[PROMPT DEBUG] Static entries: ${staticEntries.length}`);
+      const conditionalEntries = staticEntries.filter(e => e.aiConditionInstruction);
+      const unconditionalEntries = staticEntries.filter(e => !e.aiConditionInstruction);
 
-      // Handle static (non-repeating) entries - extract as standalone fields
-      const staticExtractedFields = staticEntries.flatMap(entry =>
+      const staticExtractedFields = unconditionalEntries.flatMap(entry =>
         entry.fields
           .filter(f => f.fieldType === 'extracted' && f.extractionInstruction)
           .map(f => ({
@@ -405,11 +396,6 @@ PROVINCE AND STATE FORMATTING RULES:
             dataType: f.dataType || 'string'
           }))
       );
-      console.log(`[PROMPT DEBUG] Static extracted fields to send to AI: ${staticExtractedFields.length}`);
-      staticExtractedFields.forEach(f => {
-        console.log(`[PROMPT DEBUG]   Key: ${f.key}, Instruction: "${f.instruction}"`);
-      });
-
       if (staticExtractedFields.length > 0) {
         arrayEntryExtractionInstructions = '\n\nARRAY ENTRY FIELD EXTRACTIONS:\n';
         arrayEntryExtractionInstructions += 'Extract these additional values as standalone fields in the workflow-only data section:\n';
@@ -421,6 +407,30 @@ PROVINCE AND STATE FORMATTING RULES:
           arrayEntryExtractionInstructions += `- "${key}": ${instruction}${dataTypeNote}\n`;
         });
         console.log('[PROMPT DEBUG] Built arrayEntryExtractionInstructions:', arrayEntryExtractionInstructions);
+      }
+
+      if (conditionalEntries.length > 0) {
+        arrayEntryExtractionInstructions += '\n\nCONDITIONAL ARRAY ENTRY EXTRACTIONS:\n';
+        arrayEntryExtractionInstructions += 'For each group below, first check the AI condition on the PDF. If the condition is NOT met, return null for ALL fields in that group.\n';
+        arrayEntryExtractionInstructions += 'If the condition IS met, extract the values as described.\n\n';
+
+        conditionalEntries.forEach(entry => {
+          const conditionKey = `__ARRAY_ENTRY_CONDITION_${entry.targetArrayField}_${entry.entryOrder}__`;
+          arrayEntryExtractionInstructions += `Condition check for ${entry.targetArrayField}[${entry.entryOrder}]: ${entry.aiConditionInstruction}\n`;
+          arrayEntryExtractionInstructions += `- "${conditionKey}": Set to "true" if the condition is met, "false" if not\n`;
+
+          entry.fields
+            .filter(f => f.fieldType === 'extracted' && f.extractionInstruction)
+            .forEach(f => {
+              const key = `__ARRAY_ENTRY_${entry.targetArrayField}_${entry.entryOrder}_${f.fieldName}__`;
+              const dataTypeNote = (f.dataType || 'string') === 'string' ? ' (as UPPER CASE string)' :
+                                  f.dataType === 'number' ? ' (format as number)' :
+                                  f.dataType === 'integer' ? ' (format as integer)' :
+                                  f.dataType === 'datetime' ? ' (as datetime string in yyyy-MM-ddThh:mm:ss format)' : '';
+              arrayEntryExtractionInstructions += `- "${key}": ${f.extractionInstruction}${dataTypeNote} (only if condition is met, otherwise null)\n`;
+            });
+          arrayEntryExtractionInstructions += '\n';
+        });
       }
 
       // Handle repeating entries - extract as arrays
@@ -969,7 +979,6 @@ Please provide only the ${outputFormat} output without any additional explanatio
 
         // STEP 5: Evaluate function-type field mappings (including async address lookups)
         const functionMappings = fieldMappings.filter(m => m.type === 'function' && m.functionId);
-        console.log(`[STEP 5] Function mappings found: ${functionMappings.length}, Functions available: ${functions.length}`);
         if (functionMappings.length > 0 && functions.length > 0) {
           const setFieldValue = (obj: any, fieldPath: string, value: any) => {
             const parts = fieldPath.split('.');
@@ -996,47 +1005,29 @@ Please provide only the ${outputFormat} output without any additional explanatio
 
           for (const order of jsonData.orders) {
             for (const mapping of functionMappings) {
-              console.log(`[STEP 5] Processing mapping: fieldName=${mapping.fieldName}, functionId=${mapping.functionId}`);
               const func = functions.find(f => f.id === mapping.functionId);
               if (func && func.function_logic) {
-                console.log(`[STEP 5] Found function: ${func.function_name}, type=${func.function_logic.type}`);
                 let result: any;
                 if (isAddressLookupLogic(func.function_logic)) {
-                  console.log(`[STEP 5] Calling evaluateAddressLookup for ${mapping.fieldName}`);
                   result = await evaluateAddressLookup(func.function_logic, order);
-                  console.log(`[STEP 5] Address lookup result: "${result}"`);
                 } else {
                   result = evaluateFunction(func.function_logic, order);
                 }
                 if (result !== undefined && result !== '') {
-                  console.log(`[STEP 5] Setting ${mapping.fieldName} = "${result}"`);
                   setFieldValue(order, mapping.fieldName, result);
-                } else {
-                  console.log(`[STEP 5] Result empty or undefined, not setting field`);
                 }
-              } else {
-                console.log(`[STEP 5] Function not found for functionId=${mapping.functionId}`);
               }
             }
           }
-        } else if (functionMappings.length > 0) {
-          console.log(`[STEP 5] Skipped: functions array is empty`);
         }
 
         // STEP 6: Construct arrays from array entry configs
         if (enabledArrayEntries.length > 0) {
-          console.log('[STEP 6] Processing array entry configs');
-          console.log('[STEP 6 DEBUG] Raw workflowOnlyData string:', workflowOnlyData);
-
-          // Parse workflowOnlyData to get extracted values
           let wfoData: Record<string, any> = {};
           try {
             wfoData = JSON.parse(workflowOnlyData);
-            console.log('[STEP 6 DEBUG] Parsed wfoData successfully');
-            console.log('[STEP 6 DEBUG] wfoData keys:', Object.keys(wfoData));
-            console.log('[STEP 6 DEBUG] wfoData full contents:', JSON.stringify(wfoData, null, 2));
           } catch (parseErr) {
-            console.warn('[STEP 6] Failed to parse workflowOnlyData for array entries:', parseErr);
+            console.warn('Failed to parse workflowOnlyData for array entries:', parseErr);
           }
 
           // Separate repeating and static entries
@@ -1089,6 +1080,10 @@ Please provide only the ${outputFormat} output without any additional explanatio
                       value = String(value).toUpperCase();
                     }
 
+                    if (field.removeIfNull && (value === null || value === '' || value === undefined || value === 'null')) {
+                      return;
+                    }
+
                     processedRow[field.fieldName] = value;
                   });
 
@@ -1100,61 +1095,47 @@ Please provide only the ${outputFormat} output without any additional explanatio
                 if (processedArray.length > 0) {
                   order[entry.targetArrayField] = processedArray;
                   populatedByRepeatingEntry.add(entry.targetArrayField);
-                  console.log(`[STEP 6] Constructed repeating ${entry.targetArrayField} array with ${processedArray.length} entries`);
+                } else {
+                  delete order[entry.targetArrayField];
                 }
 
-                // Clean up the temporary key
                 delete wfoData[repeatingKey];
-              } else {
-                console.log(`[STEP 6] No repeating data found for ${entry.targetArrayField}`);
               }
             });
 
             // Process static entries
             staticEntriesByArray.forEach((entries, arrayField) => {
-              // Only skip if a repeating entry from our config populated this array
-              // (not if the AI just put data directly into the template)
               if (populatedByRepeatingEntry.has(arrayField)) {
-                console.log(`[STEP 6] Skipping static entries for ${arrayField} - already populated by repeating entry`);
                 return;
               }
 
-              // Sort entries by entry order
               const sortedEntries = [...entries].sort((a, b) => a.entryOrder - b.entryOrder);
-
-              console.log(`[STEP 6 DEBUG] Processing static entries for array: ${arrayField}`);
-              console.log(`[STEP 6 DEBUG] Number of entries: ${sortedEntries.length}`);
-              console.log(`[STEP 6 DEBUG] wfoData keys:`, Object.keys(wfoData));
-              console.log(`[STEP 6 DEBUG] wfoData contents:`, JSON.stringify(wfoData, null, 2));
-
-              // Build the array from entry configs
               const constructedArray: any[] = [];
 
               sortedEntries.forEach(entry => {
-                console.log(`[STEP 6 DEBUG] Processing entry ${entry.entryOrder} for ${entry.targetArrayField}`);
-                console.log(`[STEP 6 DEBUG]   isRepeating: ${entry.isRepeating}`);
-                console.log(`[STEP 6 DEBUG]   fields count: ${entry.fields.length}`);
+                if (entry.aiConditionInstruction) {
+                  const conditionKey = `__ARRAY_ENTRY_CONDITION_${entry.targetArrayField}_${entry.entryOrder}__`;
+                  const conditionResult = String(wfoData[conditionKey] || '').toLowerCase();
+                  delete wfoData[conditionKey];
+
+                  if (conditionResult !== 'true') {
+                    entry.fields.forEach(f => {
+                      const key = `__ARRAY_ENTRY_${entry.targetArrayField}_${entry.entryOrder}_${f.fieldName}__`;
+                      delete wfoData[key];
+                    });
+                    return;
+                  }
+                }
 
                 if (!evaluateArrayEntryConditions(entry.conditions, order, wfoData)) {
-                  console.log(`[STEP 6] Skipping array entry ${entry.entryOrder} for ${entry.targetArrayField} - conditions not met`);
                   return;
                 }
 
                 const entryObj: Record<string, any> = {};
 
                 entry.fields.forEach(field => {
-                  console.log(`[STEP 6 DEBUG]   Field: ${field.fieldName}`);
-                  console.log(`[STEP 6 DEBUG]     fieldType: "${field.fieldType}" (type: ${typeof field.fieldType})`);
-                  console.log(`[STEP 6 DEBUG]     hardcodedValue: "${field.hardcodedValue}"`);
-                  console.log(`[STEP 6 DEBUG]     extractionInstruction: "${field.extractionInstruction}"`);
-                  console.log(`[STEP 6 DEBUG]     dataType: "${field.dataType}"`);
-
                   if (field.fieldType === 'hardcoded') {
-                    console.log(`[STEP 6 DEBUG]     -> Using HARDCODED path`);
-                    // Use the hardcoded value
                     let value: any = field.hardcodedValue || '';
-                    console.log(`[STEP 6 DEBUG]     -> Initial hardcoded value: "${value}"`);
-                    // Convert based on data type
                     if (field.dataType === 'number') {
                       value = parseFloat(value) || 0;
                     } else if (field.dataType === 'integer') {
@@ -1164,17 +1145,13 @@ Please provide only the ${outputFormat} output without any additional explanatio
                     } else if (field.dataType === 'string') {
                       value = String(value).toUpperCase();
                     }
-                    console.log(`[STEP 6 DEBUG]     -> Final value: "${value}"`);
+                    if (field.removeIfNull && (value === null || value === '' || value === undefined || value === 'null')) {
+                      return;
+                    }
                     entryObj[field.fieldName] = value;
                   } else if (field.fieldType === 'extracted' || field.fieldType === 'mapped') {
-                    console.log(`[STEP 6 DEBUG]     -> Using EXTRACTED/MAPPED path`);
-                    // Get the extracted value from workflowOnlyData
                     const extractionKey = `__ARRAY_ENTRY_${entry.targetArrayField}_${entry.entryOrder}_${field.fieldName}__`;
-                    console.log(`[STEP 6 DEBUG]     -> Looking for key: "${extractionKey}"`);
-                    console.log(`[STEP 6 DEBUG]     -> Key exists in wfoData: ${extractionKey in wfoData}`);
                     let value: any = wfoData[extractionKey] || '';
-                    console.log(`[STEP 6 DEBUG]     -> Retrieved value: "${value}"`);
-                    // Convert based on data type
                     if (field.dataType === 'number') {
                       value = parseFloat(value) || 0;
                     } else if (field.dataType === 'integer') {
@@ -1184,36 +1161,62 @@ Please provide only the ${outputFormat} output without any additional explanatio
                     } else if (field.dataType === 'string' && value) {
                       value = String(value).toUpperCase();
                     }
-                    console.log(`[STEP 6 DEBUG]     -> Final value: "${value}"`);
+                    if (field.removeIfNull && (value === null || value === '' || value === undefined || value === 'null')) {
+                      delete wfoData[extractionKey];
+                      return;
+                    }
                     entryObj[field.fieldName] = value;
-
-                    // Remove the temporary key from workflowOnlyData
                     delete wfoData[extractionKey];
-                  } else {
-                    console.log(`[STEP 6 DEBUG]     -> UNKNOWN fieldType: "${field.fieldType}" - field will be SKIPPED!`);
                   }
                 });
 
-                console.log(`[STEP 6 DEBUG]   Constructed entryObj:`, JSON.stringify(entryObj));
-
-                // Only add non-empty entries (entries must have at least one non-empty field value)
                 const hasNonEmptyValue = Object.values(entryObj).some(v => v !== '' && v !== null && v !== undefined);
                 if (hasNonEmptyValue) {
                   constructedArray.push(entryObj);
                 }
               });
 
-              // Set the constructed array on the order
               if (constructedArray.length > 0) {
                 order[arrayField] = constructedArray;
-                console.log(`[STEP 6] Constructed ${arrayField} array with ${constructedArray.length} entries`);
-                console.log(`[STEP 6 DEBUG] Final array:`, JSON.stringify(order[arrayField], null, 2));
+              } else {
+                delete order[arrayField];
               }
             });
           });
 
           // Update workflowOnlyData to remove used extraction keys
           workflowOnlyData = JSON.stringify(wfoData);
+        }
+
+        // STEP 6b: Clean up removeIfNull fields from AI-populated arrays
+        if (enabledArrayEntries.length > 0) {
+          const removeIfNullFieldsByArray: Record<string, string[]> = {};
+          enabledArrayEntries.forEach(entry => {
+            const fieldsToRemove = entry.fields
+              .filter((f: any) => f.removeIfNull)
+              .map((f: any) => f.fieldName);
+            if (fieldsToRemove.length > 0) {
+              removeIfNullFieldsByArray[entry.targetArrayField] = fieldsToRemove;
+            }
+          });
+
+          if (Object.keys(removeIfNullFieldsByArray).length > 0) {
+            jsonData.orders.forEach((order: any) => {
+              for (const [arrayField, fieldNames] of Object.entries(removeIfNullFieldsByArray)) {
+                const arr = order[arrayField];
+                if (Array.isArray(arr)) {
+                  arr.forEach((item: any) => {
+                    fieldNames.forEach(fieldName => {
+                      const val = item[fieldName];
+                      if (val === null || val === '' || val === undefined || val === 'null') {
+                        delete item[fieldName];
+                      }
+                    });
+                  });
+                }
+              }
+            });
+          }
         }
 
         templateData = JSON.stringify(jsonData);
