@@ -368,6 +368,9 @@ export function constructArraysFromEntryConfigs(
             order[entry.targetArrayField] = processedArray;
             repeatingPopulatedArrays.add(entry.targetArrayField);
             console.log(`[ArrayEntryBuilder] Constructed repeating ${entry.targetArrayField} array with ${processedArray.length} entries`);
+          } else {
+            delete order[entry.targetArrayField];
+            console.log(`[ArrayEntryBuilder] Removed empty repeating array ${entry.targetArrayField} from output`);
           }
 
           // Clean up the temporary key
@@ -389,6 +392,22 @@ export function constructArraysFromEntryConfigs(
         const constructedArray: any[] = [];
 
         sortedEntries.forEach(entry => {
+          if (entry.aiConditionInstruction) {
+            const conditionKey = `__ARRAY_ENTRY_CONDITION_${entry.targetArrayField}_${entry.entryOrder}__`;
+            const conditionResult = String(workflowOnlyData[conditionKey] || '').toLowerCase();
+            delete workflowOnlyData[conditionKey];
+
+            if (conditionResult !== 'true') {
+              console.log(`[ArrayEntryBuilder] Skipping ${entry.targetArrayField}[${entry.entryOrder}] - AI condition not met (result: "${conditionResult}")`);
+              entry.fields.forEach(f => {
+                const key = `__ARRAY_ENTRY_${entry.targetArrayField}_${entry.entryOrder}_${f.fieldName}__`;
+                delete workflowOnlyData[key];
+              });
+              return;
+            }
+            console.log(`[ArrayEntryBuilder] AI condition met for ${entry.targetArrayField}[${entry.entryOrder}]`);
+          }
+
           const entryObj: Record<string, any> = {};
 
           entry.fields.forEach(field => {
@@ -437,6 +456,9 @@ export function constructArraysFromEntryConfigs(
         if (constructedArray.length > 0) {
           order[arrayField] = constructedArray;
           console.log(`[ArrayEntryBuilder] Constructed ${arrayField} array with ${constructedArray.length} entries`);
+        } else {
+          delete order[arrayField];
+          console.log(`[ArrayEntryBuilder] Removed empty array ${arrayField} from output - no entries constructed`);
         }
       });
     });
