@@ -160,7 +160,8 @@ export function parseArrayEntryConfigs(extractionType: ExtractionType): ArrayEnt
         fieldType: f.field_type,
         hardcodedValue: f.hardcoded_value,
         extractionInstruction: f.extraction_instruction,
-        dataType: f.data_type
+        dataType: f.data_type,
+        removeIfNull: f.remove_if_null || false
       };
       console.log(`[ArrayEntryParser] Field parsed - name: "${field.fieldName}", fieldType: "${field.fieldType}", hardcodedValue: "${field.hardcodedValue}"`);
       return field;
@@ -172,9 +173,10 @@ export function parseArrayEntryConfigs(extractionType: ExtractionType): ArrayEnt
       isEnabled: e.is_enabled,
       isRepeating: e.is_repeating || false,
       repeatInstruction: e.repeat_instruction,
+      aiConditionInstruction: e.ai_condition_instruction,
       fields
     };
-    console.log(`[ArrayEntryParser] Entry parsed - array: "${config.targetArrayField}", isRepeating: ${config.isRepeating}, fieldsCount: ${config.fields.length}`);
+    console.log(`[ArrayEntryParser] Entry parsed - array: "${config.targetArrayField}", isRepeating: ${config.isRepeating}, aiCondition: ${!!config.aiConditionInstruction}, fieldsCount: ${config.fields.length}`);
     return config;
   });
 
