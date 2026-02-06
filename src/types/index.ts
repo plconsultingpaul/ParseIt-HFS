@@ -116,6 +116,7 @@ export interface ArrayEntryConfig {
   conditions?: ArrayEntryConditions;
   isRepeating?: boolean;
   repeatInstruction?: string;
+  aiConditionInstruction?: string;
   createdAt?: string;
   updatedAt?: string;
 }
