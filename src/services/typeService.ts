@@ -67,6 +67,7 @@ export async function fetchExtractionTypes(): Promise<ExtractionType[]> {
         extractionInstruction: field.extraction_instruction,
         dataType: field.data_type as 'string' | 'number' | 'integer' | 'boolean' | 'datetime',
         maxLength: field.max_length,
+        removeIfNull: field.remove_if_null,
         fieldOrder: field.field_order,
         createdAt: field.created_at
       });
@@ -88,6 +89,7 @@ export async function fetchExtractionTypes(): Promise<ExtractionType[]> {
         conditions: entry.conditions || undefined,
         isRepeating: entry.is_repeating || false,
         repeatInstruction: entry.repeat_instruction || undefined,
+        aiConditionInstruction: entry.ai_condition_instruction || undefined,
         createdAt: entry.created_at,
         updatedAt: entry.updated_at
       });
@@ -311,6 +313,7 @@ export async function updateExtractionTypes(types: ExtractionType[]): Promise<vo
               conditions: entry.conditions || null,
               is_repeating: entry.isRepeating || false,
               repeat_instruction: entry.repeatInstruction || null,
+              ai_condition_instruction: entry.aiConditionInstruction || null,
               updated_at: new Date().toISOString()
             })
             .eq('id', entry.id!);
@@ -331,7 +334,8 @@ export async function updateExtractionTypes(types: ExtractionType[]): Promise<vo
               is_enabled: entry.isEnabled,
               conditions: entry.conditions || null,
               is_repeating: entry.isRepeating || false,
-              repeat_instruction: entry.repeatInstruction || null
+              repeat_instruction: entry.repeatInstruction || null,
+              ai_condition_instruction: entry.aiConditionInstruction || null
             })
             .select('id')
             .single();
@@ -383,6 +387,7 @@ async function updateArrayEntryFields(entryId: string, fields: ArrayEntryField[]
         extraction_instruction: field.extractionInstruction || null,
         data_type: field.dataType || 'string',
         max_length: field.maxLength || null,
+        remove_if_null: field.removeIfNull || false,
         field_order: field.fieldOrder
       })
       .eq('id', field.id!);
@@ -415,6 +420,7 @@ async function insertArrayEntryFields(entryId: string, fields: ArrayEntryField[]
     extraction_instruction: field.extractionInstruction || null,
     data_type: field.dataType || 'string',
     max_length: field.maxLength || null,
+    remove_if_null: field.removeIfNull || false,
     field_order: field.fieldOrder
   }));
 
@@ -749,6 +755,9 @@ export async function exportExtractionType(extractionType: ExtractionType): Prom
         entryOrder: entry.entry_order,
         isEnabled: entry.is_enabled,
         conditions: entry.conditions || undefined,
+        isRepeating: entry.is_repeating || false,
+        repeatInstruction: entry.repeat_instruction || undefined,
+        aiConditionInstruction: entry.ai_condition_instruction || undefined,
         fields: entryFields
           .filter(f => f.array_entry_id === entry.id)
           .map(f => ({
@@ -757,6 +766,8 @@ export async function exportExtractionType(extractionType: ExtractionType): Prom
             hardcodedValue: f.hardcoded_value,
             extractionInstruction: f.extraction_instruction,
             dataType: f.data_type,
+            maxLength: f.max_length,
+            removeIfNull: f.remove_if_null,
             fieldOrder: f.field_order
           }))
       })),
@@ -882,7 +893,10 @@ export async function importExtractionType(exportData: ExportedExtractionType): 
           target_array_field: entry.targetArrayField,
           entry_order: entry.entryOrder,
           is_enabled: entry.isEnabled,
-          conditions: entry.conditions || null
+          conditions: entry.conditions || null,
+          is_repeating: entry.isRepeating || false,
+          repeat_instruction: entry.repeatInstruction || null,
+          ai_condition_instruction: entry.aiConditionInstruction || null
         })
         .select('id')
         .single();
@@ -900,6 +914,7 @@ export async function importExtractionType(exportData: ExportedExtractionType): 
             extraction_instruction: f.extractionInstruction || null,
             data_type: f.dataType || 'string',
             max_length: f.maxLength || null,
+            remove_if_null: f.removeIfNull || false,
             field_order: f.fieldOrder
           })));
 
