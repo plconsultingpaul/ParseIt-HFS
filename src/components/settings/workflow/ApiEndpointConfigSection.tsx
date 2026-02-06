@@ -829,8 +829,8 @@ export default function ApiEndpointConfigSection({ config, onChange, allSteps = 
       apiPath: manualApiEntry ? manualApiPath : (selectedEndpoint?.path || ''),
       queryParameterConfig,
       pathVariableConfig: Object.keys(pathVariableConfig).length > 0 ? pathVariableConfig : undefined,
-      responseDataMappings: responseDataMappings.filter(m => m.responsePath || m.updatePath).length > 0
-        ? responseDataMappings.filter(m => m.responsePath && m.updatePath)
+      responseDataMappings: responseDataMappings.length > 0
+        ? responseDataMappings
         : undefined,
       manualApiEntry,
       escapeSingleQuotesInBody,
