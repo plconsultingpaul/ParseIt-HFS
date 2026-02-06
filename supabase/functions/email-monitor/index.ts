@@ -35,6 +35,7 @@ export interface ArrayEntryConfig {
   fields: ArrayEntryField[];
   isRepeating?: boolean;
   repeatInstruction?: string;
+  aiConditionInstruction?: string;
 }
 
 export interface SplitPageResult {
@@ -258,7 +259,8 @@ Deno.serve(async (req) => {
               hardcoded_value,
               extraction_instruction,
               data_type,
-              field_order
+              field_order,
+              remove_if_null
             )
           )
         )
