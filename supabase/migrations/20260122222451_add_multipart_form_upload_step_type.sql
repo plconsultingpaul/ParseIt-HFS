@@ -66,7 +66,6 @@ CHECK (step_type = ANY (ARRAY[
   'sftp_upload'::text,
   'email_action'::text,
   'rename_file'::text,
-  'rename_pdf'::text,
   'multipart_form_upload'::text
 ]));
 
