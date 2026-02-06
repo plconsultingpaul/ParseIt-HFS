@@ -74,7 +74,8 @@ export default function ExtractionTypesSettings({
     fields: [],
     conditions: undefined,
     isRepeating: false,
-    repeatInstruction: ''
+    repeatInstruction: '',
+    aiConditionInstruction: ''
   });
   const [showConditionsSection, setShowConditionsSection] = useState(false);
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);
@@ -635,7 +636,8 @@ export default function ExtractionTypesSettings({
       fields: [...entry.fields],
       conditions: entry.conditions ? { ...entry.conditions, rules: [...entry.conditions.rules] } : undefined,
       isRepeating: entry.isRepeating || false,
-      repeatInstruction: entry.repeatInstruction || ''
+      repeatInstruction: entry.repeatInstruction || '',
+      aiConditionInstruction: entry.aiConditionInstruction || ''
     });
     setShowConditionsSection(entry.conditions?.enabled || false);
     setShowArrayEntryModal(true);
@@ -740,6 +742,7 @@ export default function ExtractionTypesSettings({
         fields: arrayEntryForm.fields || [],
         isRepeating: arrayEntryForm.isRepeating || false,
         repeatInstruction: arrayEntryForm.repeatInstruction || '',
+        aiConditionInstruction: arrayEntryForm.aiConditionInstruction || '',
         conditions: arrayEntryForm.conditions || null
       });
     }
@@ -1217,6 +1220,32 @@ export default function ExtractionTypesSettings({
                       />
                       <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
                         Describe how to identify each row to extract (table structure, filtering criteria, etc.)
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!arrayEntryForm.isRepeating && (
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg p-4">
+                  <div className="flex items-start space-x-3">
+                    <Brain className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <h4 className="text-sm font-semibold text-amber-900 dark:text-amber-100 mb-1">
+                        AI Condition Instruction
+                      </h4>
+                      <p className="text-xs text-amber-700 dark:text-amber-300 mb-3">
+                        Describe a condition the AI should check on the PDF to determine if this entry should be included. This can reference any visible content, even fields not in your mappings.
+                      </p>
+                      <textarea
+                        value={arrayEntryForm.aiConditionInstruction || ''}
+                        onChange={(e) => setArrayEntryForm({ ...arrayEntryForm, aiConditionInstruction: e.target.value })}
+                        placeholder="e.g., Only include this entry if Temperature Required is Yes on the PDF"
+                        rows={2}
+                        className="w-full px-3 py-2 border border-amber-300 dark:border-amber-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm"
+                      />
+                      <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                        Leave empty to always include this entry.
                       </p>
                     </div>
                   </div>
@@ -2475,6 +2504,9 @@ export default function ExtractionTypesSettings({
                                   <RefreshCw className="h-3 w-3" />
                                   <span>Repeating</span>
                                 </span>
+                              )}
+                              {entry.aiConditionInstruction && (
+                                <Brain className="h-4 w-4 text-amber-500" title="AI Condition" />
                               )}
                               {entry.conditions?.enabled && (entry.conditions?.rules?.length ?? 0) > 0 && (
                                 <Filter className="h-4 w-4 text-amber-500" />
