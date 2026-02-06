@@ -97,7 +97,10 @@ export function buildArrayEntryExtractionInstructions(arrayEntryConfigs: ArrayEn
   let instructions = '';
 
   // Handle static (non-repeating) entries
-  const staticExtractedFields = staticEntries.flatMap(entry =>
+  const conditionalEntries = staticEntries.filter(e => e.aiConditionInstruction);
+  const unconditionalEntries = staticEntries.filter(e => !e.aiConditionInstruction);
+
+  const unconditionalFields = unconditionalEntries.flatMap(entry =>
     entry.fields
       .filter(f => (f.fieldType === 'extracted' || f.fieldType === 'mapped') && f.extractionInstruction)
       .map(f => ({
@@ -109,15 +112,42 @@ export function buildArrayEntryExtractionInstructions(arrayEntryConfigs: ArrayEn
       }))
   );
 
-  if (staticExtractedFields.length > 0) {
+  if (unconditionalFields.length > 0) {
     instructions += '\n\nARRAY ENTRY FIELD EXTRACTIONS:\n';
     instructions += 'Extract these additional values as standalone fields in the workflow-only data section:\n';
-    staticExtractedFields.forEach(({ key, instruction, dataType }) => {
+    unconditionalFields.forEach(({ key, instruction, dataType }) => {
       const dataTypeNote = dataType === 'string' ? ' (as UPPER CASE string)' :
                           dataType === 'number' ? ' (format as number)' :
                           dataType === 'integer' ? ' (format as integer)' :
                           dataType === 'datetime' ? ' (as datetime string in yyyy-MM-ddThh:mm:ss format)' : '';
       instructions += `- "${key}": ${instruction}${dataTypeNote}\n`;
+    });
+  }
+
+  if (conditionalEntries.length > 0) {
+    instructions += '\n\nCONDITIONAL ARRAY ENTRY EXTRACTIONS:\n';
+    instructions += 'For each group below, first check the AI condition on the PDF. If the condition is NOT met, return null for ALL fields in that group.\n';
+    instructions += 'If the condition IS met, extract the values as described.\n\n';
+
+    conditionalEntries.forEach(entry => {
+      const conditionKey = `__ARRAY_ENTRY_CONDITION_${entry.targetArrayField}_${entry.entryOrder}__`;
+      instructions += `Condition check for ${entry.targetArrayField}[${entry.entryOrder}]: ${entry.aiConditionInstruction}\n`;
+      instructions += `- "${conditionKey}": Set to "true" if the condition is met, "false" if not\n`;
+
+      entry.fields
+        .filter(f => (f.fieldType === 'extracted' || f.fieldType === 'mapped') && f.extractionInstruction)
+        .forEach(f => {
+          const key = `__ARRAY_ENTRY_${entry.targetArrayField}_${entry.entryOrder}_${f.fieldName}__`;
+          const instruction = f.fieldType === 'mapped'
+            ? `Extract the value from PDF coordinates: ${f.extractionInstruction}`
+            : f.extractionInstruction;
+          const dataTypeNote = (f.dataType || 'string') === 'string' ? ' (as UPPER CASE string)' :
+                              f.dataType === 'number' ? ' (format as number)' :
+                              f.dataType === 'integer' ? ' (format as integer)' :
+                              f.dataType === 'datetime' ? ' (as datetime string in yyyy-MM-ddThh:mm:ss format)' : '';
+          instructions += `- "${key}": ${instruction}${dataTypeNote} (only if condition is met, otherwise null)\n`;
+        });
+      instructions += '\n';
     });
   }
 
